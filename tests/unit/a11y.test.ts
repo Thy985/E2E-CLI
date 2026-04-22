@@ -2,12 +2,18 @@
  * A11y Skill Tests
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { A11ySkill } from '../../src/skills/builtin/a11y';
 import { createLogger } from '../../src/utils/logger';
 import { createTools } from '../../src/tools';
-import { createModelClient } from '../../src/models';
 import { createStorage } from '../../src/storage';
+import { ModelClient } from '../../src/types';
+
+// Mock model client for testing
+const mockModelClient: ModelClient = {
+  chat: vi.fn().mockResolvedValue('mock response'),
+  embed: vi.fn().mockResolvedValue(Array(1536).fill(0)),
+};
 
 describe('A11ySkill', () => {
   const skill = new A11ySkill();
@@ -30,12 +36,10 @@ describe('A11ySkill', () => {
       config: { enabled: true, options: {} },
       logger: createLogger({ level: 'error' }),
       tools: createTools(),
-      model: createModelClient(),
+      model: mockModelClient,
       storage: createStorage(),
     };
 
-    // This would require actual files to test
-    // For now, just verify the method exists and returns an array
     const diagnoses = await skill.diagnose(context);
     expect(Array.isArray(diagnoses)).toBe(true);
   });
