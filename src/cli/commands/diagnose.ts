@@ -88,7 +88,7 @@ export async function diagnoseCommand(options: any) {
       project: projectInfo,
       config: { enabled: true, options: {} },
       logger: logger.child('Skill'),
-      tools: createTools(),
+      tools: createTools(diagnoseOptions.path!),
       model: createModelClient(),
       storage: createStorage(),
     };

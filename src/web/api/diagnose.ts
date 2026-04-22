@@ -42,7 +42,7 @@ diagnoseRouter.post('/', async (c) => {
       project: projectInfo,
       config: { enabled: true, options: {} },
       logger: logger.child('Skill'),
-      tools: createTools(),
+      tools: createTools(projectPath),
       model: createModelClient(),
       storage: createStorage(),
     };

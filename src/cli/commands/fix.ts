@@ -79,7 +79,7 @@ export async function fixCommand(options: FixOptions) {
       project: report.project,
       config: { enabled: true, options: {} },
       logger: logger.child('Skill'),
-      tools: createTools(),
+      tools: createTools(projectPath),
       model: createModelClient(),
       storage: createStorage(),
     };

@@ -93,7 +93,12 @@ export class E2ESkill extends BaseSkill {
     const files: string[] = [];
     for (const pattern of patterns) {
       const matches = await tools.fs.glob(pattern);
-      files.push(...matches.filter(f => !f.includes('node_modules')));
+      // Exclude node_modules and qa-agent's own source code
+      files.push(...matches.filter(f =>
+        !f.includes('node_modules') &&
+        !f.includes('src/skills') &&
+        !f.includes('src/engines')
+      ));
     }
     return [...new Set(files)];
   }

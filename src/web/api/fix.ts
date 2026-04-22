@@ -44,7 +44,7 @@ fixRouter.post('/preview', async (c) => {
       project: { name: '', path: projectPath || process.cwd() },
       config: { enabled: true, options: {} },
       logger: logger.child('Skill'),
-      tools: createTools(),
+      tools: createTools(projectPath || process.cwd()),
       model: createModelClient(),
       storage: createStorage(),
     };
