@@ -5,7 +5,6 @@
 
 import { ModelClient, ModelMessage } from '../types';
 
-const DEEPSEEK_API_KEY = 'sk-a6b8a5f469bc43f08102cc6b76a47d57';
 const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions';
 
 /**
@@ -14,7 +13,11 @@ const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions';
 export function createModelClient(): ModelClient {
   return {
     async chat(messages: ModelMessage[]): Promise<string> {
-      const apiKey = process.env.DEEPSEEK_API_KEY || DEEPSEEK_API_KEY;
+      const apiKey = process.env.DEEPSEEK_API_KEY;
+
+      if (!apiKey) {
+        throw new Error('DEEPSEEK_API_KEY environment variable is not set');
+      }
 
       try {
         const response = await fetch(DEEPSEEK_API_URL, {
@@ -50,7 +53,7 @@ export function createModelClient(): ModelClient {
     async embed(text: string): Promise<number[]> {
       // Deepseek doesn't have embedding API in the same way
       // Return a mock vector for compatibility
-      const apiKey = process.env.DEEPSEEK_API_KEY || DEEPSEEK_API_KEY;
+      const apiKey = process.env.DEEPSEEK_API_KEY;
 
       try {
         const response = await fetch('https://api.deepseek.com/v1/embeddings', {
