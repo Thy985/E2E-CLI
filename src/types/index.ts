@@ -35,12 +35,15 @@ export interface SkillCapability {
 
 export interface SkillContext {
   project: ProjectInfo;
-  config: SkillConfig;
+  config: QAConfig;
   logger: Logger;
   tools: ToolRegistry;
   model: ModelClient;
   storage: Storage;
 }
+
+// Import QAConfig from config module
+import type { QAConfig } from '../config';
 
 export interface SkillConfig {
   enabled: boolean;
@@ -57,7 +60,11 @@ export type DiagnosisType =
   | 'security'
   | 'functionality'
   | 'code-quality'
-  | 'ui-ux';
+  | 'ui-ux'
+  | 'seo'
+  | 'api'
+  | 'dependency'
+  | 'complexity';
 
 export type Severity = 'critical' | 'warning' | 'info';
 

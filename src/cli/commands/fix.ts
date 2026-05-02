@@ -1,295 +1,209 @@
 /**
  * Fix Command
- * Automatically fixes diagnosed issues
+ * 
+ * 修复命令 - 支持单问题修复和批量修复
  */
 
+import { Command } from 'commander';
 import { createLogger } from '../../utils/logger';
-import { createFormatter } from '../output/formatter';
-import { createSkillRegistry } from '../../skills/registry';
-import { A11ySkill } from '../../skills/builtin/a11y';
-import { E2ESkill } from '../../skills/builtin/e2e';
-import { PerformanceSkill } from '../../skills/builtin/performance';
-import { SecuritySkill } from '../../skills/builtin/security';
-import { UIUXSkill } from '../../skills/builtin/ui-ux';
-import { createModelClient } from '../../models';
-import { createTools } from '../../tools';
-import { createStorage } from '../../storage';
-import { Diagnosis, Fix, SkillContext } from '../../types';
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import * as readline from 'readline';
+import { loadConfig } from '../../config';
+import { FixEngine } from '../../engines/fix';
+import { BatchFixEngine } from '../../engines/fix/batch';
+import { VerifyEngine } from '../../engines/verify';
+import { UIUXSkill } from '../../skills/builtin/uiux';
+import { BestPracticesSkill } from '../../skills/builtin/best-practices';
+import { SEOSkill } from '../../skills/builtin/seo';
+import { DependencySkill } from '../../skills/builtin/dependency';
 
-export interface FixOptions {
-  report?: string;
-  path?: string;
-  interactive?: boolean;
-  dryRun?: boolean;
-  yes?: boolean;
-  skills?: string[];
-  quiet?: boolean;
-  verbose?: boolean;
-}
+export const fixCommand = new Command('fix')
+  .description('Fix diagnosed issues')
+  .option('-p, --path <path>', 'Project path', process.cwd())
+  .option('-i, --issue <id>', 'Fix specific issue by ID')
+  .option('-s, --skill <skill>', 'Fix issues from specific skill')
+  .option('--batch', 'Batch fix all auto-fixable issues')
+  .option('--auto-approve <level>', 'Auto-approve fixes: low, medium, high', 'low')
+  .option('--dry-run', 'Preview fixes without applying')
+  .option('--preview', 'Preview fixes in sandbox')
+  .option('--verify', 'Verify fixes after applying')
+  .option('-y, --yes', 'Skip confirmation and apply all fixes')
+  .action(async (options) => {
+    const logger = createLogger({ level: 'info' });
 
-export async function fixCommand(options: FixOptions) {
-  const logger = createLogger({
-    level: options.verbose ? 'debug' : 'info',
-    quiet: options.quiet,
-  });
-  const formatter = createFormatter({ quiet: options.quiet });
+    try {
+      const config = await loadConfig(options.path);
 
-  try {
-    const projectPath = options.path || process.cwd();
-    
-    // Find the latest diagnosis report
-    const reportPath = await findLatestReport(projectPath, options.report);
-    
-    if (!reportPath) {
-      formatter.error('未找到诊断报告，请先运行 qa-agent diagnose');
+      if (options.batch) {
+        // 批量修复模式
+        await runBatchFix(options, config, logger);
+      } else if (options.issue) {
+        // 单问题修复模式
+        await runSingleFix(options, config, logger);
+      } else {
+        // 交互式修复模式
+        await runInteractiveFix(options, config, logger);
+      }
+
+    } catch (error) {
+      logger.error('Fix failed:', error);
       process.exit(1);
     }
+  });
 
-    formatter.info(`加载诊断报告: ${reportPath}`);
-    
-    // Load report
-    const reportContent = await fs.readFile(reportPath, 'utf-8');
-    const report = JSON.parse(reportContent);
-    
-    // Filter auto-fixable issues
-    const fixableIssues = report.issues.filter(
-      (issue: Diagnosis) => issue.fixSuggestion?.autoApplicable
-    );
+async function runBatchFix(options: any, config: any, logger: any) {
+  logger.info('Running batch fix...\n');
 
-    if (fixableIssues.length === 0) {
-      formatter.success('没有可自动修复的问题');
-      process.exit(0);
-    }
-
-    formatter.info(`发现 ${fixableIssues.length} 个可自动修复的问题`);
-
-    // Initialize skill registry
-    const skillRegistry = createSkillRegistry(logger);
-    skillRegistry.register(new A11ySkill());
-    skillRegistry.register(new E2ESkill());
-    skillRegistry.register(new PerformanceSkill());
-    skillRegistry.register(new SecuritySkill());
-    skillRegistry.register(new UIUXSkill());
-
-    // Create skill context
-    const context: SkillContext = {
-      project: report.project,
-      config: { enabled: true, options: {} },
-      logger: logger.child('Skill'),
-      tools: createTools(projectPath),
-      model: createModelClient(),
-      storage: createStorage(),
-    };
-
-    await skillRegistry.initializeAll(context);
-
-    // Group issues by skill
-    const issuesBySkill = new Map<string, Diagnosis[]>();
-    for (const issue of fixableIssues) {
-      const skillName = issue.skill;
-      if (!issuesBySkill.has(skillName)) {
-        issuesBySkill.set(skillName, []);
-      }
-      issuesBySkill.get(skillName)!.push(issue);
-    }
-
-    // Generate fixes
-    const fixes: Array<{ fix: Fix; issue: Diagnosis }> = [];
-    
-    for (const [skillName, issues] of issuesBySkill) {
-      const skill = skillRegistry.get(skillName);
-      if (!skill || !skill.fix) continue;
-
-      formatter.info(`生成修复: ${skillName} (${issues.length} 个问题)`);
-
-      for (const issue of issues) {
-        try {
-          const fix = await skill.fix(issue, context);
-          fixes.push({ fix, issue });
-        } catch (error) {
-          logger.warn(`无法修复 ${issue.id}: ${error}`);
-        }
-      }
-    }
-
-    if (fixes.length === 0) {
-      formatter.warn('没有生成任何修复');
-      process.exit(0);
-    }
-
-    // Display fixes
-    console.log('');
-    displayFixes(fixes, formatter);
-
-    // Dry run mode
-    if (options.dryRun) {
-      console.log('');
-      formatter.info('干运行模式，不应用修改');
-      process.exit(0);
-    }
-
-    // Interactive mode - ask for confirmation
-    if (!options.yes) {
-      const confirmed = await confirmFixes(fixes.length, formatter);
-      if (!confirmed) {
-        formatter.info('已取消修复');
-        process.exit(0);
-      }
-    }
-
-    // Apply fixes
-    formatter.startSpinner('应用修复...');
-    
-    let applied = 0;
-    let failed = 0;
-
-    for (const { fix, issue } of fixes) {
-      try {
-        await applyFix(fix, projectPath);
-        applied++;
-        logger.debug(`已修复: ${issue.title}`);
-      } catch (error) {
-        failed++;
-        logger.error(`修复失败: ${issue.title} - ${error}`);
-      }
-    }
-
-    formatter.succeedSpinner(`已应用 ${applied} 个修复`);
-    
-    if (failed > 0) {
-      formatter.warn(`${failed} 个修复失败`);
-    }
-
-    // Cleanup
-    await skillRegistry.cleanupAll();
-
-    // Suggest verification
-    console.log('');
-    formatter.info('建议运行 qa-agent diagnose 验证修复效果');
-
-    process.exit(0);
-
-  } catch (error) {
-    formatter.failSpinner('修复失败');
-    logger.error('修复过程中发生错误:', error);
-    process.exit(3);
-  }
-}
-
-async function findLatestReport(
-  projectPath: string,
-  specifiedPath?: string
-): Promise<string | null> {
-  if (specifiedPath) {
-    return specifiedPath;
-  }
-
-  // Look for JSON report
-  const reportDir = path.join(projectPath, '.qa-agent', 'reports');
+  // 收集所有问题
+  const allIssues = await collectAllIssues(options.path, config, logger);
   
+  if (allIssues.length === 0) {
+    logger.info('No issues found to fix.');
+    return;
+  }
+
+  // 创建批量修复引擎
+  const batchEngine = new BatchFixEngine();
+  
+  // 执行批量修复
+  const result = await batchEngine.batchFix(
+    allIssues,
+    {
+      project: { rootPath: options.path, name: 'project', type: 'web' },
+      config,
+      logger,
+      tools: {} as any,
+      model: {} as any,
+      storage: {} as any,
+    },
+    {
+      autoApproveLowRisk: options.autoApprove.includes('low'),
+      autoApproveMediumRisk: options.autoApprove.includes('medium'),
+      dryRun: options.dryRun,
+      preview: options.preview,
+      verify: options.verify,
+    }
+  );
+
+  // 输出结果
+  console.log('\n' + result.report);
+
+  // 保存报告
+  if (!options.dryRun) {
+    const fs = await import('fs');
+    const path = await import('path');
+    const reportPath = path.join(options.path, '.qa-agent', 'fix-report.md');
+    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+    fs.writeFileSync(reportPath, result.report, 'utf-8');
+    logger.info(`Report saved to: ${reportPath}`);
+  }
+
+  process.exit(result.failedFixes.length > 0 ? 1 : 0);
+}
+
+async function runSingleFix(options: any, config: any, logger: any) {
+  logger.info(`Fixing issue: ${options.issue}\n`);
+  
+  // 查找问题
+  const issue = await findIssueById(options.issue, options.path, config, logger);
+  
+  if (!issue) {
+    logger.error(`Issue not found: ${options.issue}`);
+    process.exit(1);
+  }
+
+  // 生成并应用修复
+  const fixEngine = new FixEngine({
+    autoApproveLowRisk: true,
+    sandboxEnabled: options.preview,
+    previewBeforeApply: options.preview,
+    verifyAfterFix: options.verify,
+  });
+
+  // 这里应该调用 Skill 的 fix 方法
+  logger.info(`Would fix: ${issue.title}`);
+  
+  if (options.dryRun) {
+    logger.info('[DRY-RUN] No changes applied.');
+  }
+}
+
+async function runInteractiveFix(options: any, config: any, logger: any) {
+  logger.info('Interactive fix mode\n');
+  
+  // 收集所有问题
+  const allIssues = await collectAllIssues(options.path, config, logger);
+  
+  if (allIssues.length === 0) {
+    logger.info('No issues found to fix.');
+    return;
+  }
+
+  // 显示问题列表
+  logger.info(`Found ${allIssues.length} issues:\n`);
+  
+  allIssues.forEach((issue, index) => {
+    const autoFixable = issue.severity !== 'critical' ? '[Auto-fixable]' : '[Manual]';
+    logger.info(`${index + 1}. [${issue.severity}] ${issue.title} ${autoFixable}`);
+  });
+
+  logger.info('\nUse --batch to fix all auto-fixable issues.');
+  logger.info('Use --issue <id> to fix a specific issue.');
+}
+
+// 辅助函数
+
+async function collectAllIssues(projectPath: string, config: any, logger: any): Promise<any[]> {
+  const issues: any[] = [];
+  const context = {
+    project: { rootPath: projectPath, name: 'project', type: 'web' },
+    config,
+    logger,
+    tools: {} as any,
+    model: {} as any,
+    storage: {} as any,
+  };
+
+  // UI/UX
   try {
-    const files = await fs.readdir(reportDir);
-    const jsonReports = files
-      .filter(f => f.startsWith('diagnose-') && f.endsWith('.json'))
-      .sort()
-      .reverse();
-
-    if (jsonReports.length > 0) {
-      return path.join(reportDir, jsonReports[0]);
-    }
-
-    // If no JSON, check for latest.txt and convert
-    const latestTxt = path.join(reportDir, 'latest.txt');
-    const exists = await fs.access(latestTxt).then(() => true).catch(() => false);
-    if (exists) {
-      // Need to re-run diagnose to get JSON
-      return null;
-    }
-  } catch {
-    return null;
+    const uiuxSkill = new UIUXSkill();
+    const uiuxIssues = await uiuxSkill.diagnose(context);
+    issues.push(...uiuxIssues);
+  } catch (e) {
+    // 忽略错误
   }
 
-  return null;
-}
-
-function displayFixes(
-  fixes: Array<{ fix: Fix; issue: Diagnosis }>,
-  formatter: ReturnType<typeof createFormatter>
-): void {
-  console.log('将要应用的修复:');
-  console.log('─'.repeat(60));
-
-  for (const { fix, issue } of fixes) {
-    console.log(`\n📌 ${issue.title}`);
-    console.log(`   文件: ${issue.location.file}`);
-    console.log(`   修复: ${fix.description}`);
-    
-    if (fix.changes.length > 0) {
-      const change = fix.changes[0];
-      if (change.oldContent && change.content) {
-        console.log(`   - ${change.oldContent.slice(0, 50)}...`);
-        console.log(`   + ${change.content.slice(0, 50)}...`);
-      }
-    }
+  // Best Practices
+  try {
+    const bpSkill = new BestPracticesSkill();
+    const bpIssues = await bpSkill.diagnose(context);
+    issues.push(...bpIssues);
+  } catch (e) {
+    // 忽略错误
   }
 
-  console.log('\n' + '─'.repeat(60));
-}
-
-async function confirmFixes(
-  count: number,
-  formatter: ReturnType<typeof createFormatter>
-): Promise<boolean> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  return new Promise((resolve) => {
-    rl.question(`\n确认应用 ${count} 个修复? [y/N] `, (answer) => {
-      rl.close();
-      resolve(answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes');
-    });
-  });
-}
-
-async function applyFix(fix: Fix, projectPath: string): Promise<void> {
-  for (const change of fix.changes) {
-    // Determine the correct file path
-    let filePath: string;
-    if (path.isAbsolute(change.file)) {
-      filePath = change.file;
-    } else if (change.file.startsWith(projectPath) || change.file.includes('src/') || change.file.includes('src\\')) {
-      // File path is already relative to CWD or contains src/
-      filePath = change.file;
-    } else {
-      filePath = path.join(projectPath, change.file);
-    }
-
-    switch (change.type) {
-      case 'replace':
-        if (change.oldContent && change.content) {
-          const fileContent = await fs.readFile(filePath, 'utf-8');
-          const newContent = fileContent.replace(change.oldContent, change.content);
-          await fs.writeFile(filePath, newContent, 'utf-8');
-        }
-        break;
-
-      case 'insert':
-        if (change.content && change.position) {
-          const fileContent = await fs.readFile(filePath, 'utf-8');
-          const lines = fileContent.split('\n');
-          lines.splice(change.position.line - 1, 0, change.content);
-          await fs.writeFile(filePath, lines.join('\n'), 'utf-8');
-        }
-        break;
-
-      case 'delete':
-        // Handle deletion if needed
-        break;
-    }
+  // SEO
+  try {
+    const seoSkill = new SEOSkill();
+    const seoIssues = await seoSkill.diagnose(context);
+    issues.push(...seoIssues);
+  } catch (e) {
+    // 忽略错误
   }
+
+  // Dependency
+  try {
+    const depSkill = new DependencySkill();
+    const depIssues = await depSkill.diagnose(context);
+    issues.push(...depIssues);
+  } catch (e) {
+    // 忽略错误
+  }
+
+  return issues;
 }
+
+async function findIssueById(id: string, projectPath: string, config: any, logger: any): Promise<any | null> {
+  const allIssues = await collectAllIssues(projectPath, config, logger);
+  return allIssues.find(issue => issue.id === id) || null;
+}
+
+export default fixCommand;

@@ -12,6 +12,8 @@ import {
   DiagnosisType,
 } from '../../../types';
 import { generateId } from '../../../utils';
+import { shouldIgnore, isRuleEnabled, getRuleSeverity } from '../../../config';
+import { shouldIgnoreLine, shouldIgnoreSection } from '../../../utils/ignore';
 
 // Security rules to check
 const SECURITY_RULES = [
@@ -65,7 +67,7 @@ const SECURITY_RULES = [
   {
     id: 'insecure-random',
     patterns: [
-      /Math\.random\(\)\s*\)/g,
+      /Math\.random\(\)/g,
     ],
     severity: 'info' as Severity,
     title: '不安全的随机数',
@@ -97,8 +99,8 @@ const SECURITY_RULES = [
   {
     id: 'cors-wildcard',
     patterns: [
-      /Access-Control-Allow-Origin\s*:\s*['"]\*['"]/g,
-      /cors\s*\(\s*\{\s*origin\s*:\s*['"]\*['"]/g,
+      /['"`]?Access-Control-Allow-Origin['"`]?\s*:\s*['"`]\*['"`]/g,
+      /cors\s*\(\s*\{\s*origin\s*:\s*['"`]\*['"`]/g,
     ],
     severity: 'warning' as Severity,
     title: 'CORS 配置过于宽松',
@@ -140,44 +142,67 @@ export class SecuritySkill extends BaseSkill {
 
   async diagnose(context: SkillContext): Promise<Diagnosis[]> {
     const diagnoses: Diagnosis[] = [];
-    const { project, tools, logger } = context;
+    const { project, tools, logger, config } = context;
 
     logger.info('开始安全检查...');
 
     // Check source files
-    const sourceFiles = await this.getSourceFiles(project.path, tools);
+    const sourceFiles = await this.getSourceFiles(project.path, tools, config);
     logger.debug(`找到 ${sourceFiles.length} 个源文件`);
 
     for (const file of sourceFiles) {
       const content = await tools.fs.readFile(file);
-      const fileDiagnoses = await this.checkFile(file, content);
+      const fileDiagnoses = await this.checkFile(file, content, config);
       diagnoses.push(...fileDiagnoses);
     }
 
     // Check configuration files
-    const configIssues = await this.checkConfigFiles(project.path, tools);
+    const configIssues = await this.checkConfigFiles(project.path, tools, config);
     diagnoses.push(...configIssues);
 
     logger.info(`安全检查完成，发现 ${diagnoses.length} 个问题`);
     return diagnoses;
   }
 
-  private async getSourceFiles(projectPath: string, tools: SkillContext['tools']): Promise<string[]> {
+  private async getSourceFiles(projectPath: string, tools: SkillContext['tools'], config?: SkillContext['config']): Promise<string[]> {
     const patterns = ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx'];
     const files: string[] = [];
 
     for (const pattern of patterns) {
       const matches = await tools.fs.glob(pattern);
-      files.push(...matches.filter(f => !f.includes('node_modules')));
+      files.push(...matches.filter(f => {
+        if (f.includes('node_modules') || f.includes('.d.ts')) return false;
+        if (config && shouldIgnore(f, config)) return false;
+        return true;
+      }));
     }
 
     return [...new Set(files)];
   }
 
-  private async checkFile(filePath: string, content: string): Promise<Diagnosis[]> {
+  private async checkFile(filePath: string, content: string, config?: SkillContext['config']): Promise<Diagnosis[]> {
     const diagnoses: Diagnosis[] = [];
 
+    // Skip files based on config ignore patterns
+    if (config && shouldIgnore(filePath, config)) {
+      return diagnoses;
+    }
+
+    // Skip security skill definition file (contains rule patterns)
+    const normalizedPath = filePath.replace(/\\/g, '/');
+    const isSecurityDefinition = normalizedPath.includes('skills/builtin/security/index');
+    
     for (const rule of SECURITY_RULES) {
+      // Skip disabled-security rule in security skill definition file
+      if (rule.id === 'disabled-security' && isSecurityDefinition) {
+        continue;
+      }
+      
+      // Check if rule is disabled in config
+      if (config && !isRuleEnabled(rule.id, config, this.name)) {
+        continue;
+      }
+      
       for (const pattern of rule.patterns) {
         const matches = content.matchAll(pattern);
         
@@ -190,11 +215,31 @@ export class SecuritySkill extends BaseSkill {
             continue;
           }
 
+          // Skip false positives in example code or documentation
+          if (line?.includes('@example') || line?.includes('```')) {
+            continue;
+          }
+
+          // Check for ignore comments
+          if (shouldIgnoreLine(content, lineNumber, rule.id)) {
+            continue;
+          }
+
+          // Check for ignore section
+          if (shouldIgnoreSection(content, lineNumber, lineNumber, rule.id)) {
+            continue;
+          }
+
+          // Get severity from config or use default
+          const severity = config 
+            ? getRuleSeverity(rule.id, config, rule.severity, this.name)
+            : rule.severity;
+
           diagnoses.push({
             id: `Sec-${generateId()}`,
             skill: this.name,
             type: 'security' as DiagnosisType,
-            severity: rule.severity,
+            severity: severity,
             title: rule.title,
             description: rule.description,
             location: {
@@ -218,12 +263,15 @@ export class SecuritySkill extends BaseSkill {
     return diagnoses;
   }
 
-  private async checkConfigFiles(projectPath: string, tools: SkillContext['tools']): Promise<Diagnosis[]> {
+  private async checkConfigFiles(projectPath: string, tools: SkillContext['tools'], config?: SkillContext['config']): Promise<Diagnosis[]> {
     const diagnoses: Diagnosis[] = [];
 
     // Check .env files (should not be committed)
     const envFiles = await tools.fs.glob('.env*');
     for (const file of envFiles) {
+      // Skip if ignored by config
+      if (config && shouldIgnore(file, config)) continue;
+      
       if (!file.includes('.example') && !file.includes('.sample')) {
         diagnoses.push({
           id: `Sec-${generateId()}`,

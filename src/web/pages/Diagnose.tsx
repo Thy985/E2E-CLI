@@ -193,13 +193,18 @@ export function DiagnosePage({ projectPath }: DiagnosePageProps) {
                   <div key={issue.id} className="p-4 hover:bg-gray-50">
                     <div className="flex items-start">
                       <input
+                        id={`issue-${issue.id}`}
                         type="checkbox"
                         checked={selectedIssues.has(issue.id)}
                         onChange={() => toggleIssue(issue.id)}
                         disabled={!issue.fixSuggestion?.autoApplicable}
                         className="mt-1 h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                        aria-label={`选择问题: ${issue.title}`}
                       />
-                      <div className="ml-3 flex-1">
+                      <label 
+                        htmlFor={`issue-${issue.id}`}
+                        className="ml-3 flex-1 cursor-pointer"
+                      >
                         <div className="flex items-center">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
                             issue.severity === 'critical' ? 'bg-red-100 text-red-800' :
@@ -218,7 +223,7 @@ export function DiagnosePage({ projectPath }: DiagnosePageProps) {
                           📁 {issue.location.file}
                           {issue.location.line && ` :${issue.location.line}`}
                         </p>
-                      </div>
+                      </label>
                     </div>
                   </div>
                 ))}

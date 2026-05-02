@@ -38,19 +38,22 @@ export async function webCommand(options: WebOptions) {
     
     // Detect platform and open browser
     const platform = process.platform;
-    let command: string;
     
-    if (platform === 'darwin') {
-      command = 'open';
-    } else if (platform === 'win32') {
-      command = 'start';
-    } else {
-      command = 'xdg-open';
-    }
-
     // Delay opening browser to ensure server is ready
     setTimeout(() => {
-      spawn(command, [url], { detached: true, stdio: 'ignore' });
+      try {
+        if (platform === 'darwin') {
+          spawn('open', [url], { detached: true, stdio: 'ignore' });
+        } else if (platform === 'win32') {
+          // Windows: use start command via cmd
+          spawn('cmd', ['/c', 'start', '""', url], { detached: true, stdio: 'ignore' });
+        } else {
+          spawn('xdg-open', [url], { detached: true, stdio: 'ignore' });
+        }
+      } catch {
+        // Ignore errors when opening browser
+        logger.warn(`无法自动打开浏览器，请手动访问: ${url}`);
+      }
     }, 1000);
   }
 }

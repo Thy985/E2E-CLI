@@ -46,7 +46,9 @@ const PROVIDER_CONFIGS: Record<ModelProvider, { baseUrl: string; defaultModel: s
  */
 export function detectProvider(apiKey: string): ModelProvider {
   if (apiKey.startsWith('sk-ant')) return 'claude';
-  if (apiKey.startsWith('sk-') && (apiKey.length > 60 || apiKey.includes('deepseek'))) return 'deepseek';
+  // DeepSeek keys: sk- prefix, 32-48 chars, hex-like pattern
+  if (apiKey.startsWith('sk-') && /^[a-f0-9]{32,48}$/i.test(apiKey.slice(3))) return 'deepseek';
+  if (apiKey.startsWith('sk-') && apiKey.length > 60) return 'deepseek';
   if (apiKey.startsWith('sk-')) return 'openai';
   if (apiKey.startsWith('Bearer')) return 'siliconflow';
   if (apiKey.match(/^[a-zA-Z0-9]{32,}$/) && !apiKey.includes('-')) return 'groq';
@@ -60,11 +62,13 @@ export function detectProvider(apiKey: string): ModelProvider {
 export function createModelClient(config?: Partial<ModelConfig>): ModelClient {
   const provider = config?.provider || detectProvider(config?.apiKey || process.env.MODEL_API_KEY || '');
   const apiKey = config?.apiKey || process.env.MODEL_API_KEY || process.env.DEEPSEEK_API_KEY || '';
-  const baseUrl = config?.baseUrl || PROVIDER_CONFIGS[provider].baseUrl;
-  const model = config?.model || PROVIDER_CONFIGS[provider].defaultModel;
+  const baseUrl = config?.baseUrl || PROVIDER_CONFIGS[provider]?.baseUrl || 'https://api.deepseek.com/v1';
+  const model = config?.model || PROVIDER_CONFIGS[provider]?.defaultModel || 'deepseek-chat';
 
+  // If no API key, return mock client for MVP functionality
   if (!apiKey) {
-    throw new Error(`API key is required. Set MODEL_API_KEY environment variable.`);
+    console.warn('No API key provided. Using mock model client. Set MODEL_API_KEY for full functionality.');
+    return createMockModelClient();
   }
 
   return {
@@ -245,4 +249,26 @@ export function createMiniMaxClient(apiKey?: string): ModelClient {
  */
 export function getSupportedProviders(): string[] {
   return Object.keys(PROVIDER_CONFIGS);
+}
+
+/**
+ * Create mock model client for MVP functionality without API key
+ */
+export function createMockModelClient(): ModelClient {
+  return {
+    async chat(messages: ModelMessage[]): Promise<string> {
+      // Return a mock response for MVP functionality
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage?.content.includes('fix')) {
+        return '建议检查代码中的问题并进行修复。';
+      }
+      return '这是一个模拟响应。请配置 MODEL_API_KEY 环境变量以启用完整的 AI 功能。';
+    },
+
+    async embed(text: string): Promise<number[]> {
+      // Return a deterministic mock embedding based on text hash
+      const hash = text.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+      return Array(1536).fill(0).map((_, i) => Math.sin(hash + i) * 0.5);
+    },
+  };
 }

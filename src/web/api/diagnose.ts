@@ -14,6 +14,7 @@ import { createTools } from '../../tools';
 import { createStorage } from '../../storage';
 import { createLogger } from '../../utils/logger';
 import { SkillContext } from '../../types';
+import { loadConfig } from '../../config';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 
@@ -37,10 +38,11 @@ diagnoseRouter.post('/', async (c) => {
     // Get project info
     const projectInfo = await getProjectInfo(projectPath);
 
-    // Create context
+    // Load config and create context
+    const config = await loadConfig(projectPath);
     const context: SkillContext = {
       project: projectInfo,
-      config: { enabled: true, options: {} },
+      config: config,
       logger: logger.child('Skill'),
       tools: createTools(projectPath),
       model: createModelClient(),

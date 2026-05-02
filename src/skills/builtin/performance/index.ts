@@ -10,6 +10,7 @@ import {
   Fix,
   Severity,
   DiagnosisType,
+  FileChange,
 } from '../../../types';
 import { generateId } from '../../../utils';
 
@@ -19,87 +20,102 @@ const PERFORMANCE_RULES = [
     id: 'large-bundle',
     pattern: /import\s+.*\s+from\s+['"]lodash['"]/g,
     severity: 'warning' as Severity,
-    title: '大体积依赖导入',
-    description: '导入整个 lodash 库会增加打包体积',
-    suggestion: '使用 lodash-es 或按需导入具体函数',
-    fix: 'import { func } from "lodash-es"',
+    title: 'Large Bundle Import',
+    description: 'Importing entire lodash library increases bundle size',
+    suggestion: 'Use lodash-es or import specific functions',
+    fixable: true,
+    fixType: 'replace',
   },
   {
     id: 'sync-script',
     pattern: /<script\s+src=['"][^'"]+['"]\s*>\s*<\/script>/g,
     severity: 'warning' as Severity,
-    title: '同步脚本加载',
-    description: '同步加载的脚本会阻塞页面渲染',
-    suggestion: '添加 async 或 defer 属性',
-    fix: '添加 async 或 defer 属性',
+    title: 'Synchronous Script Loading',
+    description: 'Synchronous scripts block page rendering',
+    suggestion: 'Add async or defer attributes',
+    fixable: true,
+    fixType: 'replace',
   },
   {
     id: 'unoptimized-image',
     pattern: /<img[^>]*src=['"][^'"]*\.(png|jpg|jpeg)['"][^>]*>/gi,
     severity: 'info' as Severity,
-    title: '未优化的图片格式',
-    description: '使用传统图片格式可能影响加载性能',
-    suggestion: '考虑使用 WebP 或 AVIF 格式',
-    fix: '使用 WebP 格式并提供 fallback',
+    title: 'Unoptimized Image Format',
+    description: 'Traditional image formats may impact loading performance',
+    suggestion: 'Consider WebP or AVIF formats',
+    fixable: false,
+    fixType: 'none',
   },
   {
     id: 'inline-style',
     pattern: /style=\s*['"][^'"]{100,}['"]/g,
     severity: 'info' as Severity,
-    title: '内联样式过长',
-    description: '过长的内联样式会影响缓存和可维护性',
-    suggestion: '将样式移至 CSS 文件',
-    fix: '提取样式到 CSS 类',
+    title: 'Long Inline Styles',
+    description: 'Long inline styles affect caching and maintainability',
+    suggestion: 'Move styles to CSS files',
+    fixable: false,
+    fixType: 'none',
   },
   {
     id: 'console-log',
     pattern: /console\.(log|debug|info|warn)\s*\(/g,
     severity: 'info' as Severity,
-    title: '生产环境 console 语句',
-    description: '生产环境应移除 console 语句',
-    suggestion: '使用环境变量控制日志输出',
-    fix: '移除或使用条件判断包裹',
+    title: 'Console Statements in Production',
+    description: 'Console statements should be removed in production',
+    suggestion: 'Use environment variables to control log output',
+    fixable: true,
+    fixType: 'delete',
   },
   {
     id: 'large-component',
     check: (content: string) => {
-      const lines = content.split('\n').length;
-      return lines > 300;
+      const lines = content.split('\n');
+      return lines.length > 300;
     },
-    severity: 'warning' as Severity,
-    title: '组件文件过大',
-    description: '超过 300 行的组件难以维护和优化',
-    suggestion: '拆分为更小的子组件',
-    fix: '拆分组件逻辑',
+    severity: 'info' as Severity,
+    title: 'Large Component File',
+    description: 'Large components are hard to maintain and may impact performance',
+    suggestion: 'Consider splitting into smaller components',
+    fixable: false,
+    fixType: 'none',
   },
 ];
+
+// Heavy dependencies that should be replaced
+const HEAVY_DEPENDENCIES: Record<string, { alternative: string; reason: string }> = {
+  lodash: { alternative: 'lodash-es', reason: 'Tree-shakeable ES modules' },
+  moment: { alternative: 'dayjs', reason: 'Smaller bundle size' },
+  'date-fns': { alternative: 'dayjs', reason: 'Smaller bundle size for simple use cases' },
+  jquery: { alternative: 'native DOM APIs', reason: 'Native APIs are sufficient in modern browsers' },
+  axios: { alternative: 'fetch', reason: 'Native fetch API is widely supported' },
+};
 
 export class PerformanceSkill extends BaseSkill {
   name = 'performance';
   version = '1.0.0';
-  description = '性能优化检查';
+  description = 'Performance diagnosis and optimization';
 
   triggers = [
     { type: 'command' as const, pattern: 'performance' },
-    { type: 'keyword' as const, pattern: /性能|performance|优化|optimize|速度|speed/i },
+    { type: 'keyword' as const, pattern: /performance|optimize|bundle|speed/i },
   ];
 
   capabilities = [
     {
       name: 'bundle-analysis',
-      description: '检查打包体积和依赖',
-      autoFixable: false,
+      description: 'Analyze bundle size and dependencies',
+      autoFixable: true,
       riskLevel: 'low' as const,
     },
     {
-      name: 'code-splitting',
-      description: '检查代码分割机会',
-      autoFixable: false,
+      name: 'code-optimization',
+      description: 'Suggest code-level optimizations',
+      autoFixable: true,
       riskLevel: 'low' as const,
     },
     {
       name: 'image-optimization',
-      description: '检查图片优化机会',
+      description: 'Check image optimization opportunities',
       autoFixable: false,
       riskLevel: 'low' as const,
     },
@@ -109,11 +125,11 @@ export class PerformanceSkill extends BaseSkill {
     const diagnoses: Diagnosis[] = [];
     const { project, tools, logger } = context;
 
-    logger.info('开始性能检查...');
+    logger.info('Starting performance check...');
 
     // Check source files
     const sourceFiles = await this.getSourceFiles(project.path, tools);
-    logger.debug(`找到 ${sourceFiles.length} 个源文件`);
+    logger.debug(`Found ${sourceFiles.length} source files`);
 
     for (const file of sourceFiles) {
       const content = await tools.fs.readFile(file);
@@ -129,8 +145,149 @@ export class PerformanceSkill extends BaseSkill {
     const packageIssues = await this.checkPackageJson(project.path, tools);
     diagnoses.push(...packageIssues);
 
-    logger.info(`性能检查完成，发现 ${diagnoses.length} 个问题`);
+    logger.info(`Performance check completed, found ${diagnoses.length} issues`);
     return diagnoses;
+  }
+
+  /**
+   * Auto-fix performance issues
+   */
+  async fix(diagnosis: Diagnosis, context: SkillContext): Promise<Fix> {
+    const ruleId = diagnosis.metadata?.ruleId;
+    const filePath = diagnosis.location.file;
+    const content = await context.tools.fs.readFile(filePath);
+
+    let changes: FileChange[] = [];
+
+    switch (ruleId) {
+      case 'large-bundle':
+        changes = this.fixLargeBundle(content, diagnosis);
+        break;
+      case 'sync-script':
+        changes = this.fixSyncScript(content, diagnosis);
+        break;
+      case 'console-log':
+        changes = this.fixConsoleLog(content, diagnosis);
+        break;
+      case 'duplicate-deps':
+        changes = this.fixDuplicateDeps(content, diagnosis);
+        break;
+      default:
+        throw new Error(`Cannot auto-fix rule: ${ruleId}`);
+    }
+
+    return {
+      id: `Fix-${generateId()}`,
+      diagnosisId: diagnosis.id,
+      description: `Fix ${diagnosis.title}`,
+      changes,
+      riskLevel: 'low',
+      autoApplicable: true,
+    };
+  }
+
+  /**
+   * Fix lodash full import to specific import
+   */
+  private fixLargeBundle(content: string, diagnosis: Diagnosis): FileChange[] {
+    const line = diagnosis.location.line || 1;
+    const lines = content.split('\n');
+    const targetLine = lines[line - 1];
+
+    // Match import statement
+    const importMatch = targetLine.match(/import\s+(\w+)\s+from\s+['"]lodash['"]/);
+    if (!importMatch) {
+      throw new Error('Could not find lodash import to fix');
+    }
+
+    const varName = importMatch[1];
+    // Replace with specific import pattern (user needs to specify which functions)
+    const fixedLine = targetLine.replace(
+      /import\s+\w+\s+from\s+['"]lodash['"]/,
+      `// TODO: Replace with specific imports, e.g.:\n// import { specificFunction } from 'lodash-es';
+// or\n// import specificFunction from 'lodash/specificFunction';`
+    );
+
+    return [{
+      file: diagnosis.location.file,
+      type: 'replace',
+      position: { line, column: 1 },
+      content: fixedLine,
+      original: targetLine,
+    }];
+  }
+
+  /**
+   * Fix synchronous script loading by adding async/defer
+   */
+  private fixSyncScript(content: string, diagnosis: Diagnosis): FileChange[] {
+    const line = diagnosis.location.line || 1;
+    const lines = content.split('\n');
+    const targetLine = lines[line - 1];
+
+    // Add defer attribute to script tag
+    const fixedLine = targetLine.replace(
+      /<script\s+src=/,
+      '<script defer src='
+    );
+
+    return [{
+      file: diagnosis.location.file,
+      type: 'replace',
+      position: { line, column: 1 },
+      content: fixedLine,
+      original: targetLine,
+    }];
+  }
+
+  /**
+   * Remove or comment out console statements
+   */
+  private fixConsoleLog(content: string, diagnosis: Diagnosis): FileChange[] {
+    const line = diagnosis.location.line || 1;
+    const lines = content.split('\n');
+    const targetLine = lines[line - 1];
+
+    // Comment out the console statement
+    const fixedLine = targetLine.replace(
+      /(console\.(log|debug|info|warn)\s*\()/,
+      '// $1'
+    );
+
+    return [{
+      file: diagnosis.location.file,
+      type: 'replace',
+      position: { line, column: 1 },
+      content: fixedLine,
+      original: targetLine,
+    }];
+  }
+
+  /**
+   * Fix duplicate dependencies in package.json
+   */
+  private fixDuplicateDeps(content: string, diagnosis: Diagnosis): FileChange[] {
+    const duplicates = diagnosis.metadata?.duplicates as string[] || [];
+    
+    // Parse package.json
+    const pkg = JSON.parse(content);
+    
+    // Remove duplicates from devDependencies
+    if (pkg.devDependencies) {
+      for (const dep of duplicates) {
+        delete pkg.devDependencies[dep];
+      }
+    }
+
+    const fixedContent = JSON.stringify(pkg, null, 2);
+
+    return [{
+      file: diagnosis.location.file,
+      type: 'replace',
+      position: { line: 1, column: 1 },
+      content: fixedContent,
+      original: content,
+    }];
   }
 
   private async getSourceFiles(projectPath: string, tools: SkillContext['tools']): Promise<string[]> {
@@ -141,8 +298,11 @@ export class PerformanceSkill extends BaseSkill {
       const matches = await tools.fs.glob(pattern);
       files.push(...matches.filter(f => 
         !f.includes('node_modules') && 
+        !f.includes('.d.ts') &&
         !f.includes('.test.') &&
-        !f.includes('.spec.')
+        !f.includes('.spec.') &&
+        !f.includes('__tests__') &&
+        !f.includes('__mocks__')
       ));
     }
 
@@ -154,9 +314,11 @@ export class PerformanceSkill extends BaseSkill {
 
     for (const rule of PERFORMANCE_RULES) {
       if (rule.pattern) {
-        const matches = content.matchAll(rule.pattern);
-        for (const match of matches) {
-          const lineNumber = this.getLineNumber(content, match.index!);
+        let match;
+        const pattern = new RegExp(rule.pattern.source, rule.pattern.flags);
+        
+        while ((match = pattern.exec(content)) !== null) {
+          const line = this.getLineNumber(content, match.index);
           
           diagnoses.push({
             id: `Perf-${generateId()}`,
@@ -165,22 +327,18 @@ export class PerformanceSkill extends BaseSkill {
             severity: rule.severity,
             title: rule.title,
             description: rule.description,
-            location: {
-              file: filePath,
-              line: lineNumber,
-            },
-            metadata: {
-              ruleId: rule.id,
-              matchedCode: match[0].slice(0, 100),
-            },
+            location: { file: filePath, line },
+            metadata: { ruleId: rule.id, match: match[0] },
             fixSuggestion: {
               description: rule.suggestion,
-              autoApplicable: false,
-              riskLevel: 'low',
+              autoApplicable: rule.fixable,
+              riskLevel: rule.severity === 'warning' ? 'low' : 'low',
             },
           });
         }
-      } else if (rule.check && rule.check(content)) {
+      }
+
+      if (rule.check && rule.check(content)) {
         diagnoses.push({
           id: `Perf-${generateId()}`,
           skill: this.name,
@@ -188,15 +346,11 @@ export class PerformanceSkill extends BaseSkill {
           severity: rule.severity,
           title: rule.title,
           description: rule.description,
-          location: {
-            file: filePath,
-          },
-          metadata: {
-            ruleId: rule.id,
-          },
+          location: { file: filePath },
+          metadata: { ruleId: rule.id },
           fixSuggestion: {
             description: rule.suggestion,
-            autoApplicable: false,
+            autoApplicable: rule.fixable,
             riskLevel: 'low',
           },
         });
@@ -208,38 +362,30 @@ export class PerformanceSkill extends BaseSkill {
 
   private async checkLargeFiles(projectPath: string, tools: SkillContext['tools']): Promise<Diagnosis[]> {
     const diagnoses: Diagnosis[] = [];
-    
-    // Check for large JS/CSS files
-    const jsFiles = await tools.fs.glob('**/*.js');
-    const cssFiles = await tools.fs.glob('**/*.css');
-    
-    const allFiles = [...jsFiles, ...cssFiles].filter(f => 
-      !f.includes('node_modules') && !f.includes('.min.')
-    );
+    const files = await tools.fs.glob('**/*.{js,ts,jsx,tsx}');
 
-    for (const file of allFiles) {
-      try {
-        const stat = await tools.fs.stat(file);
-        const sizeKB = stat.size / 1024;
-        
-        if (sizeKB > 100) {
-          diagnoses.push({
-            id: `Perf-${generateId()}`,
-            skill: this.name,
-            type: 'performance' as DiagnosisType,
-            severity: sizeKB > 500 ? 'warning' : 'info',
-            title: '大文件警告',
-            description: `文件大小 ${(sizeKB).toFixed(1)}KB，可能影响加载性能`,
-            location: { file },
-            fixSuggestion: {
-              description: '考虑代码分割或压缩',
-              autoApplicable: false,
-              riskLevel: 'low',
-            },
-          });
-        }
-      } catch {
-        // Ignore stat errors
+    for (const file of files) {
+      if (file.includes('node_modules')) continue;
+
+      const stats = await tools.fs.stat(file);
+      const sizeInKB = stats.size / 1024;
+
+      if (sizeInKB > 100) {
+        diagnoses.push({
+          id: `Perf-${generateId()}`,
+          skill: this.name,
+          type: 'performance' as DiagnosisType,
+          severity: 'info',
+          title: 'Large File',
+          description: `File size is ${sizeInKB.toFixed(1)}KB, consider splitting`,
+          location: { file },
+          metadata: { size: sizeInKB },
+          fixSuggestion: {
+            description: 'Split into smaller modules',
+            autoApplicable: false,
+            riskLevel: 'medium',
+          },
+        });
       }
     }
 
@@ -250,27 +396,24 @@ export class PerformanceSkill extends BaseSkill {
     const diagnoses: Diagnosis[] = [];
 
     try {
-      const pkgPath = `${projectPath}/package.json`;
-      const content = await tools.fs.readFile(pkgPath);
-      const pkg = JSON.parse(content);
+      const pkgContent = await tools.fs.readFile('package.json');
+      const pkg = JSON.parse(pkgContent);
 
-      // Check for known heavy dependencies
-      const heavyDeps = ['moment', 'lodash', 'jquery', 'rxjs'];
-      const deps = { ...pkg.dependencies, ...pkg.devDependencies };
-
-      for (const dep of heavyDeps) {
-        if (deps[dep]) {
+      // Check for heavy dependencies
+      for (const dep of Object.keys(pkg.dependencies || {})) {
+        if (HEAVY_DEPENDENCIES[dep]) {
+          const info = HEAVY_DEPENDENCIES[dep];
           diagnoses.push({
             id: `Perf-${generateId()}`,
             skill: this.name,
             type: 'performance' as DiagnosisType,
-            severity: 'info',
-            title: '重量级依赖',
-            description: `${dep} 是一个较大的依赖库`,
+            severity: 'warning',
+            title: 'Heavy Dependency',
+            description: `${dep} is a heavy dependency`,
             location: { file: 'package.json' },
-            metadata: { dependency: dep },
+            metadata: { dependency: dep, alternative: info.alternative },
             fixSuggestion: {
-              description: `考虑使用更轻量的替代方案`,
+              description: `Consider using ${info.alternative} (${info.reason})`,
               autoApplicable: false,
               riskLevel: 'medium',
             },
@@ -289,12 +432,13 @@ export class PerformanceSkill extends BaseSkill {
           skill: this.name,
           type: 'performance' as DiagnosisType,
           severity: 'info',
-          title: '重复依赖',
-          description: `以下依赖同时存在于 dependencies 和 devDependencies: ${duplicates.join(', ')}`,
+          title: 'Duplicate Dependencies',
+          description: `Dependencies exist in both dependencies and devDependencies: ${duplicates.join(', ')}`,
           location: { file: 'package.json' },
+          metadata: { duplicates },
           fixSuggestion: {
-            description: '移除 devDependencies 中的重复依赖',
-            autoApplicable: false,
+            description: 'Remove duplicates from devDependencies',
+            autoApplicable: true,
             riskLevel: 'low',
           },
         });

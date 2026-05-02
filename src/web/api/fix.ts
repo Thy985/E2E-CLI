@@ -14,6 +14,7 @@ import { createTools } from '../../tools';
 import { createStorage } from '../../storage';
 import { createLogger } from '../../utils/logger';
 import { SkillContext, Diagnosis, Fix } from '../../types';
+import { loadConfig } from '../../config';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -31,6 +32,7 @@ fixRouter.post('/preview', async (c) => {
       }, 400);
     }
 
+    const cwd = projectPath || process.cwd();
     const logger = createLogger({ level: 'info' });
     const skillRegistry = createSkillRegistry(logger);
     
@@ -40,11 +42,12 @@ fixRouter.post('/preview', async (c) => {
     skillRegistry.register(new SecuritySkill());
     skillRegistry.register(new UIUXSkill());
 
+    const config = await loadConfig(cwd);
     const context: SkillContext = {
-      project: { name: '', path: projectPath || process.cwd() },
-      config: { enabled: true, options: {} },
+      project: { name: '', path: cwd },
+      config: config,
       logger: logger.child('Skill'),
-      tools: createTools(projectPath || process.cwd()),
+      tools: createTools(cwd),
       model: createModelClient(),
       storage: createStorage(),
     };
