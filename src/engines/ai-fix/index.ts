@@ -96,7 +96,7 @@ File: ${diagnosis.location.file}
 Line: ${diagnosis.location.line}
 
 Code Context:
-${diagnosis.evidence?.code || 'N/A'}
+${diagnosis.evidence?.type === 'code' ? diagnosis.evidence.content : 'N/A'}
 
 Generate a fix in the following JSON format:
 {
@@ -186,16 +186,16 @@ Output in JSON format:
       
       return {
         id: `ai-fix-${diagnosis.id}`,
-        type: parsed.type || 'code-change',
+        diagnosisId: diagnosis.id,
         description: parsed.description,
         riskLevel: parsed.riskLevel || 'medium',
+        autoApplicable: true,
         changes: parsed.changes.map((change: any) => ({
           file: change.file,
           type: change.type,
-          search: change.search,
-          replace: change.replace,
-          content: change.content,
-          line: change.line,
+          position: { line: change.line },
+          content: change.content || change.replace,
+          original: change.search,
         })),
       };
     } catch (error) {

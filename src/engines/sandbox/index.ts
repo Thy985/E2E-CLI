@@ -80,9 +80,9 @@ export class SandboxManager {
       const filePath = path.join(instance.path, change.file);
       
       if (change.type === 'replace') {
-        await this.replaceInFile(filePath, change.search, change.replace);
+        await this.replaceInFile(filePath, change.oldContent || '', change.content || '');
       } else if (change.type === 'insert') {
-        await this.insertInFile(filePath, change.line!, change.content!);
+        await this.insertInFile(filePath, change.position?.line || 0, change.content || '');
       }
     }
   }

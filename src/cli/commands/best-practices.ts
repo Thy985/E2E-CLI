@@ -24,7 +24,7 @@ export const bestPracticesCommand = new Command('best-practices')
       const skill = new BestPracticesSkill();
 
       const context = {
-        project: { rootPath: options.path, name: 'test', type: 'web' },
+        project: { path: options.path, name: 'test', type: 'webapp' as const },
         config,
         logger,
         tools: {} as any,

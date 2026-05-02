@@ -33,17 +33,17 @@ export class BestPracticesSkill extends BaseSkill {
   description = 'Frontend best practices checker';
 
   triggers = [
-    { type: 'command', pattern: 'best-practices', priority: 100 },
-    { type: 'keyword', pattern: /best.?practice|semantic|optimize|performance/i, priority: 80 },
-    { type: 'file', pattern: /\.(html|htm|css|scss|less|tsx|jsx|vue)$/i, priority: 60 },
+    { type: 'command' as const, pattern: 'best-practices', priority: 100 },
+    { type: 'keyword' as const, pattern: /best.?practice|semantic|optimize|performance/i, priority: 80 },
+    { type: 'file' as const, pattern: /\.(html|htm|css|scss|less|tsx|jsx|vue)$/i, priority: 60 },
   ];
 
   capabilities = [
-    { name: 'html-semantic', description: 'HTML semantic check', autoFixable: true, riskLevel: 'low' },
-    { name: 'css-best-practices', description: 'CSS best practices', autoFixable: true, riskLevel: 'low' },
-    { name: 'image-optimization', description: 'Image optimization', autoFixable: true, riskLevel: 'low' },
-    { name: 'performance', description: 'Performance optimization', autoFixable: true, riskLevel: 'medium' },
-    { name: 'ai-assisted-fix', description: 'AI-assisted fix for complex issues', autoFixable: true, riskLevel: 'medium' },
+    { name: 'html-semantic', description: 'HTML semantic check', autoFixable: true, riskLevel: 'low' as const },
+    { name: 'css-best-practices', description: 'CSS best practices', autoFixable: true, riskLevel: 'low' as const },
+    { name: 'image-optimization', description: 'Image optimization', autoFixable: true, riskLevel: 'low' as const },
+    { name: 'performance', description: 'Performance optimization', autoFixable: true, riskLevel: 'medium' as const },
+    { name: 'ai-assisted-fix', description: 'AI-assisted fix for complex issues', autoFixable: true, riskLevel: 'medium' as const },
   ];
 
   private htmlChecker: HTMLChecker;
@@ -77,22 +77,22 @@ export class BestPracticesSkill extends BaseSkill {
 
     // HTML 语义化检查
     context.logger.info('Checking HTML semantics...');
-    const htmlIssues = await this.htmlChecker.check(project.rootPath);
+    const htmlIssues = await this.htmlChecker.check(project.path);
     issues.push(...htmlIssues);
 
     // CSS 最佳实践检查
     context.logger.info('Checking CSS best practices...');
-    const cssIssues = await this.cssChecker.check(project.rootPath);
+    const cssIssues = await this.cssChecker.check(project.path);
     issues.push(...cssIssues);
 
     // 图片优化检查
     context.logger.info('Checking image optimization...');
-    const imageIssues = await this.imageChecker.check(project.rootPath);
+    const imageIssues = await this.imageChecker.check(project.path);
     issues.push(...imageIssues);
 
     // 性能优化检查
     context.logger.info('Checking performance...');
-    const perfIssues = await this.performanceChecker.check(project.rootPath);
+    const perfIssues = await this.performanceChecker.check(project.path);
     issues.push(...perfIssues);
 
     return issues;
@@ -104,16 +104,16 @@ export class BestPracticesSkill extends BaseSkill {
     // 首先尝试规则引擎修复
     switch (diagnosis.metadata?.category) {
       case 'html':
-        return await this.htmlFixGenerator.generateFix(diagnosis, project.rootPath);
+        return await this.htmlFixGenerator.generateFix(diagnosis, project.path);
       
       case 'css':
-        return await this.cssFixGenerator.generateFix(diagnosis, project.rootPath);
+        return await this.cssFixGenerator.generateFix(diagnosis, project.path);
       
       case 'image':
-        return await this.imageFixGenerator.generateFix(diagnosis, project.rootPath);
+        return await this.imageFixGenerator.generateFix(diagnosis, project.path);
       
       case 'performance':
-        return await this.performanceFixGenerator.generateFix(diagnosis, project.rootPath);
+        return await this.performanceFixGenerator.generateFix(diagnosis, project.path);
       
       default:
         // 规则引擎无法修复，尝试 AI 修复

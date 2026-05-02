@@ -59,7 +59,7 @@ export class CSSChecker {
           title: '@import with url() may cause performance issues',
           description: '@import blocks parallel downloads. Consider using <link> tags instead',
           location: { file, line: index + 1, column: 1 },
-          evidence: { code: line.trim() },
+          evidence: { type: 'code', content: line.trim() },
           metadata: {
             category: 'css',
             type: 'at-import',
@@ -167,7 +167,7 @@ export class CSSChecker {
           title: 'ID selector used',
           description: 'ID selectors have high specificity and are hard to override. Consider using class selectors',
           location: { file, line: index + 1, column: match.index + 1 },
-          evidence: { code: line.trim() },
+          evidence: { type: 'code', content: line.trim()  },
           metadata: {
             category: 'css',
             type: 'id-selector',
@@ -195,7 +195,7 @@ export class CSSChecker {
           title: 'Universal selector (*) may impact performance',
           description: 'The universal selector matches all elements and can slow down rendering',
           location: { file, line: index + 1, column: 1 },
-          evidence: { code: line.trim() },
+          evidence: { type: 'code', content: line.trim()  },
           metadata: {
             category: 'css',
             type: 'universal-selector',
@@ -223,7 +223,7 @@ export class CSSChecker {
           title: 'Empty CSS rule',
           description: 'Empty CSS rules should be removed',
           location: { file, line: index + 1, column: 1 },
-          evidence: { code: line.trim() },
+          evidence: { type: 'code', content: line.trim()  },
           metadata: {
             category: 'css',
             type: 'empty-rule',

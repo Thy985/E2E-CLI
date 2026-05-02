@@ -39,16 +39,17 @@ export class DependencyFixGenerator {
     
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: `Update ${pkg} from ${current} to ${latest}`,
       riskLevel: 'medium',
       changes: [
         {
           file: filePath,
           type: 'replace',
-          search: `"${pkg}": "${current}"`,
-          replace: `"${pkg}": "${latest}"`,
-          line: diagnosis.location.line,
+          oldContent: `"${pkg}": "${current}"`,
+          content: `"${pkg}": "${latest}"`,
+          position: { line: diagnosis.location.line || 0 },
         },
       ],
       notes: `Run "npm install" after applying this fix. Review breaking changes before upgrading.`,
@@ -75,16 +76,17 @@ export class DependencyFixGenerator {
 
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: `Remove duplicate ${pkg} from ${shouldBeInDeps ? 'devDependencies' : 'dependencies'}`,
       riskLevel: 'low',
       changes: [
         {
           file: filePath,
           type: 'replace',
-          search: content,
-          replace: JSON.stringify(packageJson, null, 2),
-          line: 1,
+          oldContent: content,
+          content: JSON.stringify(packageJson, null, 2),
+          position: { line: 1 },
         },
       ],
     };
@@ -119,16 +121,17 @@ export class DependencyFixGenerator {
 
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: `Move ${pkg} to ${shouldBeInDeps ? 'dependencies' : 'devDependencies'}`,
       riskLevel: 'low',
       changes: [
         {
           file: filePath,
           type: 'replace',
-          search: content,
-          replace: JSON.stringify(packageJson, null, 2),
-          line: 1,
+          oldContent: content,
+          content: JSON.stringify(packageJson, null, 2),
+          position: { line: 1 },
         },
       ],
     };
@@ -158,16 +161,17 @@ export class DependencyFixGenerator {
 
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: `Replace unsafe version with safe version range for ${pkg}`,
       riskLevel: 'medium',
       changes: [
         {
           file: filePath,
           type: 'replace',
-          search: content,
-          replace: JSON.stringify(packageJson, null, 2),
-          line: 1,
+          oldContent: content,
+          content: JSON.stringify(packageJson, null, 2),
+          position: { line: 1 },
         },
       ],
       notes: 'Review and update to the actual latest version',
@@ -198,16 +202,17 @@ export class DependencyFixGenerator {
 
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: `Add caret (^) to ${pkg} version for minor updates`,
       riskLevel: 'low',
       changes: [
         {
           file: filePath,
           type: 'replace',
-          search: content,
-          replace: JSON.stringify(packageJson, null, 2),
-          line: 1,
+          oldContent: content,
+          content: JSON.stringify(packageJson, null, 2),
+          position: { line: 1 },
         },
       ],
     };

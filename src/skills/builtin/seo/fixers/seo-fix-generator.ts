@@ -43,7 +43,8 @@ export class SEOFixGenerator {
   private fixMissingDescription(filePath: string, diagnosis: Diagnosis): Fix {
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: 'Add meta description',
       riskLevel: 'low',
       changes: [
@@ -51,7 +52,7 @@ export class SEOFixGenerator {
           file: filePath,
           type: 'insert',
           content: '  <meta name="description" content="Page description here (150-160 characters)">\n',
-          line: this.findHeadInsertLine(filePath),
+          position: { line: this.findHeadInsertLine(filePath) },
         },
       ],
     };
@@ -60,7 +61,8 @@ export class SEOFixGenerator {
   private fixMissingKeywords(filePath: string, diagnosis: Diagnosis): Fix {
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: 'Add meta keywords',
       riskLevel: 'low',
       changes: [
@@ -68,7 +70,7 @@ export class SEOFixGenerator {
           file: filePath,
           type: 'insert',
           content: '  <meta name="keywords" content="keyword1, keyword2, keyword3">\n',
-          line: this.findHeadInsertLine(filePath),
+          position: { line: this.findHeadInsertLine(filePath) },
         },
       ],
     };
@@ -80,7 +82,8 @@ export class SEOFixGenerator {
 
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: `Add Open Graph ${ogTag} tag`,
       riskLevel: 'low',
       changes: [
@@ -88,7 +91,7 @@ export class SEOFixGenerator {
           file: filePath,
           type: 'insert',
           content: `  <meta property="og:${ogTag}" content="${content}">\n`,
-          line: this.findHeadInsertLine(filePath),
+          position: { line: this.findHeadInsertLine(filePath) },
         },
       ],
     };
@@ -97,7 +100,8 @@ export class SEOFixGenerator {
   private fixMissingTwitterCard(filePath: string, diagnosis: Diagnosis): Fix {
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: 'Add Twitter Card tags',
       riskLevel: 'low',
       changes: [
@@ -105,7 +109,7 @@ export class SEOFixGenerator {
           file: filePath,
           type: 'insert',
           content: `  <meta name="twitter:card" content="summary_large_image">\n  <meta name="twitter:title" content="Page Title">\n  <meta name="twitter:description" content="Page description">\n  <meta name="twitter:image" content="https://example.com/image.jpg">\n`,
-          line: this.findHeadInsertLine(filePath),
+          position: { line: this.findHeadInsertLine(filePath) },
         },
       ],
     };
@@ -114,7 +118,8 @@ export class SEOFixGenerator {
   private fixMissingCanonical(filePath: string, diagnosis: Diagnosis): Fix {
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: 'Add canonical link',
       riskLevel: 'low',
       changes: [
@@ -122,7 +127,7 @@ export class SEOFixGenerator {
           file: filePath,
           type: 'insert',
           content: '  <link rel="canonical" href="https://example.com/page">\n',
-          line: this.findHeadInsertLine(filePath),
+          position: { line: this.findHeadInsertLine(filePath) },
         },
       ],
     };
@@ -131,7 +136,8 @@ export class SEOFixGenerator {
   private fixMissingRobots(filePath: string, diagnosis: Diagnosis): Fix {
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: 'Add robots meta tag',
       riskLevel: 'low',
       changes: [
@@ -139,7 +145,7 @@ export class SEOFixGenerator {
           file: filePath,
           type: 'insert',
           content: '  <meta name="robots" content="index, follow">\n',
-          line: this.findHeadInsertLine(filePath),
+          position: { line: this.findHeadInsertLine(filePath) },
         },
       ],
     };
@@ -148,7 +154,7 @@ export class SEOFixGenerator {
   private fixExternalLink(filePath: string, diagnosis: Diagnosis): Fix {
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
-    const line = lines[diagnosis.location.line - 1];
+    const line = lines[(diagnosis.location.line || 1) - 1];
     
     // 添加 rel="noopener noreferrer"
     let fixedLine = line;
@@ -160,16 +166,17 @@ export class SEOFixGenerator {
 
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: 'Add rel="noopener noreferrer" to external link',
       riskLevel: 'low',
       changes: [
         {
           file: filePath,
           type: 'replace',
-          search: line,
-          replace: fixedLine,
-          line: diagnosis.location.line,
+          oldContent: line,
+          content: fixedLine,
+          position: { line: diagnosis.location.line || 0 },
         },
       ],
     };

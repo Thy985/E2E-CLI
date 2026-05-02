@@ -209,6 +209,36 @@ export class E2ESkill extends BaseSkill {
         });
       }
 
+      // Check for CSS selectors with nth-of-type
+      const nthOfTypeMatch = line.match(/['"`]([^'"`]*:nth-of-type[^'"`]*)['"`]/);
+      if (nthOfTypeMatch) {
+        issues.push({
+          selector: nthOfTypeMatch[1],
+          line: index + 1,
+          suggestion: 'Use data-testid or role selector instead of nth-of-type',
+        });
+      }
+
+      // Check for XPath selectors
+      const xpathMatch = line.match(/['\"`](\/\/[^'\"`]*)['\"`]/);
+      if (xpathMatch) {
+        issues.push({
+          selector: xpathMatch[1],
+          line: index + 1,
+          suggestion: 'Use getByRole() or getByText() instead of xpath',
+        });
+      }
+
+      // Check for index-based selectors like .eq()
+      const eqMatch = line.match(/\.eq\((\d+)\)/);
+      if (eqMatch) {
+        issues.push({
+          selector: `.eq(${eqMatch[1]})`,
+          line: index + 1,
+          suggestion: 'Use getByRole() or data-testid instead of index-based selection',
+        });
+      }
+
       // Check for deep CSS selectors
       const deepMatch = line.match(/['"`]([^'"`]*\s{2,}[^'"`]*)['"`]/);
       if (deepMatch) {

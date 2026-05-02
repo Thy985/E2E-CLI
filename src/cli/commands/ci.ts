@@ -25,7 +25,20 @@ export interface CICommandOptions {
   path?: string;
 }
 
-export async function ciCommand(action: string, options: CICommandOptions) {
+export const ciCommand = {
+  generate: async (options: CICommandOptions) => {
+    const logger = createLogger({ level: 'info' });
+    const formatter = createFormatter();
+    await initCI(options, formatter, logger);
+  },
+  run: async (options: CICommandOptions) => {
+    const logger = createLogger({ level: 'info' });
+    const formatter = createFormatter();
+    await runCI(options, formatter, logger);
+  },
+};
+
+export async function ciCommandOld(action: string, options: CICommandOptions) {
   const logger = createLogger({ level: 'info' });
   const formatter = createFormatter();
 

@@ -60,7 +60,7 @@ export class ImageChecker {
             title: 'Image missing width or height attributes',
             description: 'Images should have explicit width and height to prevent layout shift (CLS)',
             location: { file, line: index + 1, column: match.index + 1 },
-            evidence: { code: line.trim() },
+            evidence: { type: 'code', content: line.trim()  },
             metadata: {
               category: 'image',
               type: 'missing-dimensions',
@@ -94,7 +94,7 @@ export class ImageChecker {
             title: 'Image missing lazy loading',
             description: 'Images below the fold should use loading="lazy" for better performance',
             location: { file, line: index + 1, column: match.index + 1 },
-            evidence: { code: line.trim() },
+            evidence: { type: 'code', content: line.trim()  },
             metadata: {
               category: 'image',
               type: 'missing-lazy-loading',
@@ -130,7 +130,7 @@ export class ImageChecker {
               title: 'Image not using modern format',
               description: 'Consider using WebP or AVIF format for better compression',
               location: { file, line: index + 1, column: match.index + 1 },
-              evidence: { code: line.trim() },
+              evidence: { type: 'code', content: line.trim()  },
               metadata: {
                 category: 'image',
                 type: 'legacy-format',
@@ -168,7 +168,7 @@ export class ImageChecker {
               title: 'Image missing responsive srcset',
               description: 'Consider using srcset for responsive images to serve appropriate sizes',
               location: { file, line: index + 1, column: match.index + 1 },
-              evidence: { code: line.trim() },
+              evidence: { type: 'code', content: line.trim()  },
               metadata: {
                 category: 'image',
                 type: 'missing-srcset',

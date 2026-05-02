@@ -122,12 +122,33 @@ export class APISkill extends BaseSkill {
   version = '1.0.0';
   description = 'API endpoint testing and validation';
 
+  triggers = [
+    { type: 'command' as const, pattern: 'api', priority: 100 },
+    { type: 'keyword' as const, pattern: /api|endpoint|rest|graphql/i, priority: 80 },
+    { type: 'file' as const, pattern: /\.(ts|js|tsx|jsx)$/i, priority: 60 },
+  ];
+
+  capabilities = [
+    {
+      name: 'api-testing',
+      description: 'Test API endpoints',
+      autoFixable: false,
+      riskLevel: 'low' as const,
+    },
+    {
+      name: 'api-validation',
+      description: 'Validate API responses',
+      autoFixable: false,
+      riskLevel: 'low' as const,
+    },
+  ];
+
   async diagnose(context: SkillContext): Promise<Diagnosis[]> {
     const issues: Diagnosis[] = [];
     const { project } = context;
 
     // Scan for API endpoints
-    const endpoints = await this.scanEndpoints(project.rootPath);
+    const endpoints = await this.scanEndpoints(project.path);
 
     // Check each endpoint
     for (const endpoint of endpoints) {
@@ -136,7 +157,7 @@ export class APISkill extends BaseSkill {
     }
 
     // Check API rules
-    const ruleIssues = await this.checkRules(project.rootPath);
+    const ruleIssues = await this.checkRules(project.path);
     issues.push(...ruleIssues);
 
     return issues;

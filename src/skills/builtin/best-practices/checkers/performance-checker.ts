@@ -70,7 +70,7 @@ export class PerformanceChecker {
           title: 'Render-blocking script',
           description: 'Script without async/defer blocks HTML parsing',
           location: { file, line: index + 1, column: 1 },
-          evidence: { code: line.trim() },
+          evidence: { type: 'code', content: line.trim()  },
           metadata: {
             category: 'performance',
             type: 'render-blocking',
@@ -91,7 +91,7 @@ export class PerformanceChecker {
             title: 'Stylesheet in body',
             description: 'Stylesheets should be in <head> to avoid render blocking',
             location: { file, line: index + 1, column: 1 },
-            evidence: { code: line.trim() },
+            evidence: { type: 'code', content: line.trim()  },
             metadata: {
               category: 'performance',
               type: 'css-in-body',
@@ -120,7 +120,7 @@ export class PerformanceChecker {
           title: 'Large inline style',
           description: 'Large inline styles increase HTML size and prevent caching',
           location: { file, line: index + 1, column: 1 },
-          evidence: { code: line.trim().substring(0, 100) + '...' },
+          evidence: { type: 'code', content: line.trim().substring(0, 100) + '...'  },
           metadata: {
             category: 'performance',
             type: 'inline-style',
@@ -153,7 +153,7 @@ export class PerformanceChecker {
             title: `Heavy dependency: ${lib.name}`,
             description: `${lib.name} is a large library that may impact bundle size`,
             location: { file, line: index + 1, column: 1 },
-            evidence: { code: line.trim() },
+            evidence: { type: 'code', content: line.trim()  },
             metadata: {
               category: 'performance',
               type: 'heavy-dependency',
@@ -185,7 +185,7 @@ export class PerformanceChecker {
             title: 'DOM manipulation in loop',
             description: 'DOM operations in loops can cause performance issues',
             location: { file, line: index + 1, column: 1 },
-            evidence: { code: line.trim() },
+            evidence: { type: 'code', content: line.trim()  },
             metadata: {
               category: 'performance',
               type: 'dom-in-loop',
@@ -208,7 +208,7 @@ export class PerformanceChecker {
             title: 'Function creation in loop',
             description: 'Creating functions in loops can impact performance',
             location: { file, line: index + 1, column: 1 },
-            evidence: { code: line.trim() },
+            evidence: { type: 'code', content: line.trim()  },
             metadata: {
               category: 'performance',
               type: 'function-in-loop',
@@ -239,7 +239,7 @@ export class PerformanceChecker {
             title: 'Potential memory leak: event listener not removed',
             description: 'Event listeners should be removed to prevent memory leaks',
             location: { file, line: index + 1, column: 1 },
-            evidence: { code: line.trim() },
+            evidence: { type: 'code', content: line.trim()  },
             metadata: {
               category: 'performance',
               type: 'memory-leak',
@@ -261,7 +261,7 @@ export class PerformanceChecker {
             title: 'Potential memory leak: timer not cleared',
             description: 'Timers should be cleared to prevent memory leaks',
             location: { file, line: index + 1, column: 1 },
-            evidence: { code: line.trim() },
+            evidence: { type: 'code', content: line.trim()  },
             metadata: {
               category: 'performance',
               type: 'memory-leak',

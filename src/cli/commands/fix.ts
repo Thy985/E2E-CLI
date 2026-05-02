@@ -67,7 +67,7 @@ async function runBatchFix(options: any, config: any, logger: any) {
   const result = await batchEngine.batchFix(
     allIssues,
     {
-      project: { rootPath: options.path, name: 'project', type: 'web' },
+      project: { path: options.path, name: 'project', type: 'webapp' as const },
       config,
       logger,
       tools: {} as any,
@@ -154,7 +154,7 @@ async function runInteractiveFix(options: any, config: any, logger: any) {
 async function collectAllIssues(projectPath: string, config: any, logger: any): Promise<any[]> {
   const issues: any[] = [];
   const context = {
-    project: { rootPath: projectPath, name: 'project', type: 'web' },
+    project: { path: projectPath, name: 'project', type: 'webapp' as const },
     config,
     logger,
     tools: {} as any,

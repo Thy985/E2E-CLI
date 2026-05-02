@@ -65,9 +65,8 @@ export class LayoutChecker {
             line: index + 1,
             column: line.indexOf('justify-content') + 1,
           },
-          evidence: {
-            code: line.trim(),
-          },
+          evidence: { type: 'code', content: line.trim(),
+           },
           metadata: {
             category: 'layout',
             type: 'flex-alignment',
@@ -89,9 +88,8 @@ export class LayoutChecker {
             line: index + 1,
             column: 1,
           },
-          evidence: {
-            code: line.trim(),
-          },
+          evidence: { type: 'code', content: line.trim(),
+           },
           metadata: {
             category: 'layout',
             type: 'missing-align-items',
@@ -154,9 +152,8 @@ export class LayoutChecker {
               line: index + 1,
               column: 1,
             },
-            evidence: {
-              code: line.trim(),
-            },
+            evidence: { type: 'code', content: line.trim(),
+             },
             metadata: {
               category: 'layout',
               type: 'missing-max-width',

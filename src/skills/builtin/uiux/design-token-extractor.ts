@@ -52,8 +52,8 @@ export class DesignTokenExtractor {
     this.mergeTokens(tokens, themeTokens);
 
     // 4. 从 Figma 同步（如果配置了）
-    if (config.skills?.uiux?.figmaToken) {
-      const figmaTokens = await this.extractFromFigma(config.skills.uiux.figmaToken);
+    if ((config as any).uiux?.figmaToken) {
+      const figmaTokens = await this.extractFromFigma((config as any).uiux.figmaToken);
       this.mergeTokens(tokens, figmaTokens);
     }
 

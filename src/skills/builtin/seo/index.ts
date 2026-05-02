@@ -25,16 +25,16 @@ export class SEOSkill extends BaseSkill {
   description = 'SEO optimization checker';
 
   triggers = [
-    { type: 'command', pattern: 'seo', priority: 100 },
-    { type: 'keyword', pattern: /seo|meta|structured.?data|schema/i, priority: 80 },
-    { type: 'file', pattern: /\.(html|htm|tsx|jsx|vue)$/i, priority: 60 },
+    { type: 'command' as const, pattern: 'seo', priority: 100 },
+    { type: 'keyword' as const, pattern: /seo|meta|structured.?data|schema/i, priority: 80 },
+    { type: 'file' as const, pattern: /\.(html|htm|tsx|jsx|vue)$/i, priority: 60 },
   ];
 
   capabilities = [
-    { name: 'meta-tags', description: 'Meta tags check', autoFixable: true, riskLevel: 'low' },
-    { name: 'structured-data', description: 'Structured data check', autoFixable: false, riskLevel: 'low' },
-    { name: 'link-optimization', description: 'Link optimization', autoFixable: true, riskLevel: 'low' },
-    { name: 'content-optimization', description: 'Content optimization', autoFixable: false, riskLevel: 'low' },
+    { name: 'meta-tags', description: 'Meta tags check', autoFixable: true, riskLevel: 'low' as const },
+    { name: 'structured-data', description: 'Structured data check', autoFixable: false, riskLevel: 'low' as const },
+    { name: 'link-optimization', description: 'Link optimization', autoFixable: true, riskLevel: 'low' as const },
+    { name: 'content-optimization', description: 'Content optimization', autoFixable: false, riskLevel: 'low' as const },
   ];
 
   private fixGenerator: SEOFixGenerator;
@@ -48,11 +48,11 @@ export class SEOSkill extends BaseSkill {
     const issues: Diagnosis[] = [];
     const { project } = context;
 
-    const htmlFiles = await this.findHTMLFiles(project.rootPath);
+    const htmlFiles = await this.findHTMLFiles(project.path);
 
     for (const file of htmlFiles) {
       const content = await fs.promises.readFile(file, 'utf-8');
-      const relativePath = path.relative(project.rootPath, file);
+      const relativePath = path.relative(project.path, file);
 
       // Meta 标签检查
       const metaIssues = this.checkMetaTags(content, relativePath);
@@ -83,7 +83,7 @@ export class SEOSkill extends BaseSkill {
   }
 
   async fix(diagnosis: Diagnosis, context: SkillContext): Promise<Fix> {
-    return await this.fixGenerator.generateFix(diagnosis, context.project.rootPath);
+    return await this.fixGenerator.generateFix(diagnosis, context.project.path);
   }
 
   canAutoFix(diagnosis: Diagnosis): boolean {
@@ -259,7 +259,7 @@ export class SEOSkill extends BaseSkill {
             title: 'External link missing rel="noopener"',
             description: 'External links should use rel="noopener noreferrer" for security and performance',
             location: { file, line: index + 1, column: match.index + 1 },
-            evidence: { code: line.trim() },
+            evidence: { type: 'code', content: line.trim()  },
             metadata: {
               category: 'seo',
               type: 'external-link-security',
@@ -280,7 +280,7 @@ export class SEOSkill extends BaseSkill {
           title: 'Empty or placeholder link',
           description: 'Links should have meaningful destinations',
           location: { file, line: index + 1, column: match.index + 1 },
-          evidence: { code: line.trim() },
+          evidence: { type: 'code', content: line.trim()  },
           metadata: {
             category: 'seo',
             type: 'empty-link',
@@ -385,7 +385,7 @@ export class SEOSkill extends BaseSkill {
               title: 'Non-descriptive image filename',
               description: 'Image filenames should be descriptive for SEO',
               location: { file, line: index + 1, column: match.index + 1 },
-              evidence: { code: filename },
+              evidence: { type: 'code', content: filename  },
               metadata: {
                 category: 'seo',
                 type: 'image-filename',

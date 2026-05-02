@@ -1,7 +1,7 @@
-/**
+﻿/**
  * CSS Fix Generator
  * 
- * 自动生成 CSS 修复代码
+ * 鑷姩生成 CSS 淇以ｇ爜
  */
 
 import * as fs from 'fs';
@@ -37,22 +37,23 @@ export class CSSFixGenerator {
   private fixAtImport(filePath: string, diagnosis: Diagnosis): Fix {
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
-    const line = lines[diagnosis.location.line - 1];
+    const line = lines[(diagnosis.location.line || 1) - 1];
     
-    // 提取 URL
+    // 鎻愬彇 URL
     const urlMatch = line.match(/@import\s+url\(['"]?([^'"]+)['"]?\)/i);
     const url = urlMatch ? urlMatch[1] : '';
 
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: `Remove @import and suggest using <link> tag instead`,
       riskLevel: 'medium',
       changes: [
         {
           file: filePath,
           type: 'delete',
-          line: diagnosis.location.line,
+          position: { line: diagnosis.location.line || 0 },
         },
       ],
       notes: `Add this to HTML instead: <link rel="stylesheet" href="${url}">`,
@@ -62,18 +63,19 @@ export class CSSFixGenerator {
   private fixEmptyRule(filePath: string, diagnosis: Diagnosis): Fix {
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
-    const line = lines[diagnosis.location.line - 1];
+    const line = lines[(diagnosis.location.line || 1) - 1];
 
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: 'Remove empty CSS rule',
       riskLevel: 'low',
       changes: [
         {
           file: filePath,
           type: 'delete',
-          line: diagnosis.location.line,
+          position: { line: diagnosis.location.line || 0 },
         },
       ],
     };
@@ -82,23 +84,24 @@ export class CSSFixGenerator {
   private fixImportantOveruse(filePath: string, diagnosis: Diagnosis): Fix {
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
-    const line = lines[diagnosis.location.line - 1];
+    const line = lines[(diagnosis.location.line || 1) - 1];
     
-    // 移除 !important
+    // 绉婚櫎 !important
     const fixedLine = line.replace(/\s*!important/g, '');
 
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: 'Remove !important (review specificity)',
       riskLevel: 'high',
       changes: [
         {
           file: filePath,
           type: 'replace',
-          search: line,
-          replace: fixedLine,
-          line: diagnosis.location.line,
+          oldContent: line,
+          content: fixedLine,
+          position: { line: diagnosis.location.line || 0 },
         },
       ],
       notes: 'Review CSS specificity to ensure styles still apply correctly',
@@ -108,23 +111,24 @@ export class CSSFixGenerator {
   private fixIdSelector(filePath: string, diagnosis: Diagnosis): Fix {
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
-    const line = lines[diagnosis.location.line - 1];
+    const line = lines[(diagnosis.location.line || 1) - 1];
     
-    // 将 #id 转换为 .class
+    // 灏?#id 杞崲涓?.class
     const fixedLine = line.replace(/#([a-zA-Z][a-zA-Z0-9_-]*)/g, '.$1');
 
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: 'Convert ID selector to class selector',
       riskLevel: 'high',
       changes: [
         {
           file: filePath,
           type: 'replace',
-          search: line,
-          replace: fixedLine,
-          line: diagnosis.location.line,
+          oldContent: line,
+          content: fixedLine,
+          position: { line: diagnosis.location.line || 0 },
         },
       ],
       notes: 'Remember to update HTML to use class instead of id',
@@ -134,19 +138,20 @@ export class CSSFixGenerator {
   private fixUniversalSelector(filePath: string, diagnosis: Diagnosis): Fix {
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
-    const line = lines[diagnosis.location.line - 1];
+    const line = lines[(diagnosis.location.line || 1) - 1];
 
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: 'Remove universal selector (manual review needed)',
       riskLevel: 'high',
       changes: [
         {
           file: filePath,
-          type: 'comment',
+          type: 'insert',
           content: '/* TODO: Replace universal selector with specific selectors */',
-          line: diagnosis.location.line,
+          position: { line: diagnosis.location.line || 0 },
         },
       ],
       notes: 'Universal selector impacts performance. Consider using more specific selectors.',
@@ -155,3 +160,5 @@ export class CSSFixGenerator {
 }
 
 export default CSSFixGenerator;
+
+

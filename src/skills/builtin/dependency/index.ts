@@ -25,16 +25,16 @@ export class DependencySkill extends BaseSkill {
   description = 'Dependency health checker';
 
   triggers = [
-    { type: 'command', pattern: 'dependency', priority: 100 },
-    { type: 'keyword', pattern: /dependency|package|npm|yarn|outdated/i, priority: 80 },
-    { type: 'file', pattern: /package\.json$/i, priority: 100 },
+    { type: 'command' as const, pattern: 'dependency', priority: 100 },
+    { type: 'keyword' as const, pattern: /dependency|package|npm|yarn|outdated/i, priority: 80 },
+    { type: 'file' as const, pattern: /package\.json$/i, priority: 100 },
   ];
 
   capabilities = [
-    { name: 'outdated-check', description: 'Check outdated dependencies', autoFixable: true, riskLevel: 'low' },
-    { name: 'vulnerability-check', description: 'Check security vulnerabilities', autoFixable: false, riskLevel: 'high' },
-    { name: 'duplicate-check', description: 'Check duplicate dependencies', autoFixable: true, riskLevel: 'low' },
-    { name: 'unused-check', description: 'Check unused dependencies', autoFixable: true, riskLevel: 'medium' },
+    { name: 'outdated-check', description: 'Check outdated dependencies', autoFixable: true, riskLevel: 'low' as const },
+    { name: 'vulnerability-check', description: 'Check security vulnerabilities', autoFixable: false, riskLevel: 'high' as const },
+    { name: 'duplicate-check', description: 'Check duplicate dependencies', autoFixable: true, riskLevel: 'low' as const },
+    { name: 'unused-check', description: 'Check unused dependencies', autoFixable: true, riskLevel: 'medium' as const },
   ];
 
   private fixGenerator: DependencyFixGenerator;
@@ -48,7 +48,7 @@ export class DependencySkill extends BaseSkill {
     const issues: Diagnosis[] = [];
     const { project } = context;
 
-    const packageJsonPath = path.join(project.rootPath, 'package.json');
+    const packageJsonPath = path.join(project.path, 'package.json');
     
     if (!fs.existsSync(packageJsonPath)) {
       return issues;
@@ -85,7 +85,7 @@ export class DependencySkill extends BaseSkill {
   }
 
   async fix(diagnosis: Diagnosis, context: SkillContext): Promise<Fix> {
-    return await this.fixGenerator.generateFix(diagnosis, context.project.rootPath);
+    return await this.fixGenerator.generateFix(diagnosis, context.project.path);
   }
 
   canAutoFix(diagnosis: Diagnosis): boolean {

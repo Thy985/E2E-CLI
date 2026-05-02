@@ -79,7 +79,7 @@ export class BatchFixEngine {
     let sandboxId: string | undefined;
     if (options.preview) {
       const sandbox = await this.sandboxManager.create({
-        projectPath: context.project.rootPath,
+        projectPath: context.project.path,
       });
       sandboxId = sandbox.id;
     }
@@ -118,7 +118,7 @@ export class BatchFixEngine {
           await this.sandboxManager.applyFix(sandboxId, fix);
         } else {
           // 直接应用
-          await this.fixEngine.applyFix(fix, context.project.rootPath);
+          await this.fixEngine.applyFix(fix, context.project.path);
         }
 
         result.appliedFixes.push(fix);

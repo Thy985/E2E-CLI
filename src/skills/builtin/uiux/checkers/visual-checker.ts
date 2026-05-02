@@ -80,9 +80,8 @@ export class VisualChecker {
               line: index + 1,
               column: match.index + 1,
             },
-            evidence: {
-              code: line.trim(),
-            },
+            evidence: { type: 'code', content: line.trim(),
+             },
             metadata: {
               category: 'visual',
               type: 'color-mismatch',
@@ -123,9 +122,8 @@ export class VisualChecker {
               line: index + 1,
               column: match.index + 1,
             },
-            evidence: {
-              code: line.trim(),
-            },
+            evidence: { type: 'code', content: line.trim(),
+             },
             metadata: {
               category: 'visual',
               type: 'spacing-inconsistent',
@@ -167,9 +165,8 @@ export class VisualChecker {
               line: index + 1,
               column: match.index + 1,
             },
-            evidence: {
-              code: line.trim(),
-            },
+            evidence: { type: 'code', content: line.trim(),
+             },
             metadata: {
               category: 'visual',
               type: 'border-radius-mismatch',

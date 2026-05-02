@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Performance Skill
  * Checks performance issues and optimization opportunities
  */
@@ -213,7 +213,7 @@ export class PerformanceSkill extends BaseSkill {
       type: 'replace',
       position: { line, column: 1 },
       content: fixedLine,
-      original: targetLine,
+      oldContent: targetLine,
     }];
   }
 
@@ -236,7 +236,7 @@ export class PerformanceSkill extends BaseSkill {
       type: 'replace',
       position: { line, column: 1 },
       content: fixedLine,
-      original: targetLine,
+      oldContent: targetLine,
     }];
   }
 
@@ -259,7 +259,7 @@ export class PerformanceSkill extends BaseSkill {
       type: 'replace',
       position: { line, column: 1 },
       content: fixedLine,
-      original: targetLine,
+      oldContent: targetLine,
     }];
   }
 
@@ -286,7 +286,7 @@ export class PerformanceSkill extends BaseSkill {
       type: 'replace',
       position: { line: 1, column: 1 },
       content: fixedContent,
-      original: content,
+      oldContent: content,
     }];
   }
 
@@ -456,3 +456,4 @@ export class PerformanceSkill extends BaseSkill {
 }
 
 export default PerformanceSkill;
+

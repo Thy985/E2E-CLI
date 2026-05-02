@@ -60,8 +60,10 @@ export type DiagnosisType =
   | 'security'
   | 'functionality'
   | 'code-quality'
-  | 'ui-ux'
+  | 'best-practice'
   | 'seo'
+  | 'ui-ux'
+  | 'e2e'
   | 'api'
   | 'dependency'
   | 'complexity';
@@ -114,6 +116,7 @@ export interface Fix {
   riskLevel: 'low' | 'medium' | 'high';
   autoApplicable: boolean;
   verificationSteps?: string[];
+  notes?: string;
 }
 
 export interface FileChange {
@@ -333,6 +336,8 @@ export interface Config {
     path: string;
   };
   ignore?: string[];
+  // Allow additional skill-specific config
+  [key: string]: any;
 }
 
 export interface SkillConfigEntry {

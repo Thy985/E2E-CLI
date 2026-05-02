@@ -40,7 +40,7 @@ export class PerformanceFixGenerator {
   private fixRenderBlocking(filePath: string, diagnosis: Diagnosis): Fix {
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
-    const line = lines[diagnosis.location.line - 1];
+    const line = lines[(diagnosis.location.line || 1) - 1];
     
     // 添加 async 或 defer
     let fixedLine = line;
@@ -50,16 +50,17 @@ export class PerformanceFixGenerator {
 
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: 'Add defer attribute to script to prevent render blocking',
       riskLevel: 'low',
       changes: [
         {
           file: filePath,
           type: 'replace',
-          search: line,
-          replace: fixedLine,
-          line: diagnosis.location.line,
+          oldContent: line,
+          content: fixedLine,
+          position: { line: diagnosis.location.line || 0 },
         },
       ],
     };
@@ -68,19 +69,20 @@ export class PerformanceFixGenerator {
   private fixCSSInBody(filePath: string, diagnosis: Diagnosis): Fix {
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
-    const line = lines[diagnosis.location.line - 1];
+    const line = lines[(diagnosis.location.line || 1) - 1];
 
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: 'Move CSS link to head section (manual review needed)',
       riskLevel: 'medium',
       changes: [
         {
           file: filePath,
-          type: 'comment',
+          type: 'insert',
           content: `<!-- TODO: Move this to <head>: ${line.trim()} -->`,
-          line: diagnosis.location.line,
+          position: { line: diagnosis.location.line || 0 },
         },
       ],
       notes: 'CSS should be loaded in <head> to prevent render blocking',
@@ -92,7 +94,7 @@ export class PerformanceFixGenerator {
     const lines = content.split('\n');
     
     // 找到循环开始和结束
-    const startLine = diagnosis.location.line - 1;
+    const startLine = (diagnosis.location.line || 1) - 1;
     let endLine = startLine;
     let braceCount = 0;
     let inLoop = false;
@@ -133,16 +135,17 @@ export class PerformanceFixGenerator {
 
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: 'Cache DOM element outside loop',
       riskLevel: 'medium',
       changes: [
         {
           file: filePath,
           type: 'replace',
-          search: lines.slice(startLine, endLine + 1).join('\n'),
-          replace: fixedLines.join('\n'),
-          line: startLine + 1,
+          oldContent: lines.slice(startLine, endLine + 1).join('\n'),
+          content: fixedLines.join('\n'),
+          position: { line: startLine + 1 },
         },
       ],
     };
@@ -151,7 +154,7 @@ export class PerformanceFixGenerator {
   private fixFunctionInLoop(filePath: string, diagnosis: Diagnosis): Fix {
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
-    const line = lines[diagnosis.location.line - 1];
+    const line = lines[(diagnosis.location.line || 1) - 1];
     
     // 简单情况：将箭头函数提取到循环外
     const arrowMatch = line.match(/const\s+(\w+)\s*=\s*(\([^)]*\)\s*=>)/);
@@ -160,17 +163,18 @@ export class PerformanceFixGenerator {
       const funcDef = line.trim();
       
       return {
-        id: `fix-${diagnosis.id}`,
-        type: 'code-change',
+      id: `fix-${diagnosis.id}`,
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
         description: 'Move function definition outside loop',
         riskLevel: 'medium',
         changes: [
           {
             file: filePath,
             type: 'replace',
-            search: line,
-            replace: `// ${funcName} defined outside loop`,
-            line: diagnosis.location.line,
+            oldContent: line,
+            content: `// ${funcName} defined outside loop`,
+            position: { line: diagnosis.location.line || 0 },
           },
         ],
         notes: `Move this function outside the loop: ${funcDef}`,
@@ -179,15 +183,16 @@ export class PerformanceFixGenerator {
 
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: 'Review function creation in loop',
       riskLevel: 'medium',
       changes: [
         {
           file: filePath,
-          type: 'comment',
+          type: 'insert',
           content: `// TODO: Move function definition outside loop`,
-          line: diagnosis.location.line,
+          position: { line: diagnosis.location.line || 0 },
         },
       ],
     };
@@ -196,7 +201,7 @@ export class PerformanceFixGenerator {
   private fixEventListenerLeak(filePath: string, diagnosis: Diagnosis): Fix {
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
-    const line = lines[diagnosis.location.line - 1];
+    const line = lines[(diagnosis.location.line || 1) - 1];
     
     // 提取事件监听器信息
     const match = line.match(/(\w+)\.addEventListener\(['"](\w+)['"]/);
@@ -216,7 +221,8 @@ export class PerformanceFixGenerator {
 
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: 'Add event listener cleanup',
       riskLevel: 'medium',
       changes: [
@@ -224,7 +230,7 @@ export class PerformanceFixGenerator {
           file: filePath,
           type: 'insert',
           content: cleanupCode,
-          line: lines.length,
+          position: { line: lines.length },
         },
       ],
     };
@@ -233,7 +239,7 @@ export class PerformanceFixGenerator {
   private fixTimerLeak(filePath: string, diagnosis: Diagnosis): Fix {
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
-    const line = lines[diagnosis.location.line - 1];
+    const line = lines[(diagnosis.location.line || 1) - 1];
     
     // 提取定时器变量名
     const match = line.match(/(const|let|var)\s+(\w+)\s*=\s*(setInterval|setTimeout)/);
@@ -249,7 +255,8 @@ export class PerformanceFixGenerator {
 
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: 'Add timer cleanup',
       riskLevel: 'medium',
       changes: [
@@ -257,7 +264,7 @@ export class PerformanceFixGenerator {
           file: filePath,
           type: 'insert',
           content: cleanupCode,
-          line: lines.length,
+          position: { line: lines.length },
         },
       ],
     };

@@ -133,7 +133,7 @@ export class HTMLChecker {
             title: 'Input missing label',
             description: 'Form inputs should have associated labels for accessibility',
             location: { file, line: index + 1, column: match.index + 1 },
-            evidence: { code: line.trim() },
+            evidence: { type: 'code', content: line.trim()  },
             metadata: {
               category: 'html',
               type: 'missing-label',
@@ -166,7 +166,7 @@ export class HTMLChecker {
             title: 'Image missing alt attribute',
             description: 'Images should have alt attributes for accessibility',
             location: { file, line: index + 1, column: match.index + 1 },
-            evidence: { code: line.trim() },
+            evidence: { type: 'code', content: line.trim()  },
             metadata: {
               category: 'html',
               type: 'missing-alt',

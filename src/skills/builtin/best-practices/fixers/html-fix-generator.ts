@@ -40,16 +40,17 @@ export class HTMLFixGenerator {
   private fixMissingLang(filePath: string, diagnosis: Diagnosis): Fix {
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: 'Add lang attribute to html element',
       riskLevel: 'low',
       changes: [
         {
           file: filePath,
           type: 'replace',
-          search: /<html>/i,
-          replace: '<html lang="en">',
-          line: diagnosis.location.line,
+          oldContent: '<html>',
+          content: '<html lang="en">',
+          position: { line: diagnosis.location.line || 0 },
         },
       ],
     };
@@ -58,7 +59,8 @@ export class HTMLFixGenerator {
   private fixMissingViewport(filePath: string, diagnosis: Diagnosis): Fix {
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: 'Add viewport meta tag',
       riskLevel: 'low',
       changes: [
@@ -66,7 +68,7 @@ export class HTMLFixGenerator {
           file: filePath,
           type: 'insert',
           content: '  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n',
-          line: diagnosis.location.line + 1,
+          position: { line: (diagnosis.location.line || 0) + 1 },
         },
       ],
     };
@@ -75,7 +77,8 @@ export class HTMLFixGenerator {
   private fixMissingTitle(filePath: string, diagnosis: Diagnosis): Fix {
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: 'Add title element',
       riskLevel: 'low',
       changes: [
@@ -83,7 +86,7 @@ export class HTMLFixGenerator {
           file: filePath,
           type: 'insert',
           content: '  <title>Page Title</title>\n',
-          line: diagnosis.location.line + 1,
+          position: { line: (diagnosis.location.line || 0) + 1 },
         },
       ],
     };
@@ -92,23 +95,24 @@ export class HTMLFixGenerator {
   private fixMissingAlt(filePath: string, diagnosis: Diagnosis): Fix {
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
-    const line = lines[diagnosis.location.line - 1];
+    const line = lines[(diagnosis.location.line || 1) - 1];
     
     // 在 img 标签中添加 alt=""
     const fixedLine = line.replace(/<img([^>]*)>/i, '<img$1 alt="">');
 
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: 'Add empty alt attribute to image',
       riskLevel: 'low',
       changes: [
         {
           file: filePath,
           type: 'replace',
-          search: line,
-          replace: fixedLine,
-          line: diagnosis.location.line,
+          oldContent: line,
+          content: fixedLine,
+          position: { line: diagnosis.location.line || 0 },
         },
       ],
     };
@@ -117,7 +121,7 @@ export class HTMLFixGenerator {
   private fixMissingLabel(filePath: string, diagnosis: Diagnosis): Fix {
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
-    const line = lines[diagnosis.location.line - 1];
+    const line = lines[(diagnosis.location.line || 1) - 1];
     
     // 提取 input 的 id 或 name
     const idMatch = line.match(/id\s*=\s*["']([^"']+)["']/i);
@@ -129,16 +133,17 @@ export class HTMLFixGenerator {
 
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: 'Add aria-label to input',
       riskLevel: 'low',
       changes: [
         {
           file: filePath,
           type: 'replace',
-          search: line,
-          replace: fixedLine,
-          line: diagnosis.location.line,
+          oldContent: line,
+          content: fixedLine,
+          position: { line: diagnosis.location.line || 0 },
         },
       ],
     };
@@ -147,7 +152,7 @@ export class HTMLFixGenerator {
   private fixExternalLink(filePath: string, diagnosis: Diagnosis): Fix {
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
-    const line = lines[diagnosis.location.line - 1];
+    const line = lines[(diagnosis.location.line || 1) - 1];
     
     // 添加 rel="noopener noreferrer"
     let fixedLine = line;
@@ -163,16 +168,17 @@ export class HTMLFixGenerator {
 
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: 'Add rel="noopener noreferrer" to external link',
       riskLevel: 'low',
       changes: [
         {
           file: filePath,
           type: 'replace',
-          search: line,
-          replace: fixedLine,
-          line: diagnosis.location.line,
+          oldContent: line,
+          content: fixedLine,
+          position: { line: diagnosis.location.line || 0 },
         },
       ],
     };

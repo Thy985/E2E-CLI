@@ -48,7 +48,7 @@ export class FixEngine {
     if (fix.changes.length === 1 && fix.changes[0].type === 'replace') {
       const change = fix.changes[0];
       // 简单的 CSS 变量替换是低风险
-      if (typeof change.search === 'string' && change.search.startsWith('#')) {
+      if (typeof change.oldContent === 'string' && change.oldContent.startsWith('#')) {
         return 'low';
       }
     }
@@ -146,9 +146,9 @@ export class FixEngine {
         const filePath = path.join(projectPath, change.file);
         
         if (change.type === 'replace') {
-          await this.replaceInFile(filePath, change.search, change.replace);
+          await this.replaceInFile(filePath, change.oldContent, change.content);
         } else if (change.type === 'insert') {
-          await this.insertInFile(filePath, change.line!, change.content!);
+          await this.insertInFile(filePath, change.position?.line || 0, change.content || '');
         }
       }
 

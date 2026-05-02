@@ -31,7 +31,7 @@ export class ImageFixGenerator {
   private fixMissingDimensions(filePath: string, diagnosis: Diagnosis): Fix {
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
-    const line = lines[diagnosis.location.line - 1];
+    const line = lines[(diagnosis.location.line || 1) - 1];
     
     // 添加 width 和 height 属性（使用占位值）
     let fixedLine = line;
@@ -45,16 +45,17 @@ export class ImageFixGenerator {
 
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: 'Add width and height attributes to prevent layout shift',
       riskLevel: 'low',
       changes: [
         {
           file: filePath,
           type: 'replace',
-          search: line,
-          replace: fixedLine,
-          line: diagnosis.location.line,
+          oldContent: line,
+          content: fixedLine,
+          position: { line: diagnosis.location.line || 0 },
         },
       ],
       notes: 'Fill in actual dimensions: width="800" height="600"',
@@ -64,23 +65,24 @@ export class ImageFixGenerator {
   private fixMissingLazyLoading(filePath: string, diagnosis: Diagnosis): Fix {
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
-    const line = lines[diagnosis.location.line - 1];
+    const line = lines[(diagnosis.location.line || 1) - 1];
     
     // 添加 loading="lazy"
     const fixedLine = line.replace(/<img/i, '<img loading="lazy"');
 
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: 'Add lazy loading to image',
       riskLevel: 'low',
       changes: [
         {
           file: filePath,
           type: 'replace',
-          search: line,
-          replace: fixedLine,
-          line: diagnosis.location.line,
+          oldContent: line,
+          content: fixedLine,
+          position: { line: diagnosis.location.line || 0 },
         },
       ],
       notes: 'Images above the fold should use loading="eager" instead',
@@ -90,7 +92,7 @@ export class ImageFixGenerator {
   private fixLegacyFormat(filePath: string, diagnosis: Diagnosis): Fix {
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
-    const line = lines[diagnosis.location.line - 1];
+    const line = lines[(diagnosis.location.line || 1) - 1];
     
     // 提取 src
     const srcMatch = line.match(/src\s*=\s*["']([^"']+)["']/);
@@ -112,16 +114,17 @@ export class ImageFixGenerator {
 
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: 'Convert to modern image format with fallback',
       riskLevel: 'medium',
       changes: [
         {
           file: filePath,
           type: 'replace',
-          search: line,
-          replace: pictureElement,
-          line: diagnosis.location.line,
+          oldContent: line,
+          content: pictureElement,
+          position: { line: diagnosis.location.line || 0 },
         },
       ],
       notes: `Remember to generate ${webpSrc} from ${src}`,

@@ -11,7 +11,36 @@ import { PerformanceSkill } from '../../skills/builtin/performance';
 import { SecuritySkill } from '../../skills/builtin/security';
 import { UIUXSkill } from '../../skills/builtin/ui-ux';
 
-export async function skillCommand(action: string, name?: string) {
+export const skillCommand = {
+  list: async () => {
+    const logger = createLogger({ level: 'info' });
+    const formatter = createFormatter();
+    const skillRegistry = createSkillRegistry(logger);
+    skillRegistry.register(new A11ySkill());
+    skillRegistry.register(new E2ESkill());
+    skillRegistry.register(new PerformanceSkill());
+    skillRegistry.register(new SecuritySkill());
+    skillRegistry.register(new UIUXSkill());
+    await listSkills(skillRegistry, formatter);
+  },
+  install: async (name?: string) => {
+    const formatter = createFormatter();
+    formatter.info(`Installing Skill: ${name || 'not specified'}`);
+    formatter.info('Please wait for next version update');
+  },
+  update: async (name?: string) => {
+    const formatter = createFormatter();
+    formatter.info(`Updating Skill: ${name || 'all'}`);
+    formatter.info('Please wait for next version update');
+  },
+  create: async (name?: string) => {
+    const formatter = createFormatter();
+    formatter.info(`Creating Skill: ${name || 'not specified'}`);
+    formatter.info('Please wait for next version update');
+  },
+};
+
+export async function skillCommandOld(action: string, name?: string) {
   const logger = createLogger({ level: 'info' });
   const formatter = createFormatter();
 

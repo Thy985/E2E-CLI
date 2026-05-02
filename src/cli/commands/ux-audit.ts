@@ -43,7 +43,7 @@ export const uxAuditCommand = new Command('ux-audit')
 
       // 创建 Skill Context
       const context = {
-        project: { rootPath: options.path, name: 'test', type: 'web' },
+        project: { path: options.path, name: 'test', type: 'webapp' as const },
         config,
         logger,
         tools: {} as any,
