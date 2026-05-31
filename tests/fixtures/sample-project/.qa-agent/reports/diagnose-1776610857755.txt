@@ -1,0 +1,9 @@
+✗ Score: 36/100 (F)
+✗ Issues: 8 (6 critical, 1 warning, 1 info)
+✓ functionality: 96/100
+✗ accessibility: 40/100
+✓ performance: 100/100
+✓ security: 100/100
+✓ code-quality: 100/100
+💡 7 issues can be auto-fixed
+   Run: qa-agent fix

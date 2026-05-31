@@ -1,0 +1,451 @@
+﻿/**
+ * E2E Test Skill
+ * Generates and runs end-to-end tests using Playwright
+ */
+
+import { BaseSkill } from '../../base-skill';
+import {
+  SkillContext,
+  Diagnosis,
+  Fix,
+  Verification,
+  DiagnosisType,
+  Severity,
+} from '../../../types';
+import { generateId } from '../../../utils';
+
+export interface TestGenerationResult {
+  code: string;
+  description: string;
+  selectors: string[];
+}
+
+export class E2ESkill extends BaseSkill {
+  name = 'e2e';
+  version = '1.0.0';
+  description = 'E2E 绔埌绔祴璇?;
+
+  triggers = [
+    { type: 'command' as const, pattern: 'e2e' },
+    { type: 'keyword' as const, pattern: /娴嬭瘯|test|e2e|end-to-end/i },
+  ];
+
+  capabilities = [
+    {
+      name: 'test-generation',
+      description: '浠庤嚜鐒惰瑷€鐢熸垚娴嬭瘯鐢ㄤ緥',
+      autoFixable: false,
+      riskLevel: 'low' as const,
+    },
+    {
+      name: 'test-execution',
+      description: '鎵ц娴嬭瘯骞跺垎鏋愮粨鏋?,
+      autoFixable: true,
+      riskLevel: 'low' as const,
+    },
+    {
+      name: 'selector-healing',
+      description: '鑷姩淇澶辨晥鐨勯€夋嫨鍣?,
+      autoFixable: true,
+      riskLevel: 'low' as const,
+    },
+  ];
+
+  async diagnose(context: SkillContext): Promise<Diagnosis[]> {
+    const diagnoses: Diagnosis[] = [];
+    const { project, tools, logger } = context;
+
+    logger.info('寮€濮?E2E 娴嬭瘯妫€鏌?..');
+
+    // Check for existing test files
+    const testFiles = await this.getTestFiles(project.path, tools);
+    logger.debug(`鎵惧埌 ${testFiles.length} 涓祴璇曟枃浠禶);
+
+    // Check test coverage
+    const coverageIssues = await this.checkTestCoverage(project.path, testFiles, tools);
+    diagnoses.push(...coverageIssues);
+
+    // Check for broken selectors in existing tests
+    const selectorIssues = await this.checkSelectors(testFiles, tools);
+    diagnoses.push(...selectorIssues);
+
+    // Check for missing critical tests
+    const missingTests = await this.checkMissingTests(project.path, tools);
+    diagnoses.push(...missingTests);
+
+    logger.info(`E2E 娴嬭瘯妫€鏌ュ畬鎴愶紝鍙戠幇 ${diagnoses.length} 涓棶棰榒);
+    return diagnoses;
+  }
+
+  private async getTestFiles(
+    projectPath: string,
+    tools: SkillContext['tools']
+  ): Promise<string[]> {
+    // Only check actual E2E test files, not unit tests
+    const patterns = [
+      '**/e2e/**/*.spec.ts',
+      '**/e2e/**/*.test.ts',
+      '**/e2e/**/*.spec.js',
+      '**/e2e/**/*.test.js',
+      '**/playwright/**/*.spec.ts',
+      '**/playwright/**/*.test.ts',
+      '**/__tests__/e2e/**/*.ts',
+    ];
+
+    const files: string[] = [];
+    for (const pattern of patterns) {
+      const matches = await tools.fs.glob(pattern);
+      files.push(...matches.filter(f =>
+        !f.includes('node_modules')
+      ));
+    }
+    return [...new Set(files)];
+  }
+
+  private async checkTestCoverage(
+    projectPath: string,
+    testFiles: string[],
+    tools: SkillContext['tools']
+  ): Promise<Diagnosis[]> {
+    const diagnoses: Diagnosis[] = [];
+
+    // Check if there are any test files
+    if (testFiles.length === 0) {
+      diagnoses.push({
+        id: `E2E-${generateId()}`,
+        skill: this.name,
+        type: 'functionality' as DiagnosisType,
+        severity: 'warning' as Severity,
+        title: '缂哄皯 E2E 娴嬭瘯鏂囦欢',
+        description: '椤圭洰娌℃湁 E2E 娴嬭瘯鏂囦欢锛屽缓璁坊鍔犳祴璇曡鐩栧叧閿姛鑳?,
+        location: {
+          file: projectPath,
+        },
+        fixSuggestion: {
+          description: '鍒涘缓 e2e 鐩綍骞舵坊鍔犳祴璇曟枃浠?,
+          autoApplicable: false,
+          riskLevel: 'low',
+        },
+      });
+    }
+
+    // Check for Playwright config
+    const playwrightConfig = await tools.fs.exists('playwright.config.ts');
+    if (!playwrightConfig) {
+      diagnoses.push({
+        id: `E2E-${generateId()}`,
+        skill: this.name,
+        type: 'functionality' as DiagnosisType,
+        severity: 'info' as Severity,
+        title: '缂哄皯 Playwright 閰嶇疆',
+        description: '寤鸿娣诲姞 playwright.config.ts 閰嶇疆鏂囦欢',
+        location: {
+          file: projectPath,
+        },
+        fixSuggestion: {
+          description: '杩愯 npx playwright install 鍒濆鍖栭厤缃?,
+          autoApplicable: false,
+          riskLevel: 'low',
+        },
+      });
+    }
+
+    return diagnoses;
+  }
+
+  private async checkSelectors(
+    testFiles: string[],
+    tools: SkillContext['tools']
+  ): Promise<Diagnosis[]> {
+    const diagnoses: Diagnosis[] = [];
+
+    for (const file of testFiles) {
+      const content = await tools.fs.readFile(file);
+      
+      // Check for fragile selectors
+      const fragileSelectors = this.findFragileSelectors(content);
+      
+      for (const selector of fragileSelectors) {
+        diagnoses.push({
+          id: `E2E-${generateId()}`,
+          skill: this.name,
+          type: 'functionality' as DiagnosisType,
+          severity: 'warning' as Severity,
+          title: '浣跨敤鑴嗗急鐨勯€夋嫨鍣?,
+          description: `閫夋嫨鍣?"${selector.selector}" 鍙兘涓嶇ǔ瀹氾紝寤鸿浣跨敤 ${selector.suggestion}`,
+          location: {
+            file,
+            line: selector.line,
+          },
+          metadata: {
+            selector: selector.selector,
+            suggestion: selector.suggestion,
+            context: selector.context,
+          },
+          fixSuggestion: {
+            description: `灏?"${selector.selector}" 鏇挎崲涓?${selector.suggestion}`,
+            autoApplicable: true,
+            riskLevel: 'low',
+          },
+        });
+      }
+    }
+
+    return diagnoses;
+  }
+
+  private findFragileSelectors(content: string): { selector: string; line: number; suggestion: string; context: string }[] {
+    const issues: { selector: string; line: number; suggestion: string; context: string }[] = [];
+    const lines = content.split('\n');
+
+    lines.forEach((line, index) => {
+      // Check for CSS selectors with nth-child (fragile - order dependent)
+      const nthPattern = /['"`]([^'"`]*:nth-child\(\d+\)[^'"`]*)['"`]/g;
+      let nthMatch;
+      while ((nthMatch = nthPattern.exec(line)) !== null) {
+        issues.push({
+          selector: nthMatch[1],
+          line: index + 1,
+          suggestion: 'getByRole() 鎴?getByTestId()',
+          context: line.trim(),
+        });
+      }
+
+      // Check for nth-of-type (also fragile)
+      const nthOfTypePattern = /['"`]([^'"`]*:nth-of-type\(\d+\)[^'"`]*)['"`]/g;
+      let nthOfTypeMatch;
+      while ((nthOfTypeMatch = nthOfTypePattern.exec(line)) !== null) {
+        issues.push({
+          selector: nthOfTypeMatch[1],
+          line: index + 1,
+          suggestion: 'getByRole() 鎴?getByTestId()',
+          context: line.trim(),
+        });
+      }
+
+      // Check for deep CSS selectors (> 3 levels deep)
+      const deepPattern = /['"`]([^'"`]*(?:\s+[.#]?[\w-]+){3,}[^'"`]*)['"`]/g;
+      let deepMatch;
+      while ((deepMatch = deepPattern.exec(line)) !== null) {
+        // Avoid duplicate reports for the same line
+        if (!issues.some(i => i.line === index + 1 && i.selector === deepMatch![1])) {
+          issues.push({
+            selector: deepMatch[1],
+            line: index + 1,
+            suggestion: 'getByRole() 鎴栨洿绠€鐭殑閫夋嫨鍣?,
+            context: line.trim(),
+          });
+        }
+      }
+
+      // Check for ID selectors that look auto-generated (hex pattern)
+      const autoIdPattern = /['"`]#([a-f0-9]{6,})['"`]/gi;
+      let autoIdMatch;
+      while ((autoIdMatch = autoIdPattern.exec(line)) !== null) {
+        issues.push({
+          selector: `#${autoIdMatch[1]}`,
+          line: index + 1,
+          suggestion: 'getByTestId() 鏇夸唬鍔ㄦ€?ID',
+          context: line.trim(),
+        });
+      }
+
+      // Check for index-based array access in selectors
+      const indexPattern = /\.eq\(\d+\)/g;
+      let indexMatch;
+      while ((indexMatch = indexPattern.exec(line)) !== null) {
+        // Only report if not already reported for nth-child
+        if (!issues.some(i => i.line === index + 1)) {
+          issues.push({
+            selector: indexMatch[0],
+            line: index + 1,
+            suggestion: '浣跨敤 .filter() 鎴?.nth() 閰嶅悎鏇寸ǔ瀹氱殑鏉′欢',
+            context: line.trim(),
+          });
+        }
+      }
+
+      // Check for xpath selectors (harder to maintain)
+      const xpathPattern = /['"`](\/\/[^'"`]+)['"`]/g;
+      let xpathMatch;
+      while ((xpathMatch = xpathPattern.exec(line)) !== null) {
+        issues.push({
+          selector: xpathMatch[1],
+          line: index + 1,
+          suggestion: 'getByRole() 鎴?getByText() 鏇夸唬 xpath',
+          context: line.trim(),
+        });
+      }
+    });
+
+    return issues;
+  }
+
+  private async checkMissingTests(
+    projectPath: string,
+    tools: SkillContext['tools']
+  ): Promise<Diagnosis[]> {
+    const diagnoses: Diagnosis[] = [];
+
+    // Check for common pages that should have tests
+    const pageFiles = await tools.fs.glob('src/pages/**/*.tsx');
+    
+    for (const pageFile of pageFiles.slice(0, 10)) { // Limit to first 10
+      const pageName = this.getPageName(pageFile);
+      const testFile = `e2e/${pageName}.spec.ts`;
+      
+      const hasTest = await tools.fs.exists(testFile);
+      if (!hasTest) {
+        diagnoses.push({
+          id: `E2E-${generateId()}`,
+          skill: this.name,
+          type: 'functionality' as DiagnosisType,
+          severity: 'info' as Severity,
+          title: `椤甸潰 ${pageName} 缂哄皯娴嬭瘯`,
+          description: `寤鸿涓洪〉闈?${pageName} 娣诲姞 E2E 娴嬭瘯`,
+          location: {
+            file: pageFile,
+          },
+          fixSuggestion: {
+            description: `鍒涘缓 ${testFile} 娴嬭瘯鏂囦欢`,
+            autoApplicable: false,
+            riskLevel: 'low',
+          },
+        });
+      }
+    }
+
+    return diagnoses;
+  }
+
+  private getPageName(filePath: string): string {
+    const match = filePath.match(/\/pages\/(.+?)\.tsx$/);
+    return match ? match[1].replace(/\//g, '-') : 'unknown';
+  }
+
+  /**
+   * Generate test from natural language description
+   */
+  async generateTest(
+    description: string,
+    context: SkillContext
+  ): Promise<TestGenerationResult> {
+    const { model, logger } = context;
+
+    logger.info(`鐢熸垚娴嬭瘯: ${description}`);
+
+    const prompt = `鏍规嵁浠ヤ笅鎻忚堪鐢熸垚 Playwright 娴嬭瘯浠ｇ爜:
+
+鎻忚堪: ${description}
+
+瑕佹眰:
+1. 浣跨敤 TypeScript
+2. 浣跨敤璇箟鍖栭€夋嫨鍣?(getByRole, getByText, getByTestId)
+3. 鍖呭惈閫傚綋鐨勬柇瑷€
+4. 娣诲姞娓呮櫚鐨勬敞閲?
+璇峰彧杈撳嚭娴嬭瘯浠ｇ爜锛屼笉瑕佸叾浠栬В閲娿€俙;
+
+    const code = await model.chat([
+      { role: 'system', content: '浣犳槸涓€涓笓涓氱殑娴嬭瘯宸ョ▼甯堬紝鎿呴暱缂栧啓 Playwright E2E 娴嬭瘯銆? },
+      { role: 'user', content: prompt },
+    ]);
+
+    // Extract selectors from generated code
+    const selectors = this.extractSelectors(code);
+
+    return {
+      code,
+      description,
+      selectors,
+    };
+  }
+
+  private extractSelectors(code: string): string[] {
+    const selectors: string[] = [];
+    
+    // Extract selectors from getByRole, getByText, getByTestId
+    // Note: these methods can have additional arguments, so we don't require closing parenthesis
+    const patterns = [
+      /getByRole\(['"`]([^'"`]+)['"`]/g,
+      /getByText\(['"`]([^'"`]+)['"`]/g,
+      /getByTestId\(['"`]([^'"`]+)['"`]/g,
+      /locator\(['"`]([^'"`]+)['"`]\)/g,
+    ];
+
+    for (const pattern of patterns) {
+      const matches = code.matchAll(pattern);
+      for (const match of matches) {
+        selectors.push(match[1]);
+      }
+    }
+
+    return [...new Set(selectors)];
+  }
+
+  async fix(diagnosis: Diagnosis, context: SkillContext): Promise<Fix> {
+    const filePath = diagnosis.location.file;
+    const content = await context.tools.fs.readFile(filePath);
+
+    if (diagnosis.metadata?.selector && diagnosis.metadata?.context) {
+      const oldSelector = diagnosis.metadata.selector as string;
+      const oldContext = diagnosis.metadata.context as string;
+      const suggestion = diagnosis.metadata.suggestion as string;
+
+      // Generate a more specific replacement based on the selector type
+      let newSelector: string;
+      let fixDescription: string;
+
+      if (oldSelector.includes(':nth-child') || oldSelector.includes(':nth-of-type')) {
+        // For nth-child/nth-of-type, suggest a role-based alternative
+        newSelector = `getByRole('button')`; // Default suggestion
+        fixDescription = `鏇挎崲鑴嗗急鐨?nth-child 閫夋嫨鍣ㄤ负璇箟鍖栭€夋嫨鍣╜;
+      } else if (oldSelector.startsWith('//')) {
+        // XPath selector
+        newSelector = `getByRole('element')`;
+        fixDescription = `鏇挎崲 xpath 閫夋嫨鍣ㄤ负 Playwright 瀹氫綅鍣╜;
+      } else if (oldSelector.match(/^#[a-f0-9]{6,}$/i)) {
+        // Auto-generated ID
+        newSelector = `getByTestId('your-test-id')`;
+        fixDescription = `鏇挎崲鍔ㄦ€?ID 閫夋嫨鍣ㄤ负 data-testid`;
+      } else if (oldSelector.includes('.eq(')) {
+        // Index-based selector
+        newSelector = `.filter({ hasText: 'text' })`;
+        fixDescription = `鏇挎崲绱㈠紩閫夋嫨鍣ㄤ负鏇寸ǔ瀹氱殑杩囨护鏉′欢`;
+      } else {
+        // Generic deep selector
+        newSelector = `getByRole('element')`;
+        fixDescription = `绠€鍖栭€夋嫨鍣ㄤ负鏇寸ǔ瀹氱殑瀹氫綅鏂瑰紡`;
+      }
+
+      // Create the fix - we replace the entire context line with an updated version
+      // This is safer than trying to do string replacement within the selector
+      const updatedContext = oldContext.replace(
+        new RegExp(this.escapeRegex(oldSelector), 'g'),
+        newSelector
+      );
+
+      return {
+        id: `Fix-${generateId()}`,
+        diagnosisId: diagnosis.id,
+        description: fixDescription,
+        changes: [{
+          file: filePath,
+          type: 'replace',
+          oldContent: oldContext,
+          content: updatedContext,
+        }],
+        riskLevel: 'low',
+        autoApplicable: true,
+      };
+    }
+
+    throw new Error('Cannot fix this diagnosis automatically');
+  }
+
+  private escapeRegex(str: string): string {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+}
+
+// Export default instance
+export default E2ESkill;
