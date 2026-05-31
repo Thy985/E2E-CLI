@@ -44,12 +44,15 @@ describe('createModelClient', () => {
     expect(typeof client.embed).toBe('function');
   });
 
-  it('should throw error when no API key available', () => {
-    // Clear env vars by using empty string fallback
-    expect(() => createModelClient({
+  it('should return mock client when no API key available', () => {
+    // When no API key is provided, it returns a mock client for MVP functionality
+    const client = createModelClient({
       provider: 'deepseek',
       apiKey: '',
-    })).toThrow('API key is required');
+    });
+    expect(client).toBeDefined();
+    expect(typeof client.chat).toBe('function');
+    expect(typeof client.embed).toBe('function');
   });
 });
 

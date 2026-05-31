@@ -86,7 +86,7 @@ export class CSSFixGenerator {
     const lines = content.split('\n');
     const line = lines[(diagnosis.location.line || 1) - 1];
     
-    // 绉婚櫎 !important
+    // 绉婚除 !important
     const fixedLine = line.replace(/\s*!important/g, '');
 
     return {
@@ -113,7 +113,7 @@ export class CSSFixGenerator {
     const lines = content.split('\n');
     const line = lines[(diagnosis.location.line || 1) - 1];
     
-    // 灏?#id 杞崲涓?.class
+    // 灏?#id 杞换涓?.class
     const fixedLine = line.replace(/#([a-zA-Z][a-zA-Z0-9_-]*)/g, '.$1');
 
     return {

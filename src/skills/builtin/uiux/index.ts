@@ -16,7 +16,7 @@ import {
   DiagnosisType,
   Severity,
   Fix,
-  FixType,
+  
   SkillTrigger,
   SkillCapability,
 } from '../../../types';
@@ -65,22 +65,22 @@ export class UIUXSkill extends BaseSkill {
 
     // Phase 1: 提取设计令牌
     context.logger.info('🔍 正在提取设计令牌...');
-    const designTokens = await this.designTokenExtractor.extract(project.rootPath, config);
+    const designTokens = await this.designTokenExtractor.extract(project.path, config);
     context.logger.info(`✓ 提取到 ${Object.keys(designTokens.colors || {}).length} 个颜色令牌`);
 
     // Phase 2: 视觉规范检查
     context.logger.info('🔍 正在检查视觉规范...');
-    const visualIssues = await this.visualChecker.check(project.rootPath, designTokens, config);
+    const visualIssues = await this.visualChecker.check(project.path, designTokens, config);
     issues.push(...visualIssues);
 
     // Phase 3: 布局对齐检查
     context.logger.info('🔍 正在检查布局对齐...');
-    const layoutIssues = await this.layoutChecker.check(project.rootPath, designTokens, config);
+    const layoutIssues = await this.layoutChecker.check(project.path, designTokens, config);
     issues.push(...layoutIssues);
 
     // Phase 4: 交互状态检查
     context.logger.info('🔍 正在检查交互状态...');
-    const interactionIssues = await this.interactionChecker.check(project.rootPath, config);
+    const interactionIssues = await this.interactionChecker.check(project.path, config);
     issues.push(...interactionIssues);
 
     return issues;
@@ -92,10 +92,10 @@ export class UIUXSkill extends BaseSkill {
     // 根据问题类型选择修复策略
     switch (diagnosis.metadata?.category) {
       case 'visual':
-        return await this.cssFixGenerator.generateVisualFix(diagnosis, project.rootPath);
+        return await this.cssFixGenerator.generateVisualFix(diagnosis, project.path);
       
       case 'interaction':
-        return await this.cssFixGenerator.generateInteractionFix(diagnosis, project.rootPath);
+        return await this.cssFixGenerator.generateInteractionFix(diagnosis, project.path);
       
       default:
         throw new Error(`不支持自动修复的问题类型: ${diagnosis.metadata?.category}`);

@@ -5,7 +5,6 @@
 
 import { Command } from 'commander';
 import { diagnoseCommand } from './commands/diagnose';
-import { fixCommand } from './commands/fix';
 import { auditCommand } from './commands/audit';
 import { skillCommand } from './commands/skill';
 import { webCommand } from './commands/web';
@@ -17,14 +16,14 @@ import { designCommand } from './commands/design';
 import { bestPracticesCommand } from './commands/best-practices';
 import { seoCommand } from './commands/seo';
 import { dependencyCommand } from './commands/dependency';
-import { version } from '../../package.json';
+import { fixCommand } from './commands/fix';
 
 const program = new Command();
 
 program
   .name('qa-agent')
   .description('AI Quality Doctor - Diagnose, Fix, Verify')
-  .version(version);
+  .version('0.1.0');
 
 // Init command
 program
@@ -48,6 +47,9 @@ program
   .option('-v, --verbose', 'Verbose mode')
   .option('--ci', 'CI mode (non-interactive, JSON output)')
   .action(diagnoseCommand);
+
+// Fix command
+program.addCommand(fixCommand);
 
 // Audit command
 program

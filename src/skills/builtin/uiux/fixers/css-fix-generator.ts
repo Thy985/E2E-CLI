@@ -58,16 +58,17 @@ export class CSSFixGenerator {
   ): Fix {
     return {
       id: `fix-${diagnosis.id}`,
-      type: 'code-change',
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: `å°ç¡¬ç¼ç é¢è² ${current} æ¿æ¢ä¸ºè®¾è®¡ä»¤ç?${suggestion}`,
       riskLevel: 'low',
       changes: [
         {
           file: filePath,
           type: 'replace',
-          search: current,
-          replace: suggestion,
-          line: diagnosis.location.line,
+          oldContent: current,
+          content: suggestion,
+          position: { line: diagnosis.location.line || 0 },
         },
       ],
     };
@@ -81,16 +82,17 @@ export class CSSFixGenerator {
   ): Fix {
     return {
       id: `fix-${diagnosis.id}`,
-      type: "code-change",
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: `å°é´è·?${current} è°æ´ä¸ºè§èå?${suggestion}`,
       riskLevel: 'low',
       changes: [
         {
           file: filePath,
           type: 'replace',
-          search: current,
-          replace: suggestion,
-          line: diagnosis.location.line,
+          oldContent: current,
+          content: suggestion,
+          position: { line: diagnosis.location.line || 0 },
         },
       ],
     };
@@ -104,16 +106,17 @@ export class CSSFixGenerator {
   ): Fix {
     return {
       id: `fix-${diagnosis.id}`,
-      type: "code-change",
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: `å°åè§?${current} è°æ´ä¸ºè§èå?${suggestion}`,
       riskLevel: 'low',
       changes: [
         {
           file: filePath,
           type: 'replace',
-          search: current,
-          replace: suggestion,
-          line: diagnosis.location.line,
+          oldContent: current,
+          content: suggestion,
+          position: { line: diagnosis.location.line || 0 },
         },
       ],
     };
@@ -130,8 +133,8 @@ export class CSSFixGenerator {
     const lines = content.split('\n');
     
     // æ¾å°åç´ éæ©å¨çç»æä½ç½®
-    let insertLine = diagnosis.location.line;
-    for (let i = diagnosis.location.line; i < lines.length; i++) {
+    let insertLine = diagnosis.location.line || 0;
+    for (let i = (diagnosis.location.line || 0); i < lines.length; i++) {
       if (lines[i].trim() === '}' || lines[i].includes('}')) {
         insertLine = i;
         break;
@@ -140,7 +143,8 @@ export class CSSFixGenerator {
 
     return {
       id: `fix-${diagnosis.id}`,
-      type: "code-change",
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: `ä¸?${element} æ·»å  hover ç¶æ`,
       riskLevel: 'low',
       changes: [
@@ -148,7 +152,7 @@ export class CSSFixGenerator {
           file: filePath,
           type: 'insert',
           content: `\n  &:hover {\n    ${suggestion}\n  }`,
-          line: insertLine,
+          position: { line: insertLine },
         },
       ],
     };
@@ -163,8 +167,8 @@ export class CSSFixGenerator {
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
     
-    let insertLine = diagnosis.location.line;
-    for (let i = diagnosis.location.line; i < lines.length; i++) {
+    let insertLine = diagnosis.location.line || 0;
+    for (let i = (diagnosis.location.line || 0); i < lines.length; i++) {
       if (lines[i].trim() === '}' || lines[i].includes('}')) {
         insertLine = i;
         break;
@@ -173,7 +177,8 @@ export class CSSFixGenerator {
 
     return {
       id: `fix-${diagnosis.id}`,
-      type: "code-change",
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: `ä¸?${element} æ·»å  focus ç¶æ`,
       riskLevel: 'low',
       changes: [
@@ -181,7 +186,7 @@ export class CSSFixGenerator {
           file: filePath,
           type: 'insert',
           content: `\n  &:focus {\n    ${suggestion}\n  }`,
-          line: insertLine,
+          position: { line: insertLine },
         },
       ],
     };
@@ -196,8 +201,8 @@ export class CSSFixGenerator {
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
     
-    let insertLine = diagnosis.location.line;
-    for (let i = diagnosis.location.line; i < lines.length; i++) {
+    let insertLine = diagnosis.location.line || 0;
+    for (let i = (diagnosis.location.line || 0); i < lines.length; i++) {
       if (lines[i].trim() === '}' || lines[i].includes('}')) {
         insertLine = i;
         break;
@@ -206,7 +211,8 @@ export class CSSFixGenerator {
 
     return {
       id: `fix-${diagnosis.id}`,
-      type: "code-change",
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: `ä¸?${element} æ·»å  active ç¶æ`,
       riskLevel: 'low',
       changes: [
@@ -214,7 +220,7 @@ export class CSSFixGenerator {
           file: filePath,
           type: 'insert',
           content: `\n  &:active {\n    ${suggestion}\n  }`,
-          line: insertLine,
+          position: { line: insertLine },
         },
       ],
     };
@@ -229,8 +235,8 @@ export class CSSFixGenerator {
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
     
-    let insertLine = diagnosis.location.line;
-    for (let i = diagnosis.location.line; i < lines.length; i++) {
+    let insertLine = diagnosis.location.line || 0;
+    for (let i = (diagnosis.location.line || 0); i < lines.length; i++) {
       if (lines[i].trim() === '}' || lines[i].includes('}')) {
         insertLine = i;
         break;
@@ -239,7 +245,8 @@ export class CSSFixGenerator {
 
     return {
       id: `fix-${diagnosis.id}`,
-      type: "code-change",
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
       description: `ä¸?${element} æ·»å  disabled ç¶æ`,
       riskLevel: 'low',
       changes: [
@@ -247,7 +254,7 @@ export class CSSFixGenerator {
           file: filePath,
           type: 'insert',
           content: `\n  &:disabled {\n    ${suggestion}\n  }`,
-          line: insertLine,
+          position: { line: insertLine },
         },
       ],
     };
