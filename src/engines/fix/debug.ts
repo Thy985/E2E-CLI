@@ -3,7 +3,6 @@
  * Enhanced fix engine with detailed logging and debugging
  */
 
-import { existsSync } from 'fs';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { Fix, FileChange } from '../../types';
@@ -63,10 +62,10 @@ export class DebugFixEngine {
         this.logger.info(`Change ${i + 1}/${fix.changes.length}:`);
         this.logger.info(`  File: ${change.file}`);
         this.logger.info(`  Type: ${change.type}`);
-        
+
         const changeResult = await this.applyChangeDebug(change, projectPath);
         result.details.push(changeResult);
-        
+
         if (changeResult.success) {
           result.changesApplied++;
           this.logger.info(`  ✅ SUCCESS`);
@@ -127,20 +126,24 @@ export class DebugFixEngine {
     this.logger.debug(`  Full path: ${filePath}`);
 
     try {
-      // Check if file exists
-      const fileExists = existsSync(filePath);
-      this.logger.debug(`  File exists: ${fileExists}`);
-
-      if (change.type === 'replace') {
-        if (!fileExists) {
+      // Read original content (probe existence via ENOENT)
+      let before: string;
+      try {
+        before = await fs.readFile(filePath, 'utf-8');
+      } catch (err) {
+        const e = err as NodeJS.ErrnoException;
+        if (e && e.code === 'ENOENT') {
           result.error = `File not found: ${filePath}`;
+          this.logger.debug(`  File exists: false`);
           return result;
         }
+        throw err;
+      }
+      this.logger.debug(`  File exists: true`);
 
-        // Read original content
-        const before = await fs.readFile(filePath, 'utf-8');
+      if (change.type === 'replace') {
         result.before = before.substring(0, 200) + (before.length > 200 ? '...' : '');
-        
+
         this.logger.debug(`  Original content length: ${before.length}`);
         this.logger.debug(`  Search pattern: "${change.oldContent?.substring(0, 100)}${change.oldContent && change.oldContent.length > 100 ? '...' : ''}"`);
         this.logger.debug(`  Replace with: "${change.content?.substring(0, 100)}${change.content && change.content.length > 100 ? '...' : ''}"`);
@@ -156,24 +159,18 @@ export class DebugFixEngine {
         // Apply replacement
         const after = before.replace(change.oldContent, change.content || '');
         await fs.writeFile(filePath, after, 'utf-8');
-        
+
         result.after = after.substring(0, 200) + (after.length > 200 ? '...' : '');
         result.success = true;
-        
+
         this.logger.debug(`  New content length: ${after.length}`);
 
       } else if (change.type === 'insert') {
-        if (!fileExists) {
-          result.error = `File not found: ${filePath}`;
-          return result;
-        }
-
-        const before = await fs.readFile(filePath, 'utf-8');
         result.before = before.substring(0, 200) + '...';
-        
+
         const lines = before.split('\n');
         const insertLine = change.position?.line || lines.length;
-        
+
         this.logger.debug(`  Insert at line: ${insertLine}`);
         this.logger.debug(`  Content to insert: "${change.content?.substring(0, 100)}${change.content && change.content.length > 100 ? '...' : ''}"`);
 
@@ -181,10 +178,10 @@ export class DebugFixEngine {
           lines.splice(insertLine, 0, change.content || '');
           const after = lines.join('\n');
           await fs.writeFile(filePath, after, 'utf-8');
-          
+
           result.after = after.substring(0, 200) + '...';
           result.success = true;
-          
+
           this.logger.debug(`  New content length: ${after.length}`);
         } else {
           result.error = `Invalid insert line: ${insertLine}`;
@@ -192,14 +189,8 @@ export class DebugFixEngine {
         }
 
       } else if (change.type === 'delete') {
-        if (!fileExists) {
-          result.error = `File not found: ${filePath}`;
-          return result;
-        }
-
-        const before = await fs.readFile(filePath, 'utf-8');
         result.before = before.substring(0, 200) + '...';
-        
+
         this.logger.debug(`  Content to delete: "${change.oldContent?.substring(0, 100)}${change.oldContent && change.oldContent.length > 100 ? '...' : ''}"`);
 
         if (!change.oldContent || !before.includes(change.oldContent)) {
@@ -210,10 +201,10 @@ export class DebugFixEngine {
 
         const after = before.replace(change.oldContent, '');
         await fs.writeFile(filePath, after, 'utf-8');
-        
+
         result.after = after.substring(0, 200) + '...';
         result.success = true;
-        
+
         this.logger.debug(`  New content length: ${after.length}`);
 
       } else {
@@ -265,27 +256,33 @@ export class DebugFixEngine {
       };
 
       try {
-        // Check file exists
-        check.exists = existsSync(filePath);
-        this.logger.info(`File: ${change.file}`);
-        this.logger.info(`  Exists: ${check.exists ? '✅' : '❌'}`);
-
-        if (!check.exists) {
-          check.errors.push('File does not exist');
-          checks.push(check);
-          continue;
+        // Read file (proves both existence and readability)
+        let content: string;
+        try {
+          content = await fs.readFile(filePath, 'utf-8');
+          check.exists = true;
+          check.readable = true;
+        } catch (err) {
+          const e = err as NodeJS.ErrnoException;
+          if (e && e.code === 'ENOENT') {
+            this.logger.info(`File: ${change.file}`);
+            this.logger.info(`  Exists: ❌`);
+            check.errors.push('File does not exist');
+            checks.push(check);
+            continue;
+          }
+          throw err;
         }
 
-        // Check readable
-        const content = await fs.readFile(filePath, 'utf-8');
-        check.readable = true;
+        this.logger.info(`File: ${change.file}`);
+        this.logger.info(`  Exists: ✅`);
         this.logger.info(`  Readable: ✅`);
 
         // Check expected content
         if (change.type === 'replace' || change.type === 'insert') {
           check.containsExpected = content.includes(change.content || '');
           this.logger.info(`  Contains expected: ${check.containsExpected ? '✅' : '❌'}`);
-          
+
           if (!check.containsExpected) {
             check.errors.push('Expected content not found');
             this.logger.debug(`  Expected: ${change.content?.substring(0, 100)}...`);
@@ -296,7 +293,7 @@ export class DebugFixEngine {
         if (change.type === 'replace' || change.type === 'delete') {
           const oldContentGone = !content.includes(change.oldContent || '');
           this.logger.info(`  Old content removed: ${oldContentGone ? '✅' : '❌'}`);
-          
+
           if (!oldContentGone) {
             check.errors.push('Old content still present');
           }
@@ -312,7 +309,7 @@ export class DebugFixEngine {
     }
 
     const verified = checks.every(c => c.exists && c.readable && c.errors.length === 0);
-    
+
     this.logger.info('='.repeat(70));
     this.logger.info(`📊 VERIFICATION RESULT: ${verified ? '✅ PASSED' : '❌ FAILED'}`);
     this.logger.info('='.repeat(70));
@@ -325,19 +322,19 @@ export class DebugFixEngine {
    */
   generateDebugReport(results: DebugFixResult[]): string {
     const lines: string[] = [];
-    
+
     lines.push('# Debug Fix Report\n');
     lines.push(`Generated: ${new Date().toISOString()}\n`);
-    
+
     const totalApplied = results.filter(r => r.applied).length;
     const totalFailed = results.filter(r => !r.applied).length;
-    
+
     lines.push(`## Summary\n`);
     lines.push(`- **Total Fixes**: ${results.length}`);
     lines.push(`- **Applied**: ${totalApplied}`);
     lines.push(`- **Failed**: ${totalFailed}`);
     lines.push(`- **Success Rate**: ${((totalApplied / results.length) * 100).toFixed(1)}%\n`);
-    
+
     lines.push(`## Details\n`);
     for (const result of results) {
       lines.push(`### ${result.fix.id}`);
@@ -345,7 +342,7 @@ export class DebugFixEngine {
       lines.push(`- **Applied**: ${result.applied ? '✅' : '❌'}`);
       lines.push(`- **Changes Applied**: ${result.changesApplied}/${result.fix.changes.length}`);
       lines.push(`- **Changes Failed**: ${result.changesFailed}`);
-      
+
       if (result.details.length > 0) {
         lines.push(`- **Details**:`);
         for (const detail of result.details) {
@@ -355,7 +352,7 @@ export class DebugFixEngine {
           }
         }
       }
-      
+
       if (result.errors.length > 0) {
         lines.push(`- **Errors**:`);
         for (const error of result.errors) {
@@ -364,7 +361,7 @@ export class DebugFixEngine {
       }
       lines.push('');
     }
-    
+
     return lines.join('\n');
   }
 }

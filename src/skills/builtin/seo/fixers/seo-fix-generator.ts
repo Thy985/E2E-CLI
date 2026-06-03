@@ -1,10 +1,10 @@
 /**
  * SEO Fix Generator
- * 
+ *
  * 自动生成 SEO 修复代码
  */
 
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
 import { Diagnosis, Fix } from '../../../../types';
 
 export class SEOFixGenerator {
@@ -15,32 +15,32 @@ export class SEOFixGenerator {
 
     switch (type) {
       case 'missing-description':
-        return this.fixMissingDescription(fullPath, diagnosis);
-      
+        return await this.fixMissingDescription(fullPath, diagnosis);
+
       case 'missing-keywords':
-        return this.fixMissingKeywords(fullPath, diagnosis);
-      
+        return await this.fixMissingKeywords(fullPath, diagnosis);
+
       case 'missing-og-tag':
-        return this.fixMissingOGTag(fullPath, diagnosis);
-      
+        return await this.fixMissingOGTag(fullPath, diagnosis);
+
       case 'missing-twitter-card':
-        return this.fixMissingTwitterCard(fullPath, diagnosis);
-      
+        return await this.fixMissingTwitterCard(fullPath, diagnosis);
+
       case 'missing-canonical':
-        return this.fixMissingCanonical(fullPath, diagnosis);
-      
+        return await this.fixMissingCanonical(fullPath, diagnosis);
+
       case 'missing-robots':
-        return this.fixMissingRobots(fullPath, diagnosis);
-      
+        return await this.fixMissingRobots(fullPath, diagnosis);
+
       case 'external-link-security':
-        return this.fixExternalLink(fullPath, diagnosis);
-      
+        return await this.fixExternalLink(fullPath, diagnosis);
+
       default:
         throw new Error(`Unsupported fix type: ${type}`);
     }
   }
 
-  private fixMissingDescription(filePath: string, diagnosis: Diagnosis): Fix {
+  private async fixMissingDescription(filePath: string, diagnosis: Diagnosis): Promise<Fix> {
     return {
       id: `fix-${diagnosis.id}`,
       diagnosisId: diagnosis.id,
@@ -52,13 +52,13 @@ export class SEOFixGenerator {
           file: filePath,
           type: 'insert',
           content: '  <meta name="description" content="Page description here (150-160 characters)">\n',
-          position: { line: this.findHeadInsertLine(filePath) },
+          position: { line: await this.findHeadInsertLine(filePath) },
         },
       ],
     };
   }
 
-  private fixMissingKeywords(filePath: string, diagnosis: Diagnosis): Fix {
+  private async fixMissingKeywords(filePath: string, diagnosis: Diagnosis): Promise<Fix> {
     return {
       id: `fix-${diagnosis.id}`,
       diagnosisId: diagnosis.id,
@@ -70,13 +70,13 @@ export class SEOFixGenerator {
           file: filePath,
           type: 'insert',
           content: '  <meta name="keywords" content="keyword1, keyword2, keyword3">\n',
-          position: { line: this.findHeadInsertLine(filePath) },
+          position: { line: await this.findHeadInsertLine(filePath) },
         },
       ],
     };
   }
 
-  private fixMissingOGTag(filePath: string, diagnosis: Diagnosis): Fix {
+  private async fixMissingOGTag(filePath: string, diagnosis: Diagnosis): Promise<Fix> {
     const ogTag = diagnosis.title.match(/og:(\w+)/)?.[1] || 'title';
     const content = this.getOGContent(ogTag);
 
@@ -91,13 +91,13 @@ export class SEOFixGenerator {
           file: filePath,
           type: 'insert',
           content: `  <meta property="og:${ogTag}" content="${content}">\n`,
-          position: { line: this.findHeadInsertLine(filePath) },
+          position: { line: await this.findHeadInsertLine(filePath) },
         },
       ],
     };
   }
 
-  private fixMissingTwitterCard(filePath: string, diagnosis: Diagnosis): Fix {
+  private async fixMissingTwitterCard(filePath: string, diagnosis: Diagnosis): Promise<Fix> {
     return {
       id: `fix-${diagnosis.id}`,
       diagnosisId: diagnosis.id,
@@ -109,13 +109,13 @@ export class SEOFixGenerator {
           file: filePath,
           type: 'insert',
           content: `  <meta name="twitter:card" content="summary_large_image">\n  <meta name="twitter:title" content="Page Title">\n  <meta name="twitter:description" content="Page description">\n  <meta name="twitter:image" content="https://example.com/image.jpg">\n`,
-          position: { line: this.findHeadInsertLine(filePath) },
+          position: { line: await this.findHeadInsertLine(filePath) },
         },
       ],
     };
   }
 
-  private fixMissingCanonical(filePath: string, diagnosis: Diagnosis): Fix {
+  private async fixMissingCanonical(filePath: string, diagnosis: Diagnosis): Promise<Fix> {
     return {
       id: `fix-${diagnosis.id}`,
       diagnosisId: diagnosis.id,
@@ -127,13 +127,13 @@ export class SEOFixGenerator {
           file: filePath,
           type: 'insert',
           content: '  <link rel="canonical" href="https://example.com/page">\n',
-          position: { line: this.findHeadInsertLine(filePath) },
+          position: { line: await this.findHeadInsertLine(filePath) },
         },
       ],
     };
   }
 
-  private fixMissingRobots(filePath: string, diagnosis: Diagnosis): Fix {
+  private async fixMissingRobots(filePath: string, diagnosis: Diagnosis): Promise<Fix> {
     return {
       id: `fix-${diagnosis.id}`,
       diagnosisId: diagnosis.id,
@@ -145,17 +145,17 @@ export class SEOFixGenerator {
           file: filePath,
           type: 'insert',
           content: '  <meta name="robots" content="index, follow">\n',
-          position: { line: this.findHeadInsertLine(filePath) },
+          position: { line: await this.findHeadInsertLine(filePath) },
         },
       ],
     };
   }
 
-  private fixExternalLink(filePath: string, diagnosis: Diagnosis): Fix {
-    const content = fs.readFileSync(filePath, 'utf-8');
+  private async fixExternalLink(filePath: string, diagnosis: Diagnosis): Promise<Fix> {
+    const content = await fs.readFile(filePath, 'utf-8');
     const lines = content.split('\n');
     const line = lines[(diagnosis.location.line || 1) - 1];
-    
+
     // 添加 rel="noopener noreferrer"
     let fixedLine = line;
     if (/rel\s*=/.test(line)) {
@@ -182,24 +182,24 @@ export class SEOFixGenerator {
     };
   }
 
-  private findHeadInsertLine(filePath: string): number {
-    const content = fs.readFileSync(filePath, 'utf-8');
+  private async findHeadInsertLine(filePath: string): Promise<number> {
+    const content = await fs.readFile(filePath, 'utf-8');
     const lines = content.split('\n');
-    
+
     // 查找 </head> 标签
     for (let i = 0; i < lines.length; i++) {
       if (/<\/head>/i.test(lines[i])) {
         return i;
       }
     }
-    
+
     // 如果没找到，查找 <head> 标签
     for (let i = 0; i < lines.length; i++) {
       if (/<head>/i.test(lines[i])) {
         return i + 1;
       }
     }
-    
+
     return 1;
   }
 

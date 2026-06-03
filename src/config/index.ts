@@ -4,7 +4,6 @@
  */
 
 import * as path from 'path';
-import { existsSync } from 'fs';
 import * as fs from 'fs/promises';
 import { matchesAnyPattern } from '../utils/ignore';
 
@@ -125,8 +124,11 @@ export async function loadConfig(projectPath: string): Promise<QAConfig> {
 async function findConfigFile(projectPath: string): Promise<string | null> {
   for (const file of CONFIG_FILES) {
     const fullPath = path.join(projectPath, file);
-    if (existsSync(fullPath)) {
+    try {
+      await fs.access(fullPath);
       return fullPath;
+    } catch {
+      // file does not exist, continue
     }
   }
   return null;

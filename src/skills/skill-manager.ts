@@ -3,7 +3,6 @@
  * Handles skill lifecycle: install, update, create, remove
  */
 
-import { existsSync } from 'fs';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { createLogger, Logger } from '../utils/logger';
@@ -52,8 +51,15 @@ export class SkillManager {
   }
 
   private async ensureSkillsDir(): Promise<void> {
-    if (!existsSync(this.skillsDir)) {
-      await fs.mkdir(this.skillsDir, { recursive: true });
+    await fs.mkdir(this.skillsDir, { recursive: true });
+  }
+
+  private async fileExists(p: string): Promise<boolean> {
+    try {
+      await fs.access(p);
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -70,7 +76,7 @@ export class SkillManager {
    */
   async install(packageName: string, options?: { version?: string; force?: boolean }): Promise<{ success: boolean; message: string; skill?: InstalledSkill }> {
     const logger = this.logger;
-    
+
     // Validate package name
     if (!packageName || packageName.trim() === '') {
       return { success: false, message: 'Package name is required' };
@@ -83,49 +89,47 @@ export class SkillManager {
     }
 
     logger.info(`Installing skill: ${fullPackageName}`);
-    
+
     try {
       // Check if skill is already installed
       const config = await this.loadConfig();
       const existingSkill = config.skills.find(s => s.name === packageName || s.name === fullPackageName);
-      
+
       if (existingSkill && !options?.force) {
-        return { 
-          success: false, 
-          message: `Skill "${packageName}" is already installed (${existingSkill.version}). Use --force to reinstall.` 
+        return {
+          success: false,
+          message: `Skill "${packageName}" is already installed (${existingSkill.version}). Use --force to reinstall.`
         };
       }
 
       // Search for the package
       logger.info(`Searching for ${fullPackageName} on npm...`);
       const searchResult = await this.searchNpm(fullPackageName);
-      
+
       if (!searchResult.exists) {
-        return { 
-          success: false, 
-          message: `Skill "${fullPackageName}" not found on npm registry. Try searching with: npm search @qa-agent` 
+        return {
+          success: false,
+          message: `Skill "${fullPackageName}" not found on npm registry. Try searching with: npm search @qa-agent`
         };
       }
 
 // Create a temporary directory for npm install
       const tempDir = path.join(this.skillsDir, '.temp');
-      if (!existsSync(tempDir)) {
-        await fs.mkdir(tempDir, { recursive: true });
-      }
+      await fs.mkdir(tempDir, { recursive: true });
 
       // Use npm pack to download the package as a tarball
       logger.info(`Downloading ${searchResult.version}...`);
       let packResult;
       try {
-        packResult = await execAsync(`npm pack ${fullPackageName}${options?.version ? `@${options.version}` : ''}`, { 
-          cwd: tempDir, 
-          timeout: 60000 
+        packResult = await execAsync(`npm pack ${fullPackageName}${options?.version ? `@${options.version}` : ''}`, {
+          cwd: tempDir,
+          timeout: 60000
         });
       } catch (packError: any) {
         // Package might not exist or network error
-        return { 
-          success: false, 
-          message: `Failed to download skill "${fullPackageName}". The package may not exist on npm registry or there's a network issue. Error: ${packError.message}` 
+        return {
+          success: false,
+          message: `Failed to download skill "${fullPackageName}". The package may not exist on npm registry or there's a network issue. Error: ${packError.message}`
         };
       }
 
@@ -138,7 +142,7 @@ export class SkillManager {
       const tarballPath = path.join(tempDir, tarballName);
 
       // Check if tarball exists
-      if (!existsSync(tarballPath)) {
+      if (!await this.fileExists(tarballPath)) {
         return { success: false, message: 'Downloaded package not found' };
       }
 
@@ -147,19 +151,19 @@ export class SkillManager {
       try {
         // Try npm's tar extraction first (works cross-platform)
         await execAsync(`npm pack --dry-run "${tarballPath}"`, { cwd: tempDir, timeout: 30000 }).catch(() => {});
-        
+
         // Use tar if available (Unix), otherwise manual extraction
         const isWindows = process.platform === 'win32';
         if (isWindows) {
           // On Windows, use PowerShell to extract tar
-          await execAsync(`powershell -Command "Expand-Archive -Path '${tarballPath}' -DestinationPath '${tempDir}' -Force"`, { 
-            cwd: tempDir, 
-            timeout: 30000 
+          await execAsync(`powershell -Command "Expand-Archive -Path '${tarballPath}' -DestinationPath '${tempDir}' -Force"`, {
+            cwd: tempDir,
+            timeout: 30000
           });
         } else {
-          await execAsync(`tar -xzf "${tarballPath}" -C "${tempDir}"`, { 
-            cwd: tempDir, 
-            timeout: 30000 
+          await execAsync(`tar -xzf "${tarballPath}" -C "${tempDir}"`, {
+            cwd: tempDir,
+            timeout: 30000
           });
         }
       } catch {
@@ -178,18 +182,18 @@ export class SkillManager {
         }
       }
 
-      if (!extractedDir || !existsSync(extractedDir)) {
+      if (!extractedDir || !await this.fileExists(extractedDir)) {
         // Try finding by package.json
         for (const dir of dirs) {
           const potentialPath = path.join(tempDir, dir);
-          if (existsSync(path.join(potentialPath, 'package.json'))) {
+          if (await this.fileExists(path.join(potentialPath, 'package.json'))) {
             extractedDir = potentialPath;
             break;
           }
         }
       }
 
-      if (!extractedDir || !existsSync(extractedDir)) {
+      if (!extractedDir || !await this.fileExists(extractedDir)) {
         return { success: false, message: 'Failed to extract package' };
       }
 
@@ -199,7 +203,7 @@ export class SkillManager {
 
       // Read package.json to get skill info
       const pkgPath = path.join(skillPath, 'package.json');
-      if (!existsSync(pkgPath)) {
+      if (!await this.fileExists(pkgPath)) {
         return { success: false, message: 'Invalid skill package: missing package.json' };
       }
 
@@ -210,17 +214,13 @@ export class SkillManager {
       const targetPath = path.join(this.skillsDir, skillName);
 
       // Remove existing if force
-      if (existsSync(targetPath)) {
-        await fs.rm(targetPath, { recursive: true, force: true });
-      }
+      await fs.rm(targetPath, { recursive: true, force: true });
 
       // Copy to skills directory
       await this.copyDirectory(skillPath, targetPath);
 
       // Clean up temp
-      if (existsSync(tempDir)) {
-        await fs.rm(tempDir, { recursive: true, force: true });
-      }
+      await fs.rm(tempDir, { recursive: true, force: true });
 
       // Update config
       const skill: InstalledSkill = {
@@ -237,10 +237,10 @@ export class SkillManager {
 
       logger.info(`✅ Skill "${skillName}" installed successfully!`);
 
-      return { 
-        success: true, 
+      return {
+        success: true,
         message: `Skill "${skillName}" v${skill.version} installed successfully`,
-        skill 
+        skill
       };
 
     } catch (error: any) {
@@ -272,7 +272,7 @@ export class SkillManager {
     } else {
       // Update all skills
       logger.info('Updating all installed skills...');
-      
+
       for (const skill of config.skills) {
         const result = await this.updateSkill(skill);
         if (result.success) {
@@ -284,31 +284,31 @@ export class SkillManager {
         return { success: true, message: 'No skills to update or all are at latest version' };
       }
 
-      return { 
-        success: true, 
+      return {
+        success: true,
         message: `Updated ${updated.length} skill(s): ${updated.join(', ')}`,
-        updated 
+        updated
       };
     }
   }
 
   private async updateSkill(skill: InstalledSkill): Promise<{ success: boolean; message: string }> {
     const logger = this.logger;
-    
+
     try {
       logger.info(`Updating ${skill.name}...`);
-      
+
       // Read current version
       const pkgPath = path.join(skill.path, 'package.json');
-      if (!existsSync(pkgPath)) {
+      if (!await this.fileExists(pkgPath)) {
         return { success: false, message: `Invalid skill: missing package.json` };
       }
 
       const currentPkg = JSON.parse(await fs.readFile(pkgPath, 'utf-8'));
-      
+
       // Check for updates on npm
       const searchResult = await this.searchNpm(skill.name);
-      
+
       if (!searchResult.exists) {
         return { success: false, message: `Skill "${skill.name}" not found on npm` };
       }
@@ -319,15 +319,13 @@ export class SkillManager {
 
       // Reinstall the package using npm pack
       const tempDir = path.join(this.skillsDir, '.temp');
-      if (existsSync(tempDir)) {
-        await fs.rm(tempDir, { recursive: true, force: true });
-      }
+      await fs.rm(tempDir, { recursive: true, force: true });
       await fs.mkdir(tempDir, { recursive: true });
 
       // Download via npm pack
       const packResult = await execAsync(`npm pack ${skill.name}@latest`, { cwd: tempDir, timeout: 60000 });
       const tarballName = packResult.stdout.trim();
-      
+
       if (!tarballName) {
         return { success: false, message: 'Failed to download update from npm' };
       }
@@ -340,13 +338,13 @@ export class SkillManager {
       let newPath = '';
       for (const dir of dirs) {
         const potentialPath = path.join(tempDir, dir);
-        if (existsSync(path.join(potentialPath, 'package.json'))) {
+        if (await this.fileExists(path.join(potentialPath, 'package.json'))) {
           newPath = potentialPath;
           break;
         }
       }
 
-      if (newPath && existsSync(path.join(newPath, 'package.json'))) {
+      if (newPath && await this.fileExists(path.join(newPath, 'package.json'))) {
         const newPkg = JSON.parse(await fs.readFile(path.join(newPath, 'package.json'), 'utf-8'));
 
         // Clean and update
@@ -384,7 +382,7 @@ export class SkillManager {
 
     // Normalize name
     const skillName = this.normalizeSkillName(name);
-    
+
     // Check if already exists
     const config = await this.loadConfig();
     if (config.skills.some(s => s.name === skillName)) {
@@ -393,7 +391,7 @@ export class SkillManager {
 
     // Check directory
     const skillPath = path.join(this.skillsDir, skillName);
-    if (existsSync(skillPath)) {
+    if (await this.fileExists(skillPath)) {
       return { success: false, message: `Directory "${skillPath}" already exists` };
     }
 
@@ -415,9 +413,7 @@ export class SkillManager {
         const fullPath = path.join(skillPath, filePath);
         const dir = path.dirname(fullPath);
 
-        if (!existsSync(dir)) {
-          await fs.mkdir(dir, { recursive: true });
-        }
+        await fs.mkdir(dir, { recursive: true });
 
         await fs.writeFile(fullPath, content, 'utf-8');
       }
@@ -448,9 +444,7 @@ export class SkillManager {
       logger.error(`Failed to create skill: ${error.message}`);
 
       // Cleanup on failure
-      if (existsSync(skillPath)) {
-        await fs.rm(skillPath, { recursive: true, force: true });
-      }
+      await fs.rm(skillPath, { recursive: true, force: true });
 
       return { success: false, message: `Creation failed: ${error.message}` };
     }
@@ -470,9 +464,7 @@ export class SkillManager {
 
     try {
       // Remove from filesystem
-      if (existsSync(skill.path)) {
-        await fs.rm(skill.path, { recursive: true, force: true });
-      }
+      await fs.rm(skill.path, { recursive: true, force: true });
 
       // Update config
       config.skills = config.skills.filter(s => s.name !== skillName);
@@ -491,7 +483,7 @@ export class SkillManager {
   async toggle(skillName: string, enabled: boolean): Promise<{ success: boolean; message: string }> {
     const config = await this.loadConfig();
     const skill = config.skills.find(s => s.name === skillName);
-    
+
     if (!skill) {
       return { success: false, message: `Skill "${skillName}" not found` };
     }
@@ -499,9 +491,9 @@ export class SkillManager {
     skill.enabled = enabled;
     await this.updateSkillInConfig(skill);
 
-    return { 
-      success: true, 
-      message: `Skill "${skillName}" ${enabled ? 'enabled' : 'disabled'}` 
+    return {
+      success: true,
+      message: `Skill "${skillName}" ${enabled ? 'enabled' : 'disabled'}`
     };
   }
 
@@ -516,9 +508,6 @@ export class SkillManager {
   }
 
   private async loadConfig(): Promise<{ skills: InstalledSkill[] }> {
-    if (!existsSync(this.configPath)) {
-      return { skills: [] };
-    }
     try {
       return JSON.parse(await fs.readFile(this.configPath, 'utf-8'));
     } catch {
@@ -527,9 +516,7 @@ export class SkillManager {
   }
 
   private async saveConfig(config: { skills: InstalledSkill[] }): Promise<void> {
-    if (!existsSync(path.dirname(this.configPath))) {
-      await fs.mkdir(path.dirname(this.configPath), { recursive: true });
-    }
+    await fs.mkdir(path.dirname(this.configPath), { recursive: true });
     await fs.writeFile(this.configPath, JSON.stringify(config, null, 2), 'utf-8');
   }
 
@@ -557,18 +544,18 @@ export class SkillManager {
     try {
       const result = await execAsync(`npm view ${packageName} version description --json`, { timeout: 30000 });
       let info;
-      
+
       try {
         info = JSON.parse(result.stdout);
       } catch {
         return { exists: false, version: '' };
       }
-      
+
       // Check if npm returned an error response
       if (info && info.error) {
         return { exists: false, version: '' };
       }
-      
+
       return {
         exists: true,
         version: info?.version || '1.0.0',
@@ -580,9 +567,7 @@ export class SkillManager {
   }
 
   private async copyDirectory(src: string, dest: string): Promise<void> {
-    if (!existsSync(dest)) {
-      await fs.mkdir(dest, { recursive: true });
-    }
+    await fs.mkdir(dest, { recursive: true });
 
     const entries = await fs.readdir(src, { withFileTypes: true });
 
@@ -688,9 +673,9 @@ Add your checker modules here. Each checker should focus on a specific aspect of
 \`\`\`typescript
 export async function checkSomething(context: SkillContext) {
   const diagnoses: Diagnosis[] = [];
-  
+
   // Implement your checks
-  
+
   return diagnoses;
 }
 \`\`\`

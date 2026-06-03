@@ -1,6 +1,6 @@
 /**
  * 设计令牌提取器
- * 
+ *
  * 从以下来源提取设计规范：
  * 1. CSS/SCSS/Less 文件中的变量
  * 2. Tailwind 配置文件
@@ -8,7 +8,6 @@
  * 4. Figma API (可选)
  */
 
-import { existsSync } from 'fs';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { QAConfig } from '../../../config';
@@ -63,19 +62,19 @@ export class DesignTokenExtractor {
 
   private async extractFromCSS(projectPath: string): Promise<Partial<DesignTokens>> {
     const tokens: Partial<DesignTokens> = { colors: {}, spacing: {}, borderRadius: {}, shadows: {} };
-    
+
     // 查找 CSS 变量文件
     const cssFiles = await this.findFiles(projectPath, ['**/*.css', '**/*.scss', '**/*.less']);
-    
+
     for (const file of cssFiles.slice(0, 20)) { // 限制文件数量
       const content = await fs.readFile(file, 'utf-8');
-      
+
       // 提取 CSS 变量
       const cssVarRegex = /--([\w-]+):\s*([^;]+);/g;
       let match;
       while ((match = cssVarRegex.exec(content)) !== null) {
         const [, name, value] = match;
-        
+
         // 分类令牌
         if (this.isColor(name, value)) {
           tokens.colors![name] = value.trim();
@@ -94,21 +93,24 @@ export class DesignTokenExtractor {
 
   private async extractFromTailwind(projectPath: string): Promise<Partial<DesignTokens>> {
     const tokens: Partial<DesignTokens> = { colors: {}, spacing: {}, borderRadius: {} };
-    
+
     const tailwindConfigPath = path.join(projectPath, 'tailwind.config.js');
     const tailwindConfigTsPath = path.join(projectPath, 'tailwind.config.ts');
-    
-    let configPath = existsSync(tailwindConfigPath) ? tailwindConfigPath
-                   : existsSync(tailwindConfigTsPath) ? tailwindConfigTsPath
-                   : null;
-    
+
+    let configPath: string | null = null;
+    if (await this.fileExists(tailwindConfigPath)) {
+      configPath = tailwindConfigPath;
+    } else if (await this.fileExists(tailwindConfigTsPath)) {
+      configPath = tailwindConfigTsPath;
+    }
+
     if (!configPath) return tokens;
 
     try {
       // 动态导入 Tailwind 配置
       const config = await import(configPath);
       const theme = config.default?.theme || config.theme;
-      
+
       if (theme?.extend?.colors) {
         Object.assign(tokens.colors!, theme.extend.colors);
       }
@@ -127,7 +129,7 @@ export class DesignTokenExtractor {
 
   private async extractFromThemeFiles(projectPath: string): Promise<Partial<DesignTokens>> {
     const tokens: Partial<DesignTokens> = {};
-    
+
     // 常见的主题文件路径
     const themePaths = [
       'src/theme/index.ts',
@@ -137,10 +139,10 @@ export class DesignTokenExtractor {
       'src/tokens/index.ts',
       'src/design-system/tokens.ts',
     ];
-    
+
     for (const themePath of themePaths) {
       const fullPath = path.join(projectPath, themePath);
-      if (existsSync(fullPath)) {
+      if (await this.fileExists(fullPath)) {
         // 这里可以添加更复杂的主题文件解析逻辑
         // 目前简单返回空对象
         break;
@@ -154,6 +156,15 @@ export class DesignTokenExtractor {
     // TODO: 实现 Figma API 调用
     // 需要调用 Figma API 获取设计令牌
     return {};
+  }
+
+  private async fileExists(p: string): Promise<boolean> {
+    try {
+      await fs.access(p);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private async findFiles(projectPath: string, patterns: string[]): Promise<string[]> {

@@ -1,10 +1,10 @@
 /**
  * HTML Fix Generator
- * 
+ *
  * 自动生成 HTML 修复代码
  */
 
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
 import { Diagnosis, Fix } from '../../../../types';
 
 export class HTMLFixGenerator {
@@ -15,23 +15,23 @@ export class HTMLFixGenerator {
 
     switch (type) {
       case 'missing-lang':
-        return this.fixMissingLang(fullPath, diagnosis);
-      
+        return await this.fixMissingLang(fullPath, diagnosis);
+
       case 'missing-viewport':
         return this.fixMissingViewport(fullPath, diagnosis);
-      
+
       case 'missing-title':
         return this.fixMissingTitle(fullPath, diagnosis);
-      
+
       case 'missing-alt':
-        return this.fixMissingAlt(fullPath, diagnosis);
-      
+        return await this.fixMissingAlt(fullPath, diagnosis);
+
       case 'missing-label':
-        return this.fixMissingLabel(fullPath, diagnosis);
-      
+        return await this.fixMissingLabel(fullPath, diagnosis);
+
       case 'external-link-security':
-        return this.fixExternalLink(fullPath, diagnosis);
-      
+        return await this.fixExternalLink(fullPath, diagnosis);
+
       default:
         throw new Error(`Unsupported fix type: ${type}`);
     }
@@ -92,11 +92,11 @@ export class HTMLFixGenerator {
     };
   }
 
-  private fixMissingAlt(filePath: string, diagnosis: Diagnosis): Fix {
-    const content = fs.readFileSync(filePath, 'utf-8');
+  private async fixMissingAlt(filePath: string, diagnosis: Diagnosis): Promise<Fix> {
+    const content = await fs.readFile(filePath, 'utf-8');
     const lines = content.split('\n');
     const line = lines[(diagnosis.location.line || 1) - 1];
-    
+
     // 在 img 标签中添加 alt=""
     const fixedLine = line.replace(/<img([^>]*)>/i, '<img$1 alt="">');
 
@@ -118,16 +118,16 @@ export class HTMLFixGenerator {
     };
   }
 
-  private fixMissingLabel(filePath: string, diagnosis: Diagnosis): Fix {
-    const content = fs.readFileSync(filePath, 'utf-8');
+  private async fixMissingLabel(filePath: string, diagnosis: Diagnosis): Promise<Fix> {
+    const content = await fs.readFile(filePath, 'utf-8');
     const lines = content.split('\n');
     const line = lines[(diagnosis.location.line || 1) - 1];
-    
+
     // 提取 input 的 id 或 name
     const idMatch = line.match(/id\s*=\s*["']([^"']+)["']/i);
     const nameMatch = line.match(/name\s*=\s*["']([^"']+)["']/i);
     const identifier = idMatch ? idMatch[1] : (nameMatch ? nameMatch[1] : 'input');
-    
+
     // 添加 aria-label
     const fixedLine = line.replace(/<input/i, `<input aria-label="${identifier}"`);
 
@@ -149,11 +149,11 @@ export class HTMLFixGenerator {
     };
   }
 
-  private fixExternalLink(filePath: string, diagnosis: Diagnosis): Fix {
-    const content = fs.readFileSync(filePath, 'utf-8');
+  private async fixExternalLink(filePath: string, diagnosis: Diagnosis): Promise<Fix> {
+    const content = await fs.readFile(filePath, 'utf-8');
     const lines = content.split('\n');
     const line = lines[(diagnosis.location.line || 1) - 1];
-    
+
     // 添加 rel="noopener noreferrer"
     let fixedLine = line;
     if (/target\s*=\s*["']_blank["']/i.test(line)) {

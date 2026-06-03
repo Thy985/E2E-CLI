@@ -1,10 +1,10 @@
 /**
  * Image Fix Generator
- * 
+ *
  * 自动生成图片优化修复代码
  */
 
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
 import { Diagnosis, Fix } from '../../../../types';
 
 export class ImageFixGenerator {
@@ -15,27 +15,27 @@ export class ImageFixGenerator {
 
     switch (type) {
       case 'missing-dimensions':
-        return this.fixMissingDimensions(fullPath, diagnosis);
-      
+        return await this.fixMissingDimensions(fullPath, diagnosis);
+
       case 'missing-lazy-loading':
-        return this.fixMissingLazyLoading(fullPath, diagnosis);
-      
+        return await this.fixMissingLazyLoading(fullPath, diagnosis);
+
       case 'legacy-format':
-        return this.fixLegacyFormat(fullPath, diagnosis);
-      
+        return await this.fixLegacyFormat(fullPath, diagnosis);
+
       default:
         throw new Error(`Unsupported fix type: ${type}`);
     }
   }
 
-  private fixMissingDimensions(filePath: string, diagnosis: Diagnosis): Fix {
-    const content = fs.readFileSync(filePath, 'utf-8');
+  private async fixMissingDimensions(filePath: string, diagnosis: Diagnosis): Promise<Fix> {
+    const content = await fs.readFile(filePath, 'utf-8');
     const lines = content.split('\n');
     const line = lines[(diagnosis.location.line || 1) - 1];
-    
+
     // 添加 width 和 height 属性（使用占位值）
     let fixedLine = line;
-    
+
     if (!/width=/.test(line)) {
       fixedLine = fixedLine.replace(/<img/i, '<img width=""');
     }
@@ -62,11 +62,11 @@ export class ImageFixGenerator {
     };
   }
 
-  private fixMissingLazyLoading(filePath: string, diagnosis: Diagnosis): Fix {
-    const content = fs.readFileSync(filePath, 'utf-8');
+  private async fixMissingLazyLoading(filePath: string, diagnosis: Diagnosis): Promise<Fix> {
+    const content = await fs.readFile(filePath, 'utf-8');
     const lines = content.split('\n');
     const line = lines[(diagnosis.location.line || 1) - 1];
-    
+
     // 添加 loading="lazy"
     const fixedLine = line.replace(/<img/i, '<img loading="lazy"');
 
@@ -89,11 +89,11 @@ export class ImageFixGenerator {
     };
   }
 
-  private fixLegacyFormat(filePath: string, diagnosis: Diagnosis): Fix {
-    const content = fs.readFileSync(filePath, 'utf-8');
+  private async fixLegacyFormat(filePath: string, diagnosis: Diagnosis): Promise<Fix> {
+    const content = await fs.readFile(filePath, 'utf-8');
     const lines = content.split('\n');
     const line = lines[(diagnosis.location.line || 1) - 1];
-    
+
     // 提取 src
     const srcMatch = line.match(/src\s*=\s*["']([^"']+)["']/);
     if (!srcMatch) {
@@ -102,11 +102,11 @@ export class ImageFixGenerator {
 
     const src = srcMatch[1];
     const webpSrc = src.replace(/\.(jpg|jpeg|png)$/i, '.webp');
-    
+
     // 构建 picture 元素
     const altMatch = line.match(/alt\s*=\s*["']([^"']*)["']/);
     const alt = altMatch ? altMatch[1] : '';
-    
+
     const pictureElement = `<picture>
   <source srcset="${webpSrc}" type="image/webp">
   <img src="${src}" alt="${alt}" loading="lazy">

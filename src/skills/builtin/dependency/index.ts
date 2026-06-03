@@ -8,7 +8,7 @@
  * 4. 未使用的依赖
  */
 
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
 import * as path from 'path';
 import { BaseSkill } from '../../base-skill';
 import {
@@ -49,12 +49,13 @@ export class DependencySkill extends BaseSkill {
     const { project } = context;
 
     const packageJsonPath = path.join(project.path, 'package.json');
-    
-    if (!fs.existsSync(packageJsonPath)) {
+
+    let packageJson: any;
+    try {
+      packageJson = JSON.parse(await fs.readFile(packageJsonPath, 'utf-8'));
+    } catch (error) {
       return issues;
     }
-
-    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
 
     // 检查过时的依赖
     context.logger.info('🔍 Checking outdated dependencies...');

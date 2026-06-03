@@ -88,11 +88,11 @@ async function runBatchFix(options: any, config: any, logger: any) {
 
   // 保存报告
   if (!options.dryRun) {
-    const fs = await import('fs');
+    const fs = await import('fs/promises');
     const path = await import('path');
     const reportPath = path.join(options.path, '.qa-agent', 'fix-report.md');
-    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
-    fs.writeFileSync(reportPath, result.report, 'utf-8');
+    await fs.mkdir(path.dirname(reportPath), { recursive: true });
+    await fs.writeFile(reportPath, result.report, 'utf-8');
     logger.info(`Report saved to: ${reportPath}`);
   }
 

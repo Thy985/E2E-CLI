@@ -1,10 +1,10 @@
 /**
  * Performance Checker
- * 
+ *
  * 检查性能优化问题
  */
 
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
 import * as path from 'path';
 import { Diagnosis, Severity } from '../../../../types';
 
@@ -15,7 +15,7 @@ export class PerformanceChecker {
     // 检查 HTML 文件
     const htmlFiles = await this.findHTMLFiles(projectPath);
     for (const file of htmlFiles) {
-      const content = await fs.promises.readFile(file, 'utf-8');
+      const content = await fs.readFile(file, 'utf-8');
       const relativePath = path.relative(projectPath, file);
 
       // 检查阻塞渲染的资源
@@ -30,7 +30,7 @@ export class PerformanceChecker {
     // 检查 JavaScript 文件
     const jsFiles = await this.findJSFiles(projectPath);
     for (const file of jsFiles) {
-      const content = await fs.promises.readFile(file, 'utf-8');
+      const content = await fs.readFile(file, 'utf-8');
       const relativePath = path.relative(projectPath, file);
 
       // 检查大型依赖
@@ -59,7 +59,7 @@ export class PerformanceChecker {
 
     lines.forEach((line, index) => {
       // 检查同步 script 标签
-      if (/<script[^>]*src[^>]*>/.test(line) && 
+      if (/<script[^>]*src[^>]*>/.test(line) &&
           !/async|defer/.test(line) &&
           !/<script[^>]*type\s*=\s*["\']module["\']/.test(line)) {
         issues.push({
@@ -175,7 +175,7 @@ export class PerformanceChecker {
       // 检查在循环中进行 DOM 操作
       if (/for\s*\(|while\s*\(|forEach\s*\(/.test(line)) {
         const nextLines = lines.slice(index, Math.min(index + 10, lines.length)).join('\n');
-        
+
         if (/document\.|querySelector|getElementById|getElementsBy/.test(nextLines)) {
           issues.push({
             id: `perf-dom-in-loop-${file}-${index}`,
@@ -198,7 +198,7 @@ export class PerformanceChecker {
       // 检查在循环中创建函数
       if (/for\s*\(|while\s*\(/.test(line)) {
         const nextLines = lines.slice(index, Math.min(index + 10, lines.length)).join('\n');
-        
+
         if (/function\s*\(|=>\s*{/.test(nextLines)) {
           issues.push({
             id: `perf-func-in-loop-${file}-${index}`,
@@ -280,24 +280,51 @@ export class PerformanceChecker {
 
     // 检查 node_modules 大小
     const nodeModulesPath = path.join(projectPath, 'node_modules');
-    if (fs.existsSync(nodeModulesPath)) {
+    try {
+      const size = await this.getDirectorySize(nodeModulesPath);
+      const sizeMB = size / (1024 * 1024);
+
+      if (sizeMB > 500) {
+        issues.push({
+          id: `perf-large-node-modules`,
+          skill: 'best-practices',
+          type: 'best-practice',
+          severity: 'warning',
+          title: 'Large node_modules directory',
+          description: `node_modules is ${sizeMB.toFixed(0)}MB. Consider reviewing dependencies`,
+          location: { file: 'package.json', line: 1, column: 1 },
+          metadata: {
+            category: 'performance',
+            type: 'bundle-size',
+            suggestion: 'Run "npm ls --depth=0" to review dependencies',
+          },
+        });
+      }
+    } catch (error) {
+      // 忽略错误
+    }
+
+    // 检查 dist/build 大小
+    const distPaths = ['dist', 'build', '.next', 'out'];
+    for (const distDir of distPaths) {
+      const distPath = path.join(projectPath, distDir);
       try {
-        const size = await this.getDirectorySize(nodeModulesPath);
+        const size = await this.getDirectorySize(distPath);
         const sizeMB = size / (1024 * 1024);
 
-        if (sizeMB > 500) {
+        if (sizeMB > 10) {
           issues.push({
-            id: `perf-large-node-modules`,
+            id: `perf-large-bundle-${distDir}`,
             skill: 'best-practices',
             type: 'best-practice',
-            severity: 'warning',
-            title: 'Large node_modules directory',
-            description: `node_modules is ${sizeMB.toFixed(0)}MB. Consider reviewing dependencies`,
-            location: { file: 'package.json', line: 1, column: 1 },
+            severity: 'info',
+            title: `Large build output: ${distDir}`,
+            description: `Build output is ${sizeMB.toFixed(1)}MB. Consider code splitting`,
+            location: { file: distDir, line: 1, column: 1 },
             metadata: {
               category: 'performance',
               type: 'bundle-size',
-              suggestion: 'Run "npm ls --depth=0" to review dependencies',
+              suggestion: 'Enable code splitting and tree shaking',
             },
           });
         }
@@ -306,51 +333,20 @@ export class PerformanceChecker {
       }
     }
 
-    // 检查 dist/build 大小
-    const distPaths = ['dist', 'build', '.next', 'out'];
-    for (const distDir of distPaths) {
-      const distPath = path.join(projectPath, distDir);
-      if (fs.existsSync(distPath)) {
-        try {
-          const size = await this.getDirectorySize(distPath);
-          const sizeMB = size / (1024 * 1024);
-
-          if (sizeMB > 10) {
-            issues.push({
-              id: `perf-large-bundle-${distDir}`,
-              skill: 'best-practices',
-              type: 'best-practice',
-              severity: 'info',
-              title: `Large build output: ${distDir}`,
-              description: `Build output is ${sizeMB.toFixed(1)}MB. Consider code splitting`,
-              location: { file: distDir, line: 1, column: 1 },
-              metadata: {
-                category: 'performance',
-                type: 'bundle-size',
-                suggestion: 'Enable code splitting and tree shaking',
-              },
-            });
-          }
-        } catch (error) {
-          // 忽略错误
-        }
-      }
-    }
-
     return issues;
   }
 
   private async getDirectorySize(dirPath: string): Promise<number> {
     let size = 0;
-    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    const entries = await fs.readdir(dirPath, { withFileTypes: true });
 
     for (const entry of entries) {
       const fullPath = path.join(dirPath, entry.name);
-      
+
       if (entry.isDirectory()) {
         size += await this.getDirectorySize(fullPath);
       } else if (entry.isFile()) {
-        const stats = fs.statSync(fullPath);
+        const stats = await fs.stat(fullPath);
         size += stats.size;
       }
     }
@@ -362,26 +358,28 @@ export class PerformanceChecker {
     const files: string[] = [];
     const extensions = ['.html', '.htm'];
 
-    const scanDir = (dir: string, depth: number = 0) => {
+    const scanDir = async (dir: string, depth: number = 0): Promise<void> => {
       if (depth > 4) return;
 
+      let entries;
       try {
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
-        for (const entry of entries) {
-          const fullPath = path.join(dir, entry.name);
-
-          if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') {
-            scanDir(fullPath, depth + 1);
-          } else if (entry.isFile() && extensions.some(ext => entry.name.endsWith(ext))) {
-            files.push(fullPath);
-          }
-        }
+        entries = await fs.readdir(dir, { withFileTypes: true });
       } catch (error) {
         // 忽略权限错误
+        return;
+      }
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+
+        if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') {
+          await scanDir(fullPath, depth + 1);
+        } else if (entry.isFile() && extensions.some(ext => entry.name.endsWith(ext))) {
+          files.push(fullPath);
+        }
       }
     };
 
-    scanDir(projectPath);
+    await scanDir(projectPath);
     return files.slice(0, 50);
   }
 
@@ -389,26 +387,28 @@ export class PerformanceChecker {
     const files: string[] = [];
     const extensions = ['.js', '.jsx', '.ts', '.tsx'];
 
-    const scanDir = (dir: string, depth: number = 0) => {
+    const scanDir = async (dir: string, depth: number = 0): Promise<void> => {
       if (depth > 4) return;
 
+      let entries;
       try {
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
-        for (const entry of entries) {
-          const fullPath = path.join(dir, entry.name);
-
-          if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') {
-            scanDir(fullPath, depth + 1);
-          } else if (entry.isFile() && extensions.some(ext => entry.name.endsWith(ext))) {
-            files.push(fullPath);
-          }
-        }
+        entries = await fs.readdir(dir, { withFileTypes: true });
       } catch (error) {
         // 忽略权限错误
+        return;
+      }
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+
+        if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') {
+          await scanDir(fullPath, depth + 1);
+        } else if (entry.isFile() && extensions.some(ext => entry.name.endsWith(ext))) {
+          files.push(fullPath);
+        }
       }
     };
 
-    scanDir(projectPath);
+    await scanDir(projectPath);
     return files.slice(0, 50);
   }
 }

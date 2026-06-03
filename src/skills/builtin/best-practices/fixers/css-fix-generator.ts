@@ -1,10 +1,10 @@
 ﻿/**
  * CSS Fix Generator
- * 
- * 鑷姩生成 CSS 淇以ｇ爜
+ *
+ * 自动生成 CSS 修复代码
  */
 
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
 import { Diagnosis, Fix } from '../../../../types';
 
 export class CSSFixGenerator {
@@ -15,31 +15,31 @@ export class CSSFixGenerator {
 
     switch (type) {
       case 'at-import':
-        return this.fixAtImport(fullPath, diagnosis);
-      
+        return await this.fixAtImport(fullPath, diagnosis);
+
       case 'empty-rule':
-        return this.fixEmptyRule(fullPath, diagnosis);
-      
+        return await this.fixEmptyRule(fullPath, diagnosis);
+
       case 'important-overuse':
-        return this.fixImportantOveruse(fullPath, diagnosis);
-      
+        return await this.fixImportantOveruse(fullPath, diagnosis);
+
       case 'id-selector':
-        return this.fixIdSelector(fullPath, diagnosis);
-      
+        return await this.fixIdSelector(fullPath, diagnosis);
+
       case 'universal-selector':
-        return this.fixUniversalSelector(fullPath, diagnosis);
-      
+        return await this.fixUniversalSelector(fullPath, diagnosis);
+
       default:
         throw new Error(`Unsupported fix type: ${type}`);
     }
   }
 
-  private fixAtImport(filePath: string, diagnosis: Diagnosis): Fix {
-    const content = fs.readFileSync(filePath, 'utf-8');
+  private async fixAtImport(filePath: string, diagnosis: Diagnosis): Promise<Fix> {
+    const content = await fs.readFile(filePath, 'utf-8');
     const lines = content.split('\n');
     const line = lines[(diagnosis.location.line || 1) - 1];
-    
-    // 鎻愬彇 URL
+
+    // 提取 URL
     const urlMatch = line.match(/@import\s+url\(['"]?([^'"]+)['"]?\)/i);
     const url = urlMatch ? urlMatch[1] : '';
 
@@ -60,8 +60,8 @@ export class CSSFixGenerator {
     };
   }
 
-  private fixEmptyRule(filePath: string, diagnosis: Diagnosis): Fix {
-    const content = fs.readFileSync(filePath, 'utf-8');
+  private async fixEmptyRule(filePath: string, diagnosis: Diagnosis): Promise<Fix> {
+    const content = await fs.readFile(filePath, 'utf-8');
     const lines = content.split('\n');
     const line = lines[(diagnosis.location.line || 1) - 1];
 
@@ -81,12 +81,12 @@ export class CSSFixGenerator {
     };
   }
 
-  private fixImportantOveruse(filePath: string, diagnosis: Diagnosis): Fix {
-    const content = fs.readFileSync(filePath, 'utf-8');
+  private async fixImportantOveruse(filePath: string, diagnosis: Diagnosis): Promise<Fix> {
+    const content = await fs.readFile(filePath, 'utf-8');
     const lines = content.split('\n');
     const line = lines[(diagnosis.location.line || 1) - 1];
-    
-    // 绉婚除 !important
+
+    // 移除 !important
     const fixedLine = line.replace(/\s*!important/g, '');
 
     return {
@@ -108,12 +108,12 @@ export class CSSFixGenerator {
     };
   }
 
-  private fixIdSelector(filePath: string, diagnosis: Diagnosis): Fix {
-    const content = fs.readFileSync(filePath, 'utf-8');
+  private async fixIdSelector(filePath: string, diagnosis: Diagnosis): Promise<Fix> {
+    const content = await fs.readFile(filePath, 'utf-8');
     const lines = content.split('\n');
     const line = lines[(diagnosis.location.line || 1) - 1];
-    
-    // 灏?#id 杞换涓?.class
+
+    // 将 #id 替换为 .class
     const fixedLine = line.replace(/#([a-zA-Z][a-zA-Z0-9_-]*)/g, '.$1');
 
     return {
@@ -135,8 +135,8 @@ export class CSSFixGenerator {
     };
   }
 
-  private fixUniversalSelector(filePath: string, diagnosis: Diagnosis): Fix {
-    const content = fs.readFileSync(filePath, 'utf-8');
+  private async fixUniversalSelector(filePath: string, diagnosis: Diagnosis): Promise<Fix> {
+    const content = await fs.readFile(filePath, 'utf-8');
     const lines = content.split('\n');
     const line = lines[(diagnosis.location.line || 1) - 1];
 
@@ -160,5 +160,3 @@ export class CSSFixGenerator {
 }
 
 export default CSSFixGenerator;
-
-

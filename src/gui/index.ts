@@ -344,9 +344,7 @@ export class GUIAgent {
    * Ensure directory exists
    */
   private async ensureDir(dir: string): Promise<void> {
-    if (!fs.existsSync(dir)) {
-      await fs.promises.mkdir(dir, { recursive: true });
-    }
+    await fs.promises.mkdir(dir, { recursive: true });
   }
 }
 

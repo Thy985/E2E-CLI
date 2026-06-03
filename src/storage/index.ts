@@ -10,7 +10,6 @@
 import { Storage } from '../types';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import * as fssync from 'fs';
 
 /**
  * In-memory storage. Default for unit tests and short-lived processes.
@@ -81,7 +80,10 @@ export function createFileStorage(basePath: string): Storage {
     }, 50);
   }
 
-  // Best-effort flush on exit
+  // Best-effort flush on exit. We use both `beforeExit` (which awaits
+  // async work) and `exit` (which doesn't — kept as a last-ditch sync
+  // attempt that's a no-op in the common case because the async flush
+  // already wrote the file).
   const flush = async () => {
     if (saveTimer) {
       clearTimeout(saveTimer);
@@ -94,13 +96,11 @@ export function createFileStorage(basePath: string): Storage {
       } catch { /* ignore */ }
     }
   };
-  process.once('exit', () => {
-    if (cache && fssync.existsSync(storePath) === false && cache && Object.keys(cache).length > 0) {
-      try {
-        fssync.mkdirSync(path.dirname(storePath), { recursive: true });
-        fssync.writeFileSync(storePath, JSON.stringify(cache, null, 2), 'utf-8');
-      } catch { /* ignore */ }
-    }
+  process.once('beforeExit', () => {
+    // Fire-and-forget: beforeExit blocks event-loop drain until the returned
+    // promise resolves, so an awaited flush here would be enough. We rely on
+    // that implicit blocking by not awaiting this call ourselves.
+    void flush();
   });
 
   return {

@@ -1,10 +1,10 @@
 /**
  * Dependency Fix Generator
- * 
+ *
  * 自动生成依赖修复代码
  */
 
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
 import { Diagnosis, Fix } from '../../../../types';
 
 export class DependencyFixGenerator {
@@ -16,19 +16,19 @@ export class DependencyFixGenerator {
     switch (type) {
       case 'outdated':
         return this.fixOutdated(fullPath, diagnosis);
-      
+
       case 'duplicate':
-        return this.fixDuplicate(fullPath, diagnosis);
-      
+        return await this.fixDuplicate(fullPath, diagnosis);
+
       case 'wrong-placement':
-        return this.fixWrongPlacement(fullPath, diagnosis);
-      
+        return await this.fixWrongPlacement(fullPath, diagnosis);
+
       case 'unsafe-version':
-        return this.fixUnsafeVersion(fullPath, diagnosis);
-      
+        return await this.fixUnsafeVersion(fullPath, diagnosis);
+
       case 'exact-version':
-        return this.fixExactVersion(fullPath, diagnosis);
-      
+        return await this.fixExactVersion(fullPath, diagnosis);
+
       default:
         throw new Error(`Unsupported fix type: ${type}`);
     }
@@ -36,7 +36,7 @@ export class DependencyFixGenerator {
 
   private fixOutdated(filePath: string, diagnosis: Diagnosis): Fix {
     const { package: pkg, current, latest } = diagnosis.metadata || {};
-    
+
     return {
       id: `fix-${diagnosis.id}`,
       diagnosisId: diagnosis.id,
@@ -56,16 +56,16 @@ export class DependencyFixGenerator {
     };
   }
 
-  private fixDuplicate(filePath: string, diagnosis: Diagnosis): Fix {
+  private async fixDuplicate(filePath: string, diagnosis: Diagnosis): Promise<Fix> {
     const { package: pkg } = diagnosis.metadata || {};
-    
+
     // 读取 package.json
-    const content = fs.readFileSync(filePath, 'utf-8');
+    const content = await fs.readFile(filePath, 'utf-8');
     const packageJson = JSON.parse(content);
-    
+
     // 确定应该保留在哪个部分
     const shouldBeInDeps = this.shouldBeInDependencies(pkg);
-    
+
     if (shouldBeInDeps) {
       // 从 devDependencies 中删除
       delete packageJson.devDependencies[pkg];
@@ -92,15 +92,15 @@ export class DependencyFixGenerator {
     };
   }
 
-  private fixWrongPlacement(filePath: string, diagnosis: Diagnosis): Fix {
+  private async fixWrongPlacement(filePath: string, diagnosis: Diagnosis): Promise<Fix> {
     const { package: pkg } = diagnosis.metadata || {};
-    
+
     // 读取 package.json
-    const content = fs.readFileSync(filePath, 'utf-8');
+    const content = await fs.readFile(filePath, 'utf-8');
     const packageJson = JSON.parse(content);
-    
+
     const shouldBeInDeps = this.shouldBeInDependencies(pkg);
-    
+
     if (shouldBeInDeps) {
       // 从 devDependencies 移动到 dependencies
       if (packageJson.devDependencies?.[pkg]) {
@@ -137,20 +137,20 @@ export class DependencyFixGenerator {
     };
   }
 
-  private fixUnsafeVersion(filePath: string, diagnosis: Diagnosis): Fix {
+  private async fixUnsafeVersion(filePath: string, diagnosis: Diagnosis): Promise<Fix> {
     const { package: pkg } = diagnosis.metadata || {};
-    
+
     // 读取 package.json
-    const content = fs.readFileSync(filePath, 'utf-8');
+    const content = await fs.readFile(filePath, 'utf-8');
     const packageJson = JSON.parse(content);
-    
+
     // 查找当前版本
     let currentVersion = packageJson.dependencies?.[pkg] || packageJson.devDependencies?.[pkg];
-    
+
     // 替换为安全的版本范围
     if (currentVersion === '*' || currentVersion === 'latest') {
       const safeVersion = '^1.0.0'; // 默认使用 ^1.0.0，实际应该查询最新版本
-      
+
       if (packageJson.dependencies?.[pkg]) {
         packageJson.dependencies[pkg] = safeVersion;
       }
@@ -178,20 +178,20 @@ export class DependencyFixGenerator {
     };
   }
 
-  private fixExactVersion(filePath: string, diagnosis: Diagnosis): Fix {
+  private async fixExactVersion(filePath: string, diagnosis: Diagnosis): Promise<Fix> {
     const { package: pkg } = diagnosis.metadata || {};
-    
+
     // 读取 package.json
-    const content = fs.readFileSync(filePath, 'utf-8');
+    const content = await fs.readFile(filePath, 'utf-8');
     const packageJson = JSON.parse(content);
-    
+
     // 查找当前版本
     let currentVersion = packageJson.dependencies?.[pkg] || packageJson.devDependencies?.[pkg];
-    
+
     // 添加 ^ 前缀
     if (currentVersion && /^\d/.test(currentVersion)) {
       const newVersion = '^' + currentVersion;
-      
+
       if (packageJson.dependencies?.[pkg]) {
         packageJson.dependencies[pkg] = newVersion;
       }

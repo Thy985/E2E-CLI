@@ -11,7 +11,6 @@
 
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import { existsSync } from 'fs';
 import { Diagnosis, Fix } from '../../types';
 import { SandboxManager } from '../sandbox';
 
@@ -215,7 +214,9 @@ export class FixEngine {
   async rollback(rollbackId: string, projectPath: string): Promise<void> {
     const rollbackPath = path.join(projectPath, '.qa-agent', 'rollback', rollbackId);
 
-    if (!existsSync(rollbackPath)) {
+    try {
+      await fs.access(rollbackPath);
+    } catch {
       throw new Error(`Rollback point ${rollbackId} not found`);
     }
 
