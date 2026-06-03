@@ -1,56 +1,118 @@
 /**
- * Ignore Comment Support
- * Supports // qa-agent-ignore and // qa-agent-ignore-next-line
+ * Ignore pattern matching utilities
  */
 
 /**
- * Check if a line should be ignored based on comments
+ * Check if a path matches any of the given patterns
  */
-export function shouldIgnoreLine(
-  content: string, 
-  lineNumber: number,
-  ruleId?: string
-): boolean {
-  const lines = content.split('\n');
-  const line = lines[lineNumber - 1];
-  
-  if (!line) return false;
-  
-  // Check for inline ignore
-  if (line.includes('// qa-agent-ignore')) {
-    // Check if specific rule is mentioned
-    if (ruleId) {
-      const match = line.match(/qa-agent-ignore\s+(.+)/);
-      if (match) {
-        const ignoredRules = match[1].split(',').map(r => r.trim());
-        return ignoredRules.includes(ruleId) || ignoredRules.includes('all');
-      }
-    }
-    return true;
-  }
-  
-  // Check for previous line ignore comment
-  if (lineNumber > 1) {
-    const prevLine = lines[lineNumber - 2];
-    if (prevLine?.includes('// qa-agent-ignore-next-line')) {
-      // Check if specific rule is mentioned
-      if (ruleId) {
-        const match = prevLine.match(/qa-agent-ignore-next-line\s+(.+)/);
-        if (match) {
-          const ignoredRules = match[1].split(',').map(r => r.trim());
-          return ignoredRules.includes(ruleId) || ignoredRules.includes('all');
-        }
-      }
-      return true;
-    }
-  }
-  
-  return false;
+export function matchesAnyPattern(filePath: string, patterns: string[]): boolean {
+  return patterns.some(pattern => matchesPattern(filePath, pattern));
 }
 
 /**
- * Check if a file section should be ignored
+ * Check if a single pattern matches a path
  */
+export function matchesPattern(filePath: string, pattern: string): boolean {
+  const normalizedPath = filePath.replace(/\\/g, '/');
+  const normalizedPattern = pattern.replace(/\\/g, '/');
+
+  // Match all
+  if (normalizedPattern === '**/*' || normalizedPattern === '**') {
+    return true;
+  }
+
+  // Pattern like **/*.ext - match any file with extension
+  if (normalizedPattern.startsWith('**/*.')) {
+    const ext = normalizedPattern.slice(4);
+    if (normalizedPath.endsWith(ext)) return true;
+    return false;
+  }
+
+  // Pattern like dir/** - match anything under directory
+  if (normalizedPattern.endsWith('/**')) {
+    const prefix = normalizedPattern.slice(0, -3);
+    return normalizedPath === prefix || normalizedPath.startsWith(prefix + '/');
+  }
+
+  // Pattern like dir/* - match direct child
+  if (normalizedPattern.endsWith('/*')) {
+    const prefix = normalizedPattern.slice(0, -2);
+    const rest = normalizedPath.slice(prefix.length + 1);
+    return normalizedPath.startsWith(prefix + '/') && !rest.includes('/');
+  }
+
+  // Pattern like **/name/** - match directory anywhere
+  if (normalizedPattern.startsWith('**/') && normalizedPattern.endsWith('/**')) {
+    const dirName = normalizedPattern.slice(3, -3);
+    return normalizedPath.includes('/' + dirName + '/');
+  }
+
+  // Pattern like **/name - match name anywhere
+  if (normalizedPattern.startsWith('**/')) {
+    const name = normalizedPattern.slice(3);
+    return normalizedPath === name || normalizedPath.endsWith('/' + name);
+  }
+
+  // Pattern with wildcards - convert to regex
+  if (normalizedPattern.includes('*') || normalizedPattern.includes('?')) {
+    const regexPattern = normalizedPattern
+      .replace(/\*\*/g, '<<DOUBLESTAR>>')
+      .replace(/\*/g, '[^/]*')
+      .replace(/<<DOUBLESTAR>>/g, '.*')
+      .replace(/\?/g, '[^/]');
+
+    return new RegExp('^' + regexPattern + '$').test(normalizedPath);
+  }
+
+  // Exact match
+  return normalizedPath === normalizedPattern;
+}
+
+/**
+ * Check if a path is in node_modules
+ */
+export function isInNodeModules(filePath: string): boolean {
+  const normalized = filePath.replace(/\\/g, '/');
+  return normalized.includes('node_modules/') || normalized.endsWith('node_modules');
+}
+
+/**
+ * Check if a file should be ignored based on ignore patterns
+ */
+export function shouldIgnore(
+  filePath: string,
+  patterns: string[] = [
+    'node_modules/**',
+    'dist/**',
+    'build/**',
+    '.git/**',
+    '**/*.min.js',
+    '**/*.d.ts',
+    '**/__tests__/**',
+    '**/*.test.ts',
+    '**/*.spec.ts',
+  ]
+): boolean {
+  return matchesAnyPattern(filePath, patterns);
+}
+
+/**
+ * Inline ignore markers — `// qa-agent-ignore` or `// qa-agent-ignore-line: <ruleId>`.
+ * When a line contains a marker for a specific rule, that line is skipped.
+ */
+const INLINE_IGNORE_PATTERN = /qa-agent-ignore(?:-line)?(?::\s*([\w-]+))?/i;
+
+export function shouldIgnoreLine(
+  content: string,
+  line: number,
+  ruleId?: string
+): boolean {
+  const lines = content.split('\n');
+  const idx = line - 1;
+  if (idx < 0 || idx >= lines.length) return false;
+  return lineHasIgnoreMarker(lines[idx], ruleId);
+}
+
 export function shouldIgnoreSection(
   content: string,
   startLine: number,
@@ -58,72 +120,17 @@ export function shouldIgnoreSection(
   ruleId?: string
 ): boolean {
   const lines = content.split('\n');
-  
-  // Check for ignore-start comment
-  let inIgnoreSection = false;
-  let ignoreRules: string[] = [];
-  
-  for (let i = 0; i < startLine; i++) {
-    const line = lines[i];
-    
-    if (line?.includes('// qa-agent-ignore-start')) {
-      inIgnoreSection = true;
-      const match = line.match(/qa-agent-ignore-start\s+(.+)/);
-      if (match) {
-        ignoreRules = match[1].split(',').map(r => r.trim());
-      } else {
-        ignoreRules = ['all'];
-      }
-    }
-    
-    if (line?.includes('// qa-agent-ignore-end')) {
-      inIgnoreSection = false;
-      ignoreRules = [];
-    }
+  const lo = Math.max(0, startLine - 1);
+  const hi = Math.min(lines.length - 1, endLine - 1);
+  for (let i = lo; i <= hi; i++) {
+    if (lineHasIgnoreMarker(lines[i], ruleId)) return true;
   }
-  
-  if (inIgnoreSection) {
-    if (ruleId) {
-      return ignoreRules.includes(ruleId) || ignoreRules.includes('all');
-    }
-    return true;
-  }
-  
   return false;
 }
 
-/**
- * Parse ignore comments from content
- */
-export function parseIgnoreComments(content: string): Map<number, string[]> {
-  const lines = content.split('\n');
-  const ignoreMap = new Map<number, string[]>();
-  
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const lineNumber = i + 1;
-    
-    // Inline ignore
-    if (line.includes('// qa-agent-ignore')) {
-      const match = line.match(/qa-agent-ignore\s+(.+)/);
-      if (match) {
-        ignoreMap.set(lineNumber, match[1].split(',').map(r => r.trim()));
-      } else {
-        ignoreMap.set(lineNumber, ['all']);
-      }
-    }
-    
-    // Next line ignore
-    if (line.includes('// qa-agent-ignore-next-line')) {
-      const nextLineNumber = lineNumber + 1;
-      const match = line.match(/qa-agent-ignore-next-line\s+(.+)/);
-      if (match) {
-        ignoreMap.set(nextLineNumber, match[1].split(',').map(r => r.trim()));
-      } else {
-        ignoreMap.set(nextLineNumber, ['all']);
-      }
-    }
-  }
-  
-  return ignoreMap;
+function lineHasIgnoreMarker(line: string, ruleId?: string): boolean {
+  const match = line.match(INLINE_IGNORE_PATTERN);
+  if (!match) return false;
+  if (!ruleId) return true;
+  return match[1] === ruleId;
 }

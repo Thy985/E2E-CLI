@@ -5,6 +5,7 @@
 
 import * as path from 'path';
 import * as fs from 'fs';
+import { matchesAnyPattern } from '../utils/ignore';
 
 export interface QAConfig {
   version: number;
@@ -284,67 +285,11 @@ function mergeConfig(defaults: QAConfig, user: QAConfig): QAConfig {
 
 /**
  * Check if a file should be ignored
+ * @deprecated Use shouldIgnore from '../utils/ignore' instead
  */
 export function shouldIgnore(filePath: string, config?: QAConfig): boolean {
-  const normalizedPath = filePath.replace(/\\/g, '/');
-  
-  const ignorePatterns = config?.ignore || [];
-  
-  for (const pattern of ignorePatterns) {
-    const normalizedPattern = pattern.replace(/\\/g, '/');
-    
-    // Handle different glob patterns
-    if (normalizedPattern === '**/*') {
-      return true;
-    }
-    
-    // Pattern like **/*.ext - match any file with extension
-    if (normalizedPattern.startsWith('**/*.')) {
-      const ext = normalizedPattern.slice(4); // Remove '**/*'
-      if (normalizedPath.endsWith(ext)) return true;
-      continue;
-    }
-    
-    // Pattern like dir/** - match anything under directory
-    if (normalizedPattern.endsWith('/**')) {
-      const prefix = normalizedPattern.slice(0, -3);
-      if (normalizedPath.startsWith(prefix + '/') || normalizedPath === prefix) return true;
-      continue;
-    }
-    
-    // Pattern like **/name/** - match directory anywhere
-    if (normalizedPattern.startsWith('**/') && normalizedPattern.endsWith('/**')) {
-      const dirName = normalizedPattern.slice(3, -3); // Remove '**/' and '/**'
-      if (normalizedPath.includes('/' + dirName + '/')) return true;
-      continue;
-    }
-    
-    // Pattern like **/name - match name anywhere
-    if (normalizedPattern.startsWith('**/')) {
-      const name = normalizedPattern.slice(3);
-      // Check if path ends with /name or is exactly name
-      if (normalizedPath.endsWith('/' + name) || normalizedPath === name) return true;
-      continue;
-    }
-    
-    // Pattern with wildcards - convert to regex
-    if (normalizedPattern.includes('*')) {
-      const regexPattern = normalizedPattern
-        .replace(/\*\*/g, '<<DOUBLESTAR>>')
-        .replace(/\*/g, '[^/]*')
-        .replace(/<<DOUBLESTAR>>/g, '.*')
-        .replace(/\?/g, '[^/]');
-      
-      const regex = new RegExp('^' + regexPattern + '$');
-      if (regex.test(normalizedPath)) return true;
-      continue;
-    }
-    
-    // Exact match
-    if (normalizedPath === normalizedPattern) return true;
-  }
-  
-  return false;
+  const patterns = config?.ignore || [];
+  return matchesAnyPattern(filePath, patterns);
 }
 
 /**

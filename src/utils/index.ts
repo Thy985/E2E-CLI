@@ -2,8 +2,7 @@
  * Utility functions
  */
 
-import { createHash } from 'crypto';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 
 /**
  * Generate unique ID
@@ -32,13 +31,14 @@ export function formatDuration(ms: number): string {
  * Format file size
  */
 export function formatSize(bytes: number): string {
+  let size = bytes;
   const units = ['B', 'KB', 'MB', 'GB'];
   let i = 0;
-  while (bytes >= 1024 && i < units.length - 1) {
-    bytes /= 1024;
+  while (size >= 1024 && i < units.length - 1) {
+    size /= 1024;
     i++;
   }
-  return `${bytes.toFixed(1)}${units[i]}`;
+  return `${size.toFixed(1)}${units[i]}`;
 }
 
 /**
@@ -61,7 +61,7 @@ export async function retry<T>(
 ): Promise<T> {
   const { maxRetries = 3, delay = 1000, backoff = 2 } = options;
   let lastError: Error | undefined;
-  
+
   for (let i = 0; i < maxRetries; i++) {
     try {
       return await fn();
@@ -72,7 +72,7 @@ export async function retry<T>(
       }
     }
   }
-  
+
   throw lastError;
 }
 
@@ -83,8 +83,8 @@ export function debounce<T extends (...args: any[]) => any>(
   fn: T,
   delay: number
 ): (...args: Parameters<T>) => void {
-  let timeoutId: NodeJS.Timeout | null = null;
-  
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
   return (...args: Parameters<T>) => {
     if (timeoutId) {
       clearTimeout(timeoutId);
@@ -101,7 +101,7 @@ export function throttle<T extends (...args: any[]) => any>(
   limit: number
 ): (...args: Parameters<T>) => void {
   let inThrottle = false;
-  
+
   return (...args: Parameters<T>) => {
     if (!inThrottle) {
       fn(...args);
@@ -129,25 +129,27 @@ export function deepMerge<T extends Record<string, any>>(
   target: T,
   source: Partial<T>
 ): T {
-  const result = { ...target };
-  
-  for (const key in source) {
-    if (source[key] !== undefined) {
-      if (
-        typeof source[key] === 'object' &&
-        source[key] !== null &&
-        !Array.isArray(source[key])
-      ) {
-        result[key] = deepMerge(
-          result[key] || {} as any,
-          source[key] as any
-        );
-      } else {
-        result[key] = source[key] as any;
-      }
+  const result = { ...target } as T;
+
+  for (const key of Object.keys(source)) {
+    const value = (source as any)[key];
+    if (value === undefined) continue;
+
+    const targetValue = (result as any)[key];
+    if (
+      typeof value === 'object' &&
+      value !== null &&
+      !Array.isArray(value) &&
+      typeof targetValue === 'object' &&
+      targetValue !== null &&
+      !Array.isArray(targetValue)
+    ) {
+      (result as any)[key] = deepMerge(targetValue, value);
+    } else {
+      (result as any)[key] = value;
     }
   }
-  
+
   return result;
 }
 
@@ -212,7 +214,7 @@ export function calculateScore(
   const deductions = issues.reduce((sum, issue) => {
     return sum + (weights[issue.severity as keyof typeof weights] || 0);
   }, 0);
-  
+
   return Math.max(0, 100 - deductions);
 }
 
@@ -226,3 +228,9 @@ export function getGrade(score: number): 'A' | 'B' | 'C' | 'D' | 'F' {
   if (score >= 60) return 'D';
   return 'F';
 }
+
+// Re-export shell utilities
+export { execAsync, execAsyncOrThrow } from './shell';
+
+// Re-export ignore utilities
+export { shouldIgnore, matchesAnyPattern, isInNodeModules } from './ignore';

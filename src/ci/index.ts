@@ -384,12 +384,23 @@ export async function detectCIPlatform(projectPath: string): Promise<CIConfig['p
   for (const { file, platform } of checks) {
     try {
       const fullPath = path.join(projectPath, file);
-      await fs.access(fullPath);
-      return platform;
+      // .github/workflows is a directory; rest are files
+      const stat = await fs.stat(fullPath);
+      if (stat.isDirectory() || stat.isFile()) {
+        return platform;
+      }
     } catch {
       // Not found, continue
     }
   }
 
   return null;
+}
+
+/**
+ * Azure DevOps is recognised but config generation is intentionally not
+ * implemented (kept here so the type union is honest).
+ */
+export function isAzureDevOpsSupported(): boolean {
+  return false;
 }

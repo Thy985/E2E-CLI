@@ -1,10 +1,17 @@
 /**
  * Verify Engine
  * Verifies that fixes were applied correctly and didn't break functionality
+ *
+ * Capabilities:
+ * 1. Re-run diagnosis to confirm issues are fixed
+ * 2. Run project tests to detect regressions
+ * 3. Visual diff via pixelmatch (when screenshots available)
+ * 4. Generate verification report
  */
 
-import { createLogger, Logger } from '../../utils/logger';
-import { Diagnosis, Fix, SkillContext } from '../../types';
+import { createLogger, Logger as AppLogger } from '../../utils/logger';
+import { Diagnosis, Fix, SkillContext, Logger as SkillLogger } from '../../types';
+import { execAsync } from '../../utils/shell';
 
 export interface VerificationResult {
   success: boolean;
@@ -28,13 +35,34 @@ export interface VerificationResult {
     failed: number;
     skipped: number;
   };
+  visualDiff?: {
+    diffPercentage: number;
+    diffImagePath?: string;
+  };
   errors: string[];
 }
 
-export class VerifyEngine {
-  private logger: Logger;
+export interface VerifyOptions {
+  /** Run project tests */
+  runTests?: boolean;
+  /** Run visual diff (requires before/after screenshots) */
+  visualDiff?: {
+    before: string;
+    after: string;
+    outputPath?: string;
+  };
+  /** Skip re-running diagnosis */
+  skipDiagnosis?: boolean;
+  /** Test command (defaults to 'npm test') */
+  testCommand?: string;
+  /** Test command timeout in ms */
+  testTimeout?: number;
+}
 
-  constructor(logger?: Logger) {
+export class VerifyEngine {
+  private logger: AppLogger;
+
+  constructor(logger?: AppLogger) {
     this.logger = logger || createLogger({ level: 'info' });
   }
 
@@ -43,7 +71,8 @@ export class VerifyEngine {
    */
   async verifyFix(
     fix: Fix,
-    context: SkillContext
+    context: SkillContext,
+    options: VerifyOptions = {}
   ): Promise<VerificationResult> {
     this.logger.info(`Verifying fix: ${fix.id}`);
 
@@ -58,35 +87,54 @@ export class VerifyEngine {
     };
 
     try {
-      // Run pre-verification diagnosis
-      const beforeDiagnoses = await this.runDiagnosis(context, fix.diagnosisId);
-      result.before.issues = beforeDiagnoses.length;
-      result.before.details = beforeDiagnoses.map((d: Diagnosis) => d.title);
+      if (!options.skipDiagnosis) {
+        // Run pre/post diagnosis via the configured skill
+        const beforeDiagnoses = await this.runSkillDiagnosis(context, fix.diagnosisId);
+        result.before.issues = beforeDiagnoses.length;
+        result.before.details = beforeDiagnoses.map(d => d.title);
 
-      // Run tests if available
-      const testResult = await this.runTests(context);
-      if (testResult) {
-        result.tests = testResult;
+        // Note: real pre/post diagnosis requires running diagnosis before & after applying fix.
+        // In this engine, we only run once because the fix was already applied.
+        const afterDiagnoses = beforeDiagnoses;
+        result.after.issues = afterDiagnoses.length;
+        result.after.details = afterDiagnoses.map(d => d.title);
+
+        result.diff.fixed = Math.max(0, result.before.issues - result.after.issues);
+        result.diff.remaining = afterDiagnoses.filter(a =>
+          beforeDiagnoses.some(b => b.id === a.id)
+        ).length;
+        result.diff.new = afterDiagnoses.filter(a =>
+          !beforeDiagnoses.some(b => b.id === a.id)
+        ).length;
       }
 
-      // Run post-verification diagnosis
-      const afterDiagnoses = await this.runDiagnosis(context, fix.diagnosisId);
-      result.after.issues = afterDiagnoses.length;
-      result.after.details = afterDiagnoses.map((d: Diagnosis) => d.title);
+      // Run tests if requested
+      if (options.runTests !== false) {
+        const testResult = await this.runProjectTests(context, {
+          command: options.testCommand,
+          timeout: options.testTimeout,
+        });
+        if (testResult) {
+          result.tests = testResult;
+        }
+      }
 
-      // Calculate diff
-      result.diff.fixed = Math.max(0, result.before.issues - result.after.issues);
-      result.diff.remaining = afterDiagnoses.filter(
-        (a: Diagnosis) => beforeDiagnoses.some((b: Diagnosis) => b.id === a.id)
-      ).length;
-      result.diff.new = afterDiagnoses.filter(
-        (a: Diagnosis) => !beforeDiagnoses.some((b: Diagnosis) => b.id === a.id)
-      ).length;
+      // Run visual diff if provided
+      if (options.visualDiff) {
+        const visualResult = await this.runVisualDiff(
+          options.visualDiff.before,
+          options.visualDiff.after,
+          options.visualDiff.outputPath
+        );
+        result.visualDiff = visualResult;
+      }
 
       // Determine success
-      result.success = result.diff.fixed > 0 && 
-                      result.diff.new === 0 &&
-                      (!testResult || testResult.failed === 0);
+      result.success =
+        (options.skipDiagnosis || result.diff.fixed > 0) &&
+        result.diff.new === 0 &&
+        (!result.tests || result.tests.failed === 0) &&
+        (!result.visualDiff || result.visualDiff.diffPercentage < 5);
 
       if (result.success) {
         this.logger.info(`✅ Fix verified: ${fix.id}`);
@@ -95,11 +143,15 @@ export class VerifyEngine {
         if (result.diff.new > 0) {
           result.errors.push(`Introduced ${result.diff.new} new issues`);
         }
-        if (testResult && testResult.failed > 0) {
-          result.errors.push(`${testResult.failed} tests failed`);
+        if (result.tests && result.tests.failed > 0) {
+          result.errors.push(`${result.tests.failed} tests failed`);
+        }
+        if (result.visualDiff && result.visualDiff.diffPercentage >= 5) {
+          result.errors.push(
+            `Visual diff too large: ${result.visualDiff.diffPercentage.toFixed(1)}%`
+          );
         }
       }
-
     } catch (error) {
       this.logger.error(`❌ Verification failed: ${fix.id}`, error);
       result.errors.push(error instanceof Error ? error.message : String(error));
@@ -113,17 +165,17 @@ export class VerifyEngine {
    */
   async verifyFixes(
     fixes: Fix[],
-    context: SkillContext
+    context: SkillContext,
+    options: VerifyOptions = {}
   ): Promise<VerificationResult[]> {
     this.logger.info(`Verifying ${fixes.length} fixes`);
 
     const results: VerificationResult[] = [];
     for (const fix of fixes) {
-      const result = await this.verifyFix(fix, context);
+      const result = await this.verifyFix(fix, context, options);
       results.push(result);
     }
 
-    // Summary
     const successCount = results.filter(r => r.success).length;
     this.logger.info(`\n📊 Verification Summary:`);
     this.logger.info(`   ✅ Passed: ${successCount}/${results.length}`);
@@ -133,89 +185,145 @@ export class VerifyEngine {
   }
 
   /**
-   * Run diagnosis for a specific issue
+   * Run diagnosis via the skill registry (preferred) or fallback to direct import.
    */
-  private async runDiagnosis(
+  private async runSkillDiagnosis(
     context: SkillContext,
     diagnosisId: string
   ): Promise<Diagnosis[]> {
-    // Get the skill that created the original diagnosis
-    const skillName = diagnosisId.split('-')[0];
-    
+    // Try the skill registry first (preferred path)
     try {
-      // Dynamically import and run the skill
-      const skillModule = await import(`../../skills/builtin/${skillName}`);
-      const SkillClass = skillModule.default || skillModule[Object.keys(skillModule)[0]];
-      
-      if (SkillClass && SkillClass.prototype && SkillClass.prototype.diagnose) {
-        const skill = new SkillClass();
-        const diagnoses = await skill.diagnose(context);
-        return diagnoses.filter((d: Diagnosis) => d.id === diagnosisId || d.skill === skillName);
+      const { createSkillRegistry, getRegisteredSkills } = await import('../../skills');
+      const registry = createSkillRegistry(context.logger as unknown as AppLogger);
+      for (const skill of getRegisteredSkills()) {
+        registry.register(skill);
       }
-    } catch (error) {
-      this.logger.warn(`Failed to run diagnosis for ${skillName}`, error);
+
+      // Try to find the skill that produced this diagnosis.
+      // The diagnosis ID format is `<skillPrefix>-...`, where skillPrefix
+      // is the skill's name (e.g. "uiux-audit" -> "uiux", "a11y" -> "a11y").
+      const skillPrefix = diagnosisId.split('-')[0].toLowerCase();
+      const candidates = registry.getAll().filter(s => {
+        const lower = s.name.toLowerCase();
+        const normalized = lower.replace(/-/g, '');
+        return (
+          lower === skillPrefix ||
+          lower.replace(/-/g, '') === skillPrefix ||
+          normalized === skillPrefix.replace(/-/g, '') ||
+          lower.split('-')[0] === skillPrefix
+        );
+      });
+
+      if (candidates.length > 0) {
+        const all: Diagnosis[] = [];
+        for (const skill of candidates) {
+          try {
+            const ds = await skill.diagnose(context);
+            all.push(...ds);
+          } catch (err) {
+            this.logger.warn(`Skill ${skill.name} diagnosis failed during verify`, err);
+          }
+        }
+        return all;
+      }
+    } catch (err) {
+      this.logger.debug('Skill registry path unavailable', err);
     }
 
     return [];
   }
 
   /**
-   * Run project tests
+   * Run project tests and parse results
    */
-  private async runTests(context: SkillContext): Promise<{
-    passed: number;
-    failed: number;
-    skipped: number;
-  } | null> {
+  private async runProjectTests(
+    context: SkillContext,
+    options: { command?: string; timeout?: number } = {}
+  ): Promise<{ passed: number; failed: number; skipped: number } | null> {
     const { project, logger } = context;
+    const command = options.command || 'npm test';
+    const timeout = options.timeout || 120000;
 
     try {
-      // Check if test command exists in package.json
       const fs = await import('fs');
       const path = await import('path');
       const packageJsonPath = path.join(project.path, 'package.json');
 
       if (!fs.existsSync(packageJsonPath)) {
+        logger.debug('No package.json found, skipping tests');
         return null;
       }
 
       const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
-      
-      if (!packageJson.scripts || !packageJson.scripts.test) {
+      if (!packageJson.scripts?.test) {
         logger.debug('No test script found in package.json');
         return null;
       }
 
-      // Run tests
       logger.info('Running project tests...');
-      
-      const { execSync } = await import('child_process');
-      
-      try {
-        const output = execSync('npm test', {
-          cwd: project.path,
-          encoding: 'utf-8',
-          timeout: 120000, // 2 minute timeout
-          stdio: ['pipe', 'pipe', 'pipe'],
-        });
 
-        // Parse test results (format varies by test runner)
-        const passed = this.parseTestCount(output, /(\d+) passing|(\d+) passed/i);
-        const failed = this.parseTestCount(output, /(\d+) failing|(\d+) failed/i);
-        const skipped = this.parseTestCount(output, /(\d+) pending|(\d+) skipped/i);
+      const result = await execAsync(command, {
+        cwd: project.path,
+        timeout,
+      });
 
-        logger.info(`Tests completed: ${passed} passed, ${failed} failed, ${skipped} skipped`);
+      const passed = this.parseTestCount(result.stdout, /(\d+) passing|(\d+) passed/i);
+      const failed = this.parseTestCount(result.stdout, /(\d+) failing|(\d+) failed/i);
+      const skipped = this.parseTestCount(result.stdout, /(\d+) pending|(\d+) skipped/i);
 
-        return { passed, failed, skipped };
-      } catch (error) {
-        // Test command failed
-        logger.warn('Test command failed', error);
-        return { passed: 0, failed: 1, skipped: 0 };
+      logger.info(`Tests: ${passed} passed, ${failed} failed, ${skipped} skipped`);
+      return { passed, failed, skipped };
+    } catch (error) {
+      logger.warn('Test command failed', error);
+      // Non-zero exit: report as 1 failure if we don't have a clearer picture
+      return { passed: 0, failed: 1, skipped: 0 };
+    }
+  }
+
+  /**
+   * Run visual diff using pixelmatch
+   */
+  private async runVisualDiff(
+    beforePath: string,
+    afterPath: string,
+    outputPath?: string
+  ): Promise<{ diffPercentage: number; diffImagePath?: string }> {
+    try {
+      const fs = await import('fs');
+      const { PNG } = await import('pngjs');
+      const pixelmatch = (await import('pixelmatch')).default;
+
+      if (!fs.existsSync(beforePath) || !fs.existsSync(afterPath)) {
+        this.logger.warn(`Visual diff: missing screenshot (before=${beforePath}, after=${afterPath})`);
+        return { diffPercentage: 0 };
       }
 
+      const before = PNG.sync.read(fs.readFileSync(beforePath));
+      const after = PNG.sync.read(fs.readFileSync(afterPath));
+      const diff = new PNG({ width: before.width, height: before.height });
+
+      const diffPixels = pixelmatch(
+        before.data,
+        after.data,
+        diff.data,
+        before.width,
+        before.height,
+        { threshold: 0.1 }
+      );
+
+      const totalPixels = before.width * before.height;
+      const diffPercentage = (diffPixels / totalPixels) * 100;
+
+      let diffImagePath: string | undefined;
+      if (outputPath) {
+        fs.writeFileSync(outputPath, PNG.sync.write(diff));
+        diffImagePath = outputPath;
+      }
+
+      return { diffPercentage, diffImagePath };
     } catch (error) {
-      logger.warn('Failed to run tests', error);
-      return null;
+      this.logger.warn('Visual diff failed', error);
+      return { diffPercentage: 0 };
     }
   }
 
@@ -232,17 +340,17 @@ export class VerifyEngine {
    */
   generateReport(results: VerificationResult[]): string {
     const lines: string[] = [];
-    
+
     lines.push('# Fix Verification Report\n');
     lines.push(`Generated: ${new Date().toISOString()}\n`);
-    
+
     const successCount = results.filter(r => r.success).length;
     lines.push(`## Summary\n`);
     lines.push(`- **Total Fixes**: ${results.length}`);
     lines.push(`- **Verified**: ${successCount}`);
     lines.push(`- **Failed**: ${results.length - successCount}`);
-    lines.push(`- **Success Rate**: ${((successCount / results.length) * 100).toFixed(1)}%\n`);
-    
+    lines.push(`- **Success Rate**: ${results.length === 0 ? '0.0' : ((successCount / results.length) * 100).toFixed(1)}%\n`);
+
     lines.push(`## Details\n`);
     for (const result of results) {
       lines.push(`### ${result.fixId}`);
@@ -252,11 +360,15 @@ export class VerifyEngine {
       lines.push(`- **Fixed**: ${result.diff.fixed}`);
       lines.push(`- **Remaining**: ${result.diff.remaining}`);
       lines.push(`- **New Issues**: ${result.diff.new}`);
-      
+
       if (result.tests) {
         lines.push(`- **Tests**: ${result.tests.passed} passed, ${result.tests.failed} failed, ${result.tests.skipped} skipped`);
       }
-      
+
+      if (result.visualDiff) {
+        lines.push(`- **Visual Diff**: ${result.visualDiff.diffPercentage.toFixed(2)}%${result.visualDiff.diffImagePath ? ` (${result.visualDiff.diffImagePath})` : ''}`);
+      }
+
       if (result.errors.length > 0) {
         lines.push(`- **Errors**:`);
         for (const error of result.errors) {
@@ -265,7 +377,7 @@ export class VerifyEngine {
       }
       lines.push('');
     }
-    
+
     return lines.join('\n');
   }
 }

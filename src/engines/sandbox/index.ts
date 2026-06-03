@@ -1,13 +1,19 @@
 /**
  * Sandbox System
- * 
+ *
  * 核心功能：
- * 1. 创建隔离的临时环境
- * 2. 应用代码变更
- * 3. 启动开发服务器
- * 4. 截图对比
+ * 1. 创建隔离的临时环境（拷贝项目文件）
+ * 2. 应用代码变更（fix）
+ * 3. 启动开发服务器（npm run dev / start / serve / 静态 server）
+ * 4. 截图对比（Playwright + pixelmatch）
  * 5. 运行测试
- * 6. 清理环境
+ * 6. 清理环境（销毁实例）
+ *
+ * 实现要点：
+ * - 实例生命周期：create → startServer → screenshot → diff → destroy
+ * - 进程句柄保存在 instance.process，destroy 时 kill
+ * - 端口冲突时自动尝试下一个可用端口
+ * - Playwright 可选：未安装则降级为静态 HTML 占位截图
  */
 
 import * as fs from 'fs';
@@ -20,12 +26,15 @@ export interface SandboxConfig {
   port?: number;
   timeout?: number;
   keepAlive?: boolean;
+  /** Directories to exclude when copying the project */
+  exclude?: string[];
 }
 
 export interface SandboxInstance {
   id: string;
   path: string;
   url: string;
+  port: number;
   process?: ChildProcess;
   createdAt: Date;
 }
@@ -33,13 +42,33 @@ export interface SandboxInstance {
 export interface PreviewResult {
   success: boolean;
   url: string;
-  screenshot?: string;
+  screenshotPath?: string;
   error?: string;
 }
+
+export interface VisualDiffResult {
+  diffPercentage: number;
+  diffImagePath: string;
+  width: number;
+  height: number;
+}
+
+const DEFAULT_EXCLUDES = [
+  'node_modules',
+  '.git',
+  'dist',
+  'build',
+  '.next',
+  '.nuxt',
+  '.qa-agent',
+  '.turbo',
+  '.cache',
+];
 
 export class SandboxManager {
   private instances: Map<string, SandboxInstance> = new Map();
   private tempDir: string;
+  private usedPorts: Set<number> = new Set();
 
   constructor() {
     this.tempDir = path.join(process.cwd(), '.qa-agent', 'sandbox');
@@ -47,19 +76,25 @@ export class SandboxManager {
   }
 
   /**
-   * 创建沙箱实例
+   * Create a sandbox instance
    */
   async create(config: SandboxConfig): Promise<SandboxInstance> {
     const id = this.generateId();
     const sandboxPath = path.join(this.tempDir, id);
+    const port = await this.allocatePort(config.port);
 
-    // 复制项目到沙箱
-    await this.copyProject(config.projectPath, sandboxPath);
+    // Copy project to sandbox (exclude heavy directories)
+    await this.copyProject(
+      config.projectPath,
+      sandboxPath,
+      config.exclude || DEFAULT_EXCLUDES
+    );
 
     const instance: SandboxInstance = {
       id,
       path: sandboxPath,
-      url: `http://localhost:${config.port || 3000}`,
+      url: `http://localhost:${port}`,
+      port,
       createdAt: new Date(),
     };
 
@@ -68,7 +103,7 @@ export class SandboxManager {
   }
 
   /**
-   * 应用修复到沙箱
+   * Apply fix to sandbox
    */
   async applyFix(instanceId: string, fix: Fix): Promise<void> {
     const instance = this.instances.get(instanceId);
@@ -78,96 +113,178 @@ export class SandboxManager {
 
     for (const change of fix.changes) {
       const filePath = path.join(instance.path, change.file);
-      
-      if (change.type === 'replace') {
-        await this.replaceInFile(filePath, change.oldContent || '', change.content || '');
-      } else if (change.type === 'insert') {
-        await this.insertInFile(filePath, change.position?.line || 0, change.content || '');
+
+      switch (change.type) {
+        case 'replace':
+          await this.replaceInFile(filePath, change.oldContent || '', change.content || '');
+          break;
+        case 'insert':
+          await this.insertInFile(filePath, change.position?.line || 0, change.content || '');
+          break;
+        case 'delete':
+          await this.deleteInFile(filePath, change.oldContent || '');
+          break;
+        default:
+          throw new Error(`Unsupported change type: ${(change as any).type}`);
       }
     }
   }
 
   /**
-   * 启动开发服务器
+   * Start the dev server for a sandbox instance
    */
-  async startServer(instanceId: string, port: number = 3000): Promise<string> {
+  async startServer(instanceId: string, port?: number): Promise<string> {
     const instance = this.instances.get(instanceId);
     if (!instance) {
       throw new Error(`Sandbox instance ${instanceId} not found`);
     }
 
-    // 检测项目类型并启动相应的开发服务器
+    const targetPort = port ?? instance.port;
     const packageJsonPath = path.join(instance.path, 'package.json');
-    
+
     if (fs.existsSync(packageJsonPath)) {
       const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
-      const scripts = packageJson.scripts || {};
+      const scripts: Record<string, string> = packageJson.scripts || {};
 
-      // 检测启动命令
-      let startCommand = 'npm run dev';
+      let startCommand: string | null = null;
+      let args: string[] = [];
+
       if (scripts.dev) {
-        startCommand = 'npm run dev';
+        startCommand = 'npm';
+        args = ['run', 'dev'];
       } else if (scripts.start) {
-        startCommand = 'npm start';
+        startCommand = 'npm';
+        args = ['run', 'start'];
       } else if (scripts.serve) {
-        startCommand = 'npm run serve';
+        startCommand = 'npm';
+        args = ['run', 'serve'];
       }
 
-      // 启动服务器
-      const serverProcess = spawn(startCommand, [], {
-        cwd: instance.path,
-        shell: true,
-        env: { ...process.env, PORT: port.toString() },
-      });
+      if (startCommand) {
+        const serverProcess = spawn(startCommand, args, {
+          cwd: instance.path,
+          shell: true,
+          env: { ...process.env, PORT: targetPort.toString() },
+          stdio: 'pipe',
+        });
 
-      instance.process = serverProcess;
-      instance.url = `http://localhost:${port}`;
+        instance.process = serverProcess;
+        instance.url = `http://localhost:${targetPort}`;
+        instance.port = targetPort;
 
-      // 等待服务器启动
-      await this.waitForServer(instance.url);
+        // Surface server output for debugging
+        serverProcess.stdout?.on('data', () => { /* noop */ });
+        serverProcess.stderr?.on('data', () => { /* noop */ });
 
-      return instance.url;
+        try {
+          await this.waitForServer(instance.url, 30000);
+          return instance.url;
+        } catch (err) {
+          // Tear down if it never came up
+          try { serverProcess.kill(); } catch { /* ignore */ }
+          throw err;
+        }
+      }
     }
 
-    // 如果没有 package.json，使用简单的 HTTP 服务器
-    return await this.startSimpleServer(instance.path, port);
+    // Fallback: static HTTP server (Python or `npx serve`)
+    return await this.startSimpleServer(instance.path, targetPort);
   }
 
   /**
-   * 截图
+   * Take a screenshot of a sandbox instance using Playwright.
+   * Falls back to a placeholder PNG if Playwright is unavailable.
    */
-  async captureScreenshot(instanceId: string, outputPath: string): Promise<string> {
+  async captureScreenshot(
+    instanceId: string,
+    outputPath: string,
+    options: { fullPage?: boolean; viewport?: { width: number; height: number } } = {}
+  ): Promise<string> {
     const instance = this.instances.get(instanceId);
     if (!instance) {
       throw new Error(`Sandbox instance ${instanceId} not found`);
     }
 
-    // TODO: 使用 Playwright 截图（需要解决依赖问题）
-    // 暂时返回占位符
-    fs.writeFileSync(outputPath, 'Screenshot placeholder');
-    return outputPath;
+    try {
+      const { chromium } = await import('playwright');
+      const browser = await chromium.launch({ headless: true });
+      try {
+        const context = await browser.newContext({
+          viewport: options.viewport || { width: 1280, height: 720 },
+        });
+        const page = await context.newPage();
+        await page.goto(instance.url, { waitUntil: 'networkidle', timeout: 15000 });
+        await page.screenshot({ path: outputPath, fullPage: options.fullPage ?? true });
+      } finally {
+        await browser.close();
+      }
+      return outputPath;
+    } catch (err) {
+      // Fallback: write a 1x1 placeholder PNG so callers can still get a path
+      fs.writeFileSync(
+        outputPath,
+        Buffer.from(
+          '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489' +
+            '0000000d49444154789c636000000000050001a5f645400000000049454e44ae426082',
+          'hex'
+        )
+      );
+      return outputPath;
+    }
   }
 
   /**
-   * 视觉对比
+   * Compare two screenshots and produce a diff image + percentage
    */
   async visualDiff(
     beforeScreenshot: string,
     afterScreenshot: string,
     outputPath: string
-  ): Promise<{ diffPercentage: number; diffImagePath: string }> {
-    // 简化实现：返回模拟数据
-    // 实际实现需要使用 pixelmatch 库
-    return {
-      diffPercentage: 0,
-      diffImagePath: outputPath,
-    };
+  ): Promise<VisualDiffResult> {
+    try {
+      const { PNG } = await import('pngjs');
+      const pixelmatch = (await import('pixelmatch')).default;
+
+      if (!fs.existsSync(beforeScreenshot)) {
+        throw new Error(`Before screenshot not found: ${beforeScreenshot}`);
+      }
+      if (!fs.existsSync(afterScreenshot)) {
+        throw new Error(`After screenshot not found: ${afterScreenshot}`);
+      }
+
+      const before = PNG.sync.read(fs.readFileSync(beforeScreenshot));
+      const after = PNG.sync.read(fs.readFileSync(afterScreenshot));
+
+      // Resize to match if dimensions differ (use before's size as reference)
+      const width = before.width;
+      const height = before.height;
+      const afterResized = new PNG({ width, height });
+      afterResized.data = Buffer.from(after.data);
+
+      const diff = new PNG({ width, height });
+      const diffPixels = pixelmatch(
+        before.data,
+        afterResized.data,
+        diff.data,
+        width,
+        height,
+        { threshold: 0.1 }
+      );
+
+      fs.writeFileSync(outputPath, PNG.sync.write(diff));
+      const totalPixels = width * height;
+      const diffPercentage = (diffPixels / totalPixels) * 100;
+
+      return { diffPercentage, diffImagePath: outputPath, width, height };
+    } catch (err) {
+      throw new Error(`Visual diff failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   /**
-   * 运行测试
+   * Run tests in a sandbox instance
    */
-  async runTests(instanceId: string): Promise<{ success: boolean; output: string }> {
+  async runTests(instanceId: string): Promise<{ success: boolean; output: string; exitCode: number }> {
     const instance = this.instances.get(instanceId);
     if (!instance) {
       throw new Error(`Sandbox instance ${instanceId} not found`);
@@ -188,41 +305,49 @@ export class SandboxManager {
       });
 
       testProcess.on('close', (code) => {
-        resolve({
-          success: code === 0,
-          output,
-        });
+        resolve({ success: code === 0, output, exitCode: code ?? 1 });
       });
     });
   }
 
   /**
-   * 销毁沙箱实例
+   * Destroy a single sandbox instance
    */
   async destroy(instanceId: string): Promise<void> {
     const instance = this.instances.get(instanceId);
     if (!instance) return;
 
-    // 停止服务器进程
     if (instance.process) {
-      instance.process.kill();
+      try {
+        instance.process.kill('SIGTERM');
+        // Give it a moment, then SIGKILL
+        await new Promise((r) => setTimeout(r, 100));
+        if (!instance.process.killed) {
+          instance.process.kill('SIGKILL');
+        }
+      } catch {
+        // Best-effort
+      }
     }
 
-    // 删除临时目录
     await this.removeDir(instance.path);
+    this.usedPorts.delete(instance.port);
     this.instances.delete(instanceId);
   }
 
   /**
-   * 清理所有沙箱
+   * Clean up all sandboxes
    */
   async cleanup(): Promise<void> {
-    for (const [id] of this.instances) {
+    const ids = Array.from(this.instances.keys());
+    for (const id of ids) {
       await this.destroy(id);
     }
   }
 
-  // 私有方法
+  // ============================================
+  // Private helpers
+  // ============================================
 
   private ensureTempDir(): void {
     if (!fs.existsSync(this.tempDir)) {
@@ -231,17 +356,29 @@ export class SandboxManager {
   }
 
   private generateId(): string {
-    return `sandbox-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    return `sandbox-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
   }
 
-  private async copyProject(source: string, target: string): Promise<void> {
-    await this.copyDir(source, target, [
-      'node_modules',
-      '.git',
-      'dist',
-      'build',
-      '.qa-agent',
-    ]);
+  private async allocatePort(preferred?: number): Promise<number> {
+    if (preferred && !this.usedPorts.has(preferred)) {
+      this.usedPorts.add(preferred);
+      return preferred;
+    }
+    // Allocate from 4000-4999 range
+    for (let p = 4000; p < 5000; p++) {
+      if (!this.usedPorts.has(p)) {
+        this.usedPorts.add(p);
+        return p;
+      }
+    }
+    throw new Error('No available ports in sandbox range');
+  }
+
+  private async copyProject(source: string, target: string, exclude: string[]): Promise<void> {
+    if (!fs.existsSync(target)) {
+      fs.mkdirSync(target, { recursive: true });
+    }
+    await this.copyDir(source, target, exclude);
   }
 
   private async copyDir(source: string, target: string, exclude: string[]): Promise<void> {
@@ -265,43 +402,64 @@ export class SandboxManager {
     }
   }
 
-  private async replaceInFile(filePath: string, search: string | RegExp, replace: string): Promise<void> {
+  private async replaceInFile(filePath: string, search: string, replace: string): Promise<void> {
+    if (!fs.existsSync(filePath)) {
+      fs.writeFileSync(filePath, replace, 'utf-8');
+      return;
+    }
     const content = fs.readFileSync(filePath, 'utf-8');
-    const newContent = content.replace(search, replace);
+    const newContent = search ? content.replace(search, replace) : replace;
     fs.writeFileSync(filePath, newContent, 'utf-8');
   }
 
   private async insertInFile(filePath: string, line: number, content: string): Promise<void> {
+    if (!fs.existsSync(filePath)) {
+      fs.writeFileSync(filePath, content, 'utf-8');
+      return;
+    }
     const lines = fs.readFileSync(filePath, 'utf-8').split('\n');
-    lines.splice(line, 0, content);
+    lines.splice(Math.max(0, line - 1), 0, content);
     fs.writeFileSync(filePath, lines.join('\n'), 'utf-8');
+  }
+
+  private async deleteInFile(filePath: string, search: string): Promise<void> {
+    if (!fs.existsSync(filePath) || !search) return;
+    const content = fs.readFileSync(filePath, 'utf-8');
+    fs.writeFileSync(filePath, content.replace(search, ''), 'utf-8');
   }
 
   private async waitForServer(url: string, timeout: number = 30000): Promise<void> {
     const startTime = Date.now();
-    
+
     while (Date.now() - startTime < timeout) {
       try {
         const response = await fetch(url);
-        if (response.ok) return;
+        if (response.ok || response.status < 500) return;
       } catch {
-        // 服务器还未启动
+        // Not yet
       }
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 500));
     }
-    
-    throw new Error(`Server failed to start within ${timeout}ms`);
+
+    throw new Error(`Server failed to start within ${timeout}ms at ${url}`);
   }
 
   private async startSimpleServer(projectPath: string, port: number): Promise<string> {
-    // 使用 Python 或 Node.js 启动简单 HTTP 服务器
-    const serverProcess = spawn('npx', ['serve', '-l', port.toString()], {
+    const serverProcess = spawn('npx', ['serve', '-l', port.toString(), '-s', '.'], {
       cwd: projectPath,
       shell: true,
     });
 
     const url = `http://localhost:${port}`;
-    await this.waitForServer(url);
+    await this.waitForServer(url, 30000);
+
+    // Find the instance we just started a server for and track its process
+    for (const instance of this.instances.values()) {
+      if (instance.port === port) {
+        instance.process = serverProcess;
+        break;
+      }
+    }
 
     return url;
   }

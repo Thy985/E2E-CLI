@@ -1,9 +1,13 @@
 /**
  * Tools Module
- * Provides file system, browser, git, and shell tools
+ * Provides file system, browser, git, and shell tools.
+ *
+ * Browser tool: backed by Playwright when available, otherwise throws with a
+ * clear message. Callers that need to detect availability should use
+ * `isBrowserToolAvailable()`.
  */
 
-import { ToolRegistry, FileSystemTool, BrowserTool, GitTool, ShellTool } from '../types';
+import { ToolRegistry, FileSystemTool, BrowserTool, Browser, GitTool, ShellTool } from '../types';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { glob as globFn } from 'glob';
@@ -13,25 +17,39 @@ import { promisify } from 'util';
 const execAsync = promisify(exec);
 
 /**
- * Create file system tool
+ * Detect whether the Playwright-backed browser tool can run in this environment.
+ */
+export async function isBrowserToolAvailable(): Promise<boolean> {
+  try {
+    await import('playwright');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Create a file system tool rooted at `basePath`.
  */
 function createFileSystemTool(basePath: string = process.cwd()): FileSystemTool {
+  function resolve(p: string): string {
+    return path.isAbsolute(p) ? p : path.join(basePath, p);
+  }
+
   return {
     async readFile(filePath: string): Promise<string> {
-      const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(basePath, filePath);
-      return fs.readFile(absolutePath, 'utf-8');
+      return fs.readFile(resolve(filePath), 'utf-8');
     },
 
     async writeFile(filePath: string, content: string): Promise<void> {
-      const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(basePath, filePath);
-      await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-      await fs.writeFile(absolutePath, content, 'utf-8');
+      const absolute = resolve(filePath);
+      await fs.mkdir(path.dirname(absolute), { recursive: true });
+      await fs.writeFile(absolute, content, 'utf-8');
     },
 
     async exists(filePath: string): Promise<boolean> {
       try {
-        const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(basePath, filePath);
-        await fs.access(absolutePath);
+        await fs.access(resolve(filePath));
         return true;
       } catch {
         return false;
@@ -42,24 +60,21 @@ function createFileSystemTool(basePath: string = process.cwd()): FileSystemTool 
       const files = await globFn(pattern, {
         cwd: basePath,
         nodir: true,
-        ignore: ['**/node_modules/**', '**/dist/**', '**/.git/**'],
+        ignore: ['**/node_modules/**', '**/dist/**', '**/build/**', '**/.git/**'],
       });
       return files;
     },
 
     async mkdir(dirPath: string): Promise<void> {
-      const absolutePath = path.isAbsolute(dirPath) ? dirPath : path.join(basePath, dirPath);
-      await fs.mkdir(absolutePath, { recursive: true });
+      await fs.mkdir(resolve(dirPath), { recursive: true });
     },
 
     async remove(filePath: string): Promise<void> {
-      const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(basePath, filePath);
-      await fs.rm(absolutePath, { recursive: true, force: true });
+      await fs.rm(resolve(filePath), { recursive: true, force: true });
     },
 
     async stat(filePath: string): Promise<{ size: number; isFile: boolean; isDirectory: boolean }> {
-      const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(basePath, filePath);
-      const stats = await fs.stat(absolutePath);
+      const stats = await fs.stat(resolve(filePath));
       return {
         size: stats.size,
         isFile: stats.isFile(),
@@ -70,27 +85,111 @@ function createFileSystemTool(basePath: string = process.cwd()): FileSystemTool 
 }
 
 /**
- * Create browser tool (placeholder - requires Playwright)
+ * Create a real Playwright-backed browser tool.
+ *
+ * `launch()` is the only entry point that touches the browser; everything else
+ * is a thin wrapper around the resulting Browser instance.
  */
 function createBrowserTool(): BrowserTool {
+  let playwright: typeof import('playwright') | null = null;
+  let activeBrowser: import('playwright').Browser | null = null;
+
+  async function getPlaywright(): Promise<typeof import('playwright')> {
+    if (playwright) return playwright;
+    try {
+      playwright = await import('playwright');
+      return playwright;
+    } catch (err) {
+      throw new Error(
+        'Playwright is not installed. Run `bun add playwright` and `bunx playwright install chromium` to enable the browser tool.'
+      );
+    }
+  }
+
+  /**
+   * Adapt a Playwright browser to the project's Browser contract.
+   * We don't expose newPage() here because the project's Browser only
+   * needs to give the caller access to the underlying playwright browser
+   * via a custom PageWrapper returned from newPage().
+   */
+  function adaptBrowser(browser: import('playwright').Browser): Browser {
+    return {
+      newPage: async () => {
+        const context = await browser.newContext();
+        const page = await context.newPage();
+        return wrapPage(page, context, browser);
+      },
+      close: async () => browser.close(),
+    };
+  }
+
   return {
     async launch(options = {}) {
-      // Placeholder - would use Playwright in production
-      throw new Error('Browser tool not implemented in MVP');
+      const pw = await getPlaywright();
+      const browserType = options.browser || 'chromium';
+      const launchOpts: import('playwright').LaunchOptions = {
+        headless: options.headless ?? true,
+      };
+      const launcher = pw[browserType] as typeof pw.chromium;
+      activeBrowser = await launcher.launch(launchOpts);
+      return adaptBrowser(activeBrowser);
     },
 
     async newPage() {
-      throw new Error('Browser tool not implemented in MVP');
+      if (!activeBrowser) {
+        throw new Error('Browser not launched. Call launch() first.');
+      }
+      const context = await activeBrowser.newContext();
+      const page = await context.newPage();
+      return wrapPage(page, context, activeBrowser);
     },
 
     async close() {
-      // No-op
+      if (activeBrowser) {
+        await activeBrowser.close();
+        activeBrowser = null;
+      }
+    },
+  };
+}
+
+interface PageWrapper {
+  goto(url: string): Promise<void>;
+  screenshot(options?: { fullPage?: boolean; path?: string }): Promise<Buffer>;
+  content(): Promise<string>;
+  evaluate<T>(fn: () => T): Promise<T>;
+  close(): Promise<void>;
+}
+
+function wrapPage(
+  page: import('playwright').Page,
+  context: import('playwright').BrowserContext,
+  browser: import('playwright').Browser
+): PageWrapper {
+  return {
+    async goto(url: string) {
+      await page.goto(url);
+    },
+    async screenshot(options = {}) {
+      return page.screenshot({ fullPage: options.fullPage, path: options.path });
+    },
+    async content() {
+      return page.content();
+    },
+    async evaluate<T>(fn: () => T) {
+      return page.evaluate(fn);
+    },
+    async close() {
+      await page.close();
+      await context.close();
+      // Browser lifetime is owned by launch()/close() in the tool.
+      void browser;
     },
   };
 }
 
 /**
- * Create git tool
+ * Create a git tool.
  */
 function createGitTool(basePath: string = process.cwd()): GitTool {
   return {
@@ -124,7 +223,7 @@ function createGitTool(basePath: string = process.cwd()): GitTool {
 }
 
 /**
- * Create shell tool
+ * Create a shell tool.
  */
 function createShellTool(basePath: string = process.cwd()): ShellTool {
   return {
@@ -132,15 +231,17 @@ function createShellTool(basePath: string = process.cwd()): ShellTool {
       try {
         const { stdout, stderr } = await execAsync(command, {
           cwd: options.cwd || basePath,
-          env: { ...process.env, ...options.env },
+          env: { ...process.env, ...(options.env || {}) },
           timeout: options.timeout || 60000,
+          maxBuffer: 10 * 1024 * 1024,
         });
         return { stdout, stderr, exitCode: 0 };
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const err = error as { stdout?: string; stderr?: string; code?: number; message?: string };
         return {
-          stdout: error.stdout || '',
-          stderr: error.stderr || error.message,
-          exitCode: error.code || 1,
+          stdout: err.stdout || '',
+          stderr: err.stderr || err.message || '',
+          exitCode: err.code ?? 1,
         };
       }
     },
@@ -148,7 +249,7 @@ function createShellTool(basePath: string = process.cwd()): ShellTool {
 }
 
 /**
- * Create tool registry
+ * Create the standard tool registry.
  */
 export function createTools(basePath: string = process.cwd()): ToolRegistry {
   return {
@@ -158,3 +259,5 @@ export function createTools(basePath: string = process.cwd()): ToolRegistry {
     shell: createShellTool(basePath),
   };
 }
+
+export default createTools;
