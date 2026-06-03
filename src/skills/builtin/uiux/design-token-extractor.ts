@@ -8,7 +8,8 @@
  * 4. Figma API (可选)
  */
 
-import * as fs from 'fs';
+import { existsSync } from 'fs';
+import * as fs from 'fs/promises';
 import * as path from 'path';
 import { QAConfig } from '../../../config';
 
@@ -67,7 +68,7 @@ export class DesignTokenExtractor {
     const cssFiles = await this.findFiles(projectPath, ['**/*.css', '**/*.scss', '**/*.less']);
     
     for (const file of cssFiles.slice(0, 20)) { // 限制文件数量
-      const content = await fs.promises.readFile(file, 'utf-8');
+      const content = await fs.readFile(file, 'utf-8');
       
       // 提取 CSS 变量
       const cssVarRegex = /--([\w-]+):\s*([^;]+);/g;
@@ -97,8 +98,8 @@ export class DesignTokenExtractor {
     const tailwindConfigPath = path.join(projectPath, 'tailwind.config.js');
     const tailwindConfigTsPath = path.join(projectPath, 'tailwind.config.ts');
     
-    let configPath = fs.existsSync(tailwindConfigPath) ? tailwindConfigPath 
-                   : fs.existsSync(tailwindConfigTsPath) ? tailwindConfigTsPath 
+    let configPath = existsSync(tailwindConfigPath) ? tailwindConfigPath
+                   : existsSync(tailwindConfigTsPath) ? tailwindConfigTsPath
                    : null;
     
     if (!configPath) return tokens;
@@ -139,7 +140,7 @@ export class DesignTokenExtractor {
     
     for (const themePath of themePaths) {
       const fullPath = path.join(projectPath, themePath);
-      if (fs.existsSync(fullPath)) {
+      if (existsSync(fullPath)) {
         // 这里可以添加更复杂的主题文件解析逻辑
         // 目前简单返回空对象
         break;
@@ -157,33 +158,35 @@ export class DesignTokenExtractor {
 
   private async findFiles(projectPath: string, patterns: string[]): Promise<string[]> {
     const files: string[] = [];
-    
+
     // 简单的文件查找实现
-    const scanDir = (dir: string, depth: number = 0) => {
+    const scanDir = async (dir: string, depth: number = 0): Promise<void> => {
       if (depth > 3) return; // 限制扫描深度
-      
+
+      let entries;
       try {
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
-        for (const entry of entries) {
-          const fullPath = path.join(dir, entry.name);
-          
-          if (entry.isDirectory() && !entry.name.startsWith('.') && !entry.name.includes('node_modules')) {
-            scanDir(fullPath, depth + 1);
-          } else if (entry.isFile()) {
-            if (patterns.some(pattern => {
-              const ext = pattern.replace('**/*', '');
-              return fullPath.endsWith(ext);
-            })) {
-              files.push(fullPath);
-            }
-          }
-        }
+        entries = await fs.readdir(dir, { withFileTypes: true });
       } catch (error) {
         // 忽略权限错误
+        return;
+      }
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+
+        if (entry.isDirectory() && !entry.name.startsWith('.') && !entry.name.includes('node_modules')) {
+          await scanDir(fullPath, depth + 1);
+        } else if (entry.isFile()) {
+          if (patterns.some(pattern => {
+            const ext = pattern.replace('**/*', '');
+            return fullPath.endsWith(ext);
+          })) {
+            files.push(fullPath);
+          }
+        }
       }
     };
-    
-    scanDir(projectPath);
+
+    await scanDir(projectPath);
     return files;
   }
 

@@ -7,7 +7,7 @@
  * 3. 容器约束（最大宽度、内边距）
  */
 
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
 import * as path from 'path';
 import { Diagnosis, Severity } from '../../../../types';
 import { DesignTokens } from '../design-token-extractor';
@@ -25,7 +25,7 @@ export class LayoutChecker {
     const componentFiles = await this.findComponentFiles(projectPath);
 
     for (const file of componentFiles) {
-      const content = await fs.promises.readFile(file, 'utf-8');
+      const content = await fs.readFile(file, 'utf-8');
       const relativePath = path.relative(projectPath, file);
 
       // 检查Flexbox对齐
@@ -171,26 +171,28 @@ export class LayoutChecker {
     const files: string[] = [];
     const extensions = ['.tsx', '.jsx', '.vue', '.css', '.scss'];
 
-    const scanDir = (dir: string, depth: number = 0) => {
+    const scanDir = async (dir: string, depth: number = 0): Promise<void> => {
       if (depth > 4) return;
 
+      let entries;
       try {
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
-        for (const entry of entries) {
-          const fullPath = path.join(dir, entry.name);
-
-          if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') {
-            scanDir(fullPath, depth + 1);
-          } else if (entry.isFile() && extensions.some(ext => entry.name.endsWith(ext))) {
-            files.push(fullPath);
-          }
-        }
+        entries = await fs.readdir(dir, { withFileTypes: true });
       } catch (error) {
         // 忽略权限错误
+        return;
+      }
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+
+        if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') {
+          await scanDir(fullPath, depth + 1);
+        } else if (entry.isFile() && extensions.some(ext => entry.name.endsWith(ext))) {
+          files.push(fullPath);
+        }
       }
     };
 
-    scanDir(projectPath);
+    await scanDir(projectPath);
     return files.slice(0, 50);
   }
 }

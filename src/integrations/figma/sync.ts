@@ -4,7 +4,7 @@
  * 同步 Figma 设计令牌到代码项目
  */
 
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
 import * as path from 'path';
 import { FigmaClient } from './client';
 import { DesignTokens } from '../../skills/builtin/uiux/design-token-extractor';
@@ -35,14 +35,12 @@ export class FigmaSync {
 
     // 3. 写入文件
     const outputPath = options.outputPath || this.getDefaultOutputPath(options.projectPath, options.format);
-    
+
     // 确保目录存在
     const dir = path.dirname(outputPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
+    await fs.mkdir(dir, { recursive: true });
 
-    fs.writeFileSync(outputPath, content, 'utf-8');
+    await fs.writeFile(outputPath, content, 'utf-8');
   }
 
   /**

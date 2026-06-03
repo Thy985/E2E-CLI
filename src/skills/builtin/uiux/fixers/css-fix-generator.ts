@@ -1,9 +1,9 @@
 /**
- * CSS ä¿®å¤çæå? * 
- * èªå¨çæ CSS/æ ·å¼ä¿®å¤ä»£ç 
+ * CSS Fix Generator
+ * Auto-generates CSS/style fix code
  */
 
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
 import { Diagnosis, Fix } from '../../../../types';
 
 export class CSSFixGenerator {
@@ -15,15 +15,15 @@ export class CSSFixGenerator {
     switch (type) {
       case 'color-mismatch':
         return this.generateColorFix(fullPath, current, suggestion, diagnosis);
-      
+
       case 'spacing-inconsistent':
         return this.generateSpacingFix(fullPath, current, suggestion, diagnosis);
-      
+
       case 'border-radius-mismatch':
         return this.generateRadiusFix(fullPath, current, suggestion, diagnosis);
-      
+
       default:
-        throw new Error(`ä¸æ¯æçä¿®å¤ç±»å: ${type}`);
+        throw new Error(`Unsupported fix type: ${type}`);
     }
   }
 
@@ -34,19 +34,19 @@ export class CSSFixGenerator {
 
     switch (type) {
       case 'missing-hover-state':
-        return this.generateHoverStateFix(fullPath, element, suggestion, diagnosis);
-      
+        return await this.generateHoverStateFix(fullPath, element, suggestion, diagnosis);
+
       case 'missing-focus-state':
-        return this.generateFocusStateFix(fullPath, element, suggestion, diagnosis);
-      
+        return await this.generateFocusStateFix(fullPath, element, suggestion, diagnosis);
+
       case 'missing-active-state':
-        return this.generateActiveStateFix(fullPath, element, suggestion, diagnosis);
-      
+        return await this.generateActiveStateFix(fullPath, element, suggestion, diagnosis);
+
       case 'missing-disabled-state':
-        return this.generateDisabledStateFix(fullPath, element, suggestion, diagnosis);
-      
+        return await this.generateDisabledStateFix(fullPath, element, suggestion, diagnosis);
+
       default:
-        throw new Error(`ä¸æ¯æçä¿®å¤ç±»å: ${type}`);
+        throw new Error(`Unsupported fix type: ${type}`);
     }
   }
 
@@ -60,7 +60,7 @@ export class CSSFixGenerator {
       id: `fix-${diagnosis.id}`,
       diagnosisId: diagnosis.id,
       autoApplicable: true,
-      description: `å°ç¡¬ç¼ç é¢è² ${current} æ¿æ¢ä¸ºè®¾è®¡ä»¤ç?${suggestion}`,
+      description: `Replace hardcoded color ${current} with design token ${suggestion}`,
       riskLevel: 'low',
       changes: [
         {
@@ -84,7 +84,7 @@ export class CSSFixGenerator {
       id: `fix-${diagnosis.id}`,
       diagnosisId: diagnosis.id,
       autoApplicable: true,
-      description: `å°é´è·?${current} è°æ´ä¸ºè§èå?${suggestion}`,
+      description: `Adjust spacing ${current} to standard ${suggestion}`,
       riskLevel: 'low',
       changes: [
         {
@@ -108,7 +108,7 @@ export class CSSFixGenerator {
       id: `fix-${diagnosis.id}`,
       diagnosisId: diagnosis.id,
       autoApplicable: true,
-      description: `å°åè§?${current} è°æ´ä¸ºè§èå?${suggestion}`,
+      description: `Adjust radius ${current} to standard ${suggestion}`,
       riskLevel: 'low',
       changes: [
         {
@@ -122,17 +122,15 @@ export class CSSFixGenerator {
     };
   }
 
-  private generateHoverStateFix(
+  private async generateHoverStateFix(
     filePath: string,
     element: string,
     suggestion: string,
     diagnosis: Diagnosis
-  ): Fix {
-    // è¯»åæä»¶åå®¹ä»¥æ¾å°åéçæå¥ä½ç½®
-    const content = fs.readFileSync(filePath, 'utf-8');
+  ): Promise<Fix> {
+    const content = await fs.readFile(filePath, 'utf-8');
     const lines = content.split('\n');
-    
-    // æ¾å°åç´ éæ©å¨çç»æä½ç½®
+
     let insertLine = diagnosis.location.line || 0;
     for (let i = (diagnosis.location.line || 0); i < lines.length; i++) {
       if (lines[i].trim() === '}' || lines[i].includes('}')) {
@@ -145,7 +143,7 @@ export class CSSFixGenerator {
       id: `fix-${diagnosis.id}`,
       diagnosisId: diagnosis.id,
       autoApplicable: true,
-      description: `ä¸?${element} æ·»å  hover ç¶æ`,
+      description: `Add hover state for ${element}`,
       riskLevel: 'low',
       changes: [
         {
@@ -158,15 +156,15 @@ export class CSSFixGenerator {
     };
   }
 
-  private generateFocusStateFix(
+  private async generateFocusStateFix(
     filePath: string,
     element: string,
     suggestion: string,
     diagnosis: Diagnosis
-  ): Fix {
-    const content = fs.readFileSync(filePath, 'utf-8');
+  ): Promise<Fix> {
+    const content = await fs.readFile(filePath, 'utf-8');
     const lines = content.split('\n');
-    
+
     let insertLine = diagnosis.location.line || 0;
     for (let i = (diagnosis.location.line || 0); i < lines.length; i++) {
       if (lines[i].trim() === '}' || lines[i].includes('}')) {
@@ -179,7 +177,7 @@ export class CSSFixGenerator {
       id: `fix-${diagnosis.id}`,
       diagnosisId: diagnosis.id,
       autoApplicable: true,
-      description: `ä¸?${element} æ·»å  focus ç¶æ`,
+      description: `Add focus state for ${element}`,
       riskLevel: 'low',
       changes: [
         {
@@ -192,15 +190,15 @@ export class CSSFixGenerator {
     };
   }
 
-  private generateActiveStateFix(
+  private async generateActiveStateFix(
     filePath: string,
     element: string,
     suggestion: string,
     diagnosis: Diagnosis
-  ): Fix {
-    const content = fs.readFileSync(filePath, 'utf-8');
+  ): Promise<Fix> {
+    const content = await fs.readFile(filePath, 'utf-8');
     const lines = content.split('\n');
-    
+
     let insertLine = diagnosis.location.line || 0;
     for (let i = (diagnosis.location.line || 0); i < lines.length; i++) {
       if (lines[i].trim() === '}' || lines[i].includes('}')) {
@@ -213,7 +211,7 @@ export class CSSFixGenerator {
       id: `fix-${diagnosis.id}`,
       diagnosisId: diagnosis.id,
       autoApplicable: true,
-      description: `ä¸?${element} æ·»å  active ç¶æ`,
+      description: `Add active state for ${element}`,
       riskLevel: 'low',
       changes: [
         {
@@ -226,15 +224,15 @@ export class CSSFixGenerator {
     };
   }
 
-  private generateDisabledStateFix(
+  private async generateDisabledStateFix(
     filePath: string,
     element: string,
     suggestion: string,
     diagnosis: Diagnosis
-  ): Fix {
-    const content = fs.readFileSync(filePath, 'utf-8');
+  ): Promise<Fix> {
+    const content = await fs.readFile(filePath, 'utf-8');
     const lines = content.split('\n');
-    
+
     let insertLine = diagnosis.location.line || 0;
     for (let i = (diagnosis.location.line || 0); i < lines.length; i++) {
       if (lines[i].trim() === '}' || lines[i].includes('}')) {
@@ -247,7 +245,7 @@ export class CSSFixGenerator {
       id: `fix-${diagnosis.id}`,
       diagnosisId: diagnosis.id,
       autoApplicable: true,
-      description: `ä¸?${element} æ·»å  disabled ç¶æ`,
+      description: `Add disabled state for ${element}`,
       riskLevel: 'low',
       changes: [
         {

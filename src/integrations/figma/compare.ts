@@ -4,7 +4,7 @@
  * 对比代码实现与 Figma 设计稿
  */
 
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
 import * as path from 'path';
 import { FigmaClient } from './client';
 import { DesignTokens } from '../../skills/builtin/uiux/design-token-extractor';
@@ -228,7 +228,7 @@ export class FigmaCompare {
     }
 
     const buffer = await response.arrayBuffer();
-    fs.writeFileSync(outputPath, Buffer.from(buffer));
+    await fs.writeFile(outputPath, Buffer.from(buffer));
   }
 }
 

@@ -3,7 +3,7 @@
  * A simplified fix engine for testing and debugging
  */
 
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
 import * as path from 'path';
 import { Fix, FileChange } from '../../types';
 import { createLogger, Logger } from '../../utils/logger';
@@ -54,10 +54,10 @@ export class SimpleFixEngine {
         this.logger.info(`Change ${i + 1}/${fix.changes.length}:`);
         this.logger.info(`  File: ${change.file}`);
         this.logger.info(`  Type: ${change.type}`);
-        
+
         const changeResult = await this.applyChange(change, projectPath);
         result.details.push(changeResult);
-        
+
         if (changeResult.success) {
           this.logger.info(`  ✅ SUCCESS`);
         } else {
@@ -100,17 +100,20 @@ export class SimpleFixEngine {
     this.logger.debug(`  Full path: ${filePath}`);
 
     try {
-      const fileExists = fs.existsSync(filePath);
-      this.logger.debug(`  File exists: ${fileExists}`);
-
-      if (!fileExists) {
-        result.error = `File not found: ${filePath}`;
-        return result;
+      let content: string;
+      try {
+        content = await fs.readFile(filePath, 'utf-8');
+      } catch (err) {
+        const e = err as NodeJS.ErrnoException;
+        if (e && e.code === 'ENOENT') {
+          result.error = `File not found: ${filePath}`;
+          return result;
+        }
+        throw err;
       }
+      this.logger.debug(`  File exists: true`);
 
       if (change.type === 'replace') {
-        const content = fs.readFileSync(filePath, 'utf-8');
-        
         if (!change.oldContent) {
           result.error = 'No search pattern provided';
           return result;
@@ -124,16 +127,15 @@ export class SimpleFixEngine {
         }
 
         const newContent = content.replace(change.oldContent, change.content || '');
-        fs.writeFileSync(filePath, newContent, 'utf-8');
+        await fs.writeFile(filePath, newContent, 'utf-8');
         result.success = true;
 
       } else if (change.type === 'insert') {
-        const content = fs.readFileSync(filePath, 'utf-8');
         const lines = content.split('\n');
         const insertLine = change.position?.line || lines.length;
-        
+
         lines.splice(insertLine, 0, change.content || '');
-        fs.writeFileSync(filePath, lines.join('\n'), 'utf-8');
+        await fs.writeFile(filePath, lines.join('\n'), 'utf-8');
         result.success = true;
 
       } else {

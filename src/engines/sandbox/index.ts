@@ -16,7 +16,7 @@
  * - Playwright 可选：未安装则降级为静态 HTML 占位截图
  */
 
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
 import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import { Fix } from '../../types';
@@ -69,16 +69,25 @@ export class SandboxManager {
   private instances: Map<string, SandboxInstance> = new Map();
   private tempDir: string;
   private usedPorts: Set<number> = new Set();
+  private initPromise: Promise<void>;
 
   constructor() {
     this.tempDir = path.join(process.cwd(), '.qa-agent', 'sandbox');
-    this.ensureTempDir();
+    this.initPromise = this.ensureTempDir();
+  }
+
+  /**
+   * Wait for the temp directory to be ready (constructor fires-and-forgets).
+   */
+  async ready(): Promise<void> {
+    await this.initPromise;
   }
 
   /**
    * Create a sandbox instance
    */
   async create(config: SandboxConfig): Promise<SandboxInstance> {
+    await this.ready();
     const id = this.generateId();
     const sandboxPath = path.join(this.tempDir, id);
     const port = await this.allocatePort(config.port);
@@ -142,8 +151,9 @@ export class SandboxManager {
     const targetPort = port ?? instance.port;
     const packageJsonPath = path.join(instance.path, 'package.json');
 
-    if (fs.existsSync(packageJsonPath)) {
-      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+    try {
+      const pkgRaw = await fs.readFile(packageJsonPath, 'utf-8');
+      const packageJson = JSON.parse(pkgRaw);
       const scripts: Record<string, string> = packageJson.scripts || {};
 
       let startCommand: string | null = null;
@@ -185,6 +195,13 @@ export class SandboxManager {
           throw err;
         }
       }
+    } catch (err) {
+      const e = err as NodeJS.ErrnoException;
+      if (!e || e.code !== 'ENOENT') {
+        // Unknown read/parse failure — surface it
+        throw err;
+      }
+      // No package.json → fall through to simple server
     }
 
     // Fallback: static HTTP server (Python or `npx serve`)
@@ -219,9 +236,9 @@ export class SandboxManager {
         await browser.close();
       }
       return outputPath;
-    } catch (err) {
+    } catch {
       // Fallback: write a 1x1 placeholder PNG so callers can still get a path
-      fs.writeFileSync(
+      await fs.writeFile(
         outputPath,
         Buffer.from(
           '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489' +
@@ -245,15 +262,30 @@ export class SandboxManager {
       const { PNG } = await import('pngjs');
       const pixelmatch = (await import('pixelmatch')).default;
 
-      if (!fs.existsSync(beforeScreenshot)) {
-        throw new Error(`Before screenshot not found: ${beforeScreenshot}`);
+      // Read both screenshots; surface ENOENT early with a clear message
+      let beforeBuf: Buffer;
+      let afterBuf: Buffer;
+      try {
+        beforeBuf = await fs.readFile(beforeScreenshot);
+      } catch (err) {
+        const e = err as NodeJS.ErrnoException;
+        if (e && e.code === 'ENOENT') {
+          throw new Error(`Before screenshot not found: ${beforeScreenshot}`);
+        }
+        throw err;
       }
-      if (!fs.existsSync(afterScreenshot)) {
-        throw new Error(`After screenshot not found: ${afterScreenshot}`);
+      try {
+        afterBuf = await fs.readFile(afterScreenshot);
+      } catch (err) {
+        const e = err as NodeJS.ErrnoException;
+        if (e && e.code === 'ENOENT') {
+          throw new Error(`After screenshot not found: ${afterScreenshot}`);
+        }
+        throw err;
       }
 
-      const before = PNG.sync.read(fs.readFileSync(beforeScreenshot));
-      const after = PNG.sync.read(fs.readFileSync(afterScreenshot));
+      const before = PNG.sync.read(beforeBuf);
+      const after = PNG.sync.read(afterBuf);
 
       // Resize to match if dimensions differ (use before's size as reference)
       const width = before.width;
@@ -271,7 +303,7 @@ export class SandboxManager {
         { threshold: 0.1 }
       );
 
-      fs.writeFileSync(outputPath, PNG.sync.write(diff));
+      await fs.writeFile(outputPath, PNG.sync.write(diff));
       const totalPixels = width * height;
       const diffPercentage = (diffPixels / totalPixels) * 100;
 
@@ -349,10 +381,8 @@ export class SandboxManager {
   // Private helpers
   // ============================================
 
-  private ensureTempDir(): void {
-    if (!fs.existsSync(this.tempDir)) {
-      fs.mkdirSync(this.tempDir, { recursive: true });
-    }
+  private async ensureTempDir(): Promise<void> {
+    await fs.mkdir(this.tempDir, { recursive: true });
   }
 
   private generateId(): string {
@@ -375,18 +405,14 @@ export class SandboxManager {
   }
 
   private async copyProject(source: string, target: string, exclude: string[]): Promise<void> {
-    if (!fs.existsSync(target)) {
-      fs.mkdirSync(target, { recursive: true });
-    }
+    await fs.mkdir(target, { recursive: true });
     await this.copyDir(source, target, exclude);
   }
 
   private async copyDir(source: string, target: string, exclude: string[]): Promise<void> {
-    if (!fs.existsSync(target)) {
-      fs.mkdirSync(target, { recursive: true });
-    }
+    await fs.mkdir(target, { recursive: true });
 
-    const entries = fs.readdirSync(source, { withFileTypes: true });
+    const entries = await fs.readdir(source, { withFileTypes: true });
 
     for (const entry of entries) {
       if (exclude.includes(entry.name)) continue;
@@ -397,35 +423,58 @@ export class SandboxManager {
       if (entry.isDirectory()) {
         await this.copyDir(sourcePath, targetPath, exclude);
       } else {
-        fs.copyFileSync(sourcePath, targetPath);
+        await fs.copyFile(sourcePath, targetPath);
       }
     }
   }
 
   private async replaceInFile(filePath: string, search: string, replace: string): Promise<void> {
-    if (!fs.existsSync(filePath)) {
-      fs.writeFileSync(filePath, replace, 'utf-8');
-      return;
+    let content: string;
+    try {
+      content = await fs.readFile(filePath, 'utf-8');
+    } catch (err) {
+      const e = err as NodeJS.ErrnoException;
+      if (e && e.code === 'ENOENT') {
+        await fs.mkdir(path.dirname(filePath), { recursive: true });
+        await fs.writeFile(filePath, replace, 'utf-8');
+        return;
+      }
+      throw err;
     }
-    const content = fs.readFileSync(filePath, 'utf-8');
     const newContent = search ? content.replace(search, replace) : replace;
-    fs.writeFileSync(filePath, newContent, 'utf-8');
+    await fs.writeFile(filePath, newContent, 'utf-8');
   }
 
   private async insertInFile(filePath: string, line: number, content: string): Promise<void> {
-    if (!fs.existsSync(filePath)) {
-      fs.writeFileSync(filePath, content, 'utf-8');
-      return;
+    let existing: string;
+    try {
+      existing = await fs.readFile(filePath, 'utf-8');
+    } catch (err) {
+      const e = err as NodeJS.ErrnoException;
+      if (e && e.code === 'ENOENT') {
+        await fs.mkdir(path.dirname(filePath), { recursive: true });
+        await fs.writeFile(filePath, content, 'utf-8');
+        return;
+      }
+      throw err;
     }
-    const lines = fs.readFileSync(filePath, 'utf-8').split('\n');
-    lines.splice(Math.max(0, line - 1), 0, content);
-    fs.writeFileSync(filePath, lines.join('\n'), 'utf-8');
+    const lines = existing.split('\n');
+    const insertAt = Math.max(0, Math.min(line - 1, lines.length)); // 1-based → 0-based
+    lines.splice(insertAt, 0, content);
+    await fs.writeFile(filePath, lines.join('\n'), 'utf-8');
   }
 
   private async deleteInFile(filePath: string, search: string): Promise<void> {
-    if (!fs.existsSync(filePath) || !search) return;
-    const content = fs.readFileSync(filePath, 'utf-8');
-    fs.writeFileSync(filePath, content.replace(search, ''), 'utf-8');
+    if (!search) return;
+    let content: string;
+    try {
+      content = await fs.readFile(filePath, 'utf-8');
+    } catch (err) {
+      const e = err as NodeJS.ErrnoException;
+      if (e && e.code === 'ENOENT') return;
+      throw err;
+    }
+    await fs.writeFile(filePath, content.replace(search, ''), 'utf-8');
   }
 
   private async waitForServer(url: string, timeout: number = 30000): Promise<void> {
@@ -465,9 +514,8 @@ export class SandboxManager {
   }
 
   private async removeDir(dirPath: string): Promise<void> {
-    if (fs.existsSync(dirPath)) {
-      fs.rmSync(dirPath, { recursive: true, force: true });
-    }
+    // `rm` with `force: true` is idempotent — no need to pre-check existence
+    await fs.rm(dirPath, { recursive: true, force: true });
   }
 }
 

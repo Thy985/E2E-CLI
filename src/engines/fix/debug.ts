@@ -3,7 +3,8 @@
  * Enhanced fix engine with detailed logging and debugging
  */
 
-import * as fs from 'fs';
+import { existsSync } from 'fs';
+import * as fs from 'fs/promises';
 import * as path from 'path';
 import { Fix, FileChange } from '../../types';
 import { createLogger, Logger } from '../../utils/logger';
@@ -127,7 +128,7 @@ export class DebugFixEngine {
 
     try {
       // Check if file exists
-      const fileExists = fs.existsSync(filePath);
+      const fileExists = existsSync(filePath);
       this.logger.debug(`  File exists: ${fileExists}`);
 
       if (change.type === 'replace') {
@@ -137,7 +138,7 @@ export class DebugFixEngine {
         }
 
         // Read original content
-        const before = fs.readFileSync(filePath, 'utf-8');
+        const before = await fs.readFile(filePath, 'utf-8');
         result.before = before.substring(0, 200) + (before.length > 200 ? '...' : '');
         
         this.logger.debug(`  Original content length: ${before.length}`);
@@ -154,7 +155,7 @@ export class DebugFixEngine {
 
         // Apply replacement
         const after = before.replace(change.oldContent, change.content || '');
-        fs.writeFileSync(filePath, after, 'utf-8');
+        await fs.writeFile(filePath, after, 'utf-8');
         
         result.after = after.substring(0, 200) + (after.length > 200 ? '...' : '');
         result.success = true;
@@ -167,7 +168,7 @@ export class DebugFixEngine {
           return result;
         }
 
-        const before = fs.readFileSync(filePath, 'utf-8');
+        const before = await fs.readFile(filePath, 'utf-8');
         result.before = before.substring(0, 200) + '...';
         
         const lines = before.split('\n');
@@ -179,7 +180,7 @@ export class DebugFixEngine {
         if (insertLine >= 0 && insertLine <= lines.length) {
           lines.splice(insertLine, 0, change.content || '');
           const after = lines.join('\n');
-          fs.writeFileSync(filePath, after, 'utf-8');
+          await fs.writeFile(filePath, after, 'utf-8');
           
           result.after = after.substring(0, 200) + '...';
           result.success = true;
@@ -196,7 +197,7 @@ export class DebugFixEngine {
           return result;
         }
 
-        const before = fs.readFileSync(filePath, 'utf-8');
+        const before = await fs.readFile(filePath, 'utf-8');
         result.before = before.substring(0, 200) + '...';
         
         this.logger.debug(`  Content to delete: "${change.oldContent?.substring(0, 100)}${change.oldContent && change.oldContent.length > 100 ? '...' : ''}"`);
@@ -208,7 +209,7 @@ export class DebugFixEngine {
         }
 
         const after = before.replace(change.oldContent, '');
-        fs.writeFileSync(filePath, after, 'utf-8');
+        await fs.writeFile(filePath, after, 'utf-8');
         
         result.after = after.substring(0, 200) + '...';
         result.success = true;
@@ -265,7 +266,7 @@ export class DebugFixEngine {
 
       try {
         // Check file exists
-        check.exists = fs.existsSync(filePath);
+        check.exists = existsSync(filePath);
         this.logger.info(`File: ${change.file}`);
         this.logger.info(`  Exists: ${check.exists ? '✅' : '❌'}`);
 
@@ -276,7 +277,7 @@ export class DebugFixEngine {
         }
 
         // Check readable
-        const content = fs.readFileSync(filePath, 'utf-8');
+        const content = await fs.readFile(filePath, 'utf-8');
         check.readable = true;
         this.logger.info(`  Readable: ✅`);
 

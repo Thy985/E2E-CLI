@@ -4,7 +4,7 @@
  * 自动生成性能优化修复代码
  */
 
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
 import { Diagnosis, Fix } from '../../../../types';
 
 export class PerformanceFixGenerator {
@@ -15,33 +15,33 @@ export class PerformanceFixGenerator {
 
     switch (type) {
       case 'render-blocking':
-        return this.fixRenderBlocking(fullPath, diagnosis);
-      
+        return await this.fixRenderBlocking(fullPath, diagnosis);
+
       case 'css-in-body':
-        return this.fixCSSInBody(fullPath, diagnosis);
-      
+        return await this.fixCSSInBody(fullPath, diagnosis);
+
       case 'dom-in-loop':
-        return this.fixDOMInLoop(fullPath, diagnosis);
-      
+        return await this.fixDOMInLoop(fullPath, diagnosis);
+
       case 'function-in-loop':
-        return this.fixFunctionInLoop(fullPath, diagnosis);
-      
+        return await this.fixFunctionInLoop(fullPath, diagnosis);
+
       case 'event-listener-leak':
-        return this.fixEventListenerLeak(fullPath, diagnosis);
-      
+        return await this.fixEventListenerLeak(fullPath, diagnosis);
+
       case 'timer-leak':
-        return this.fixTimerLeak(fullPath, diagnosis);
-      
+        return await this.fixTimerLeak(fullPath, diagnosis);
+
       default:
         throw new Error(`Unsupported fix type: ${type}`);
     }
   }
 
-  private fixRenderBlocking(filePath: string, diagnosis: Diagnosis): Fix {
-    const content = fs.readFileSync(filePath, 'utf-8');
+  private async fixRenderBlocking(filePath: string, diagnosis: Diagnosis): Promise<Fix> {
+    const content = await fs.readFile(filePath, 'utf-8');
     const lines = content.split('\n');
     const line = lines[(diagnosis.location.line || 1) - 1];
-    
+
     // 添加 async 或 defer
     let fixedLine = line;
     if (!/async|defer/.test(line)) {
@@ -66,8 +66,8 @@ export class PerformanceFixGenerator {
     };
   }
 
-  private fixCSSInBody(filePath: string, diagnosis: Diagnosis): Fix {
-    const content = fs.readFileSync(filePath, 'utf-8');
+  private async fixCSSInBody(filePath: string, diagnosis: Diagnosis): Promise<Fix> {
+    const content = await fs.readFile(filePath, 'utf-8');
     const lines = content.split('\n');
     const line = lines[(diagnosis.location.line || 1) - 1];
 
@@ -89,16 +89,16 @@ export class PerformanceFixGenerator {
     };
   }
 
-  private fixDOMInLoop(filePath: string, diagnosis: Diagnosis): Fix {
-    const content = fs.readFileSync(filePath, 'utf-8');
+  private async fixDOMInLoop(filePath: string, diagnosis: Diagnosis): Promise<Fix> {
+    const content = await fs.readFile(filePath, 'utf-8');
     const lines = content.split('\n');
-    
+
     // 找到循环开始和结束
     const startLine = (diagnosis.location.line || 1) - 1;
     let endLine = startLine;
     let braceCount = 0;
     let inLoop = false;
-    
+
     for (let i = startLine; i < lines.length; i++) {
       const line = lines[i];
       if (/for\s*\(|while\s*\(/.test(line)) {
@@ -106,7 +106,7 @@ export class PerformanceFixGenerator {
       }
       braceCount += (line.match(/{/g) || []).length;
       braceCount -= (line.match(/}/g) || []).length;
-      
+
       if (inLoop && braceCount === 0) {
         endLine = i;
         break;
@@ -116,7 +116,7 @@ export class PerformanceFixGenerator {
     // 提取 DOM 操作
     const loopContent = lines.slice(startLine, endLine + 1).join('\n');
     const domMatch = loopContent.match(/(document\.[a-zA-Z]+\([^)]+\))/);
-    
+
     if (!domMatch) {
       throw new Error('Could not find DOM operation to fix');
     }
@@ -128,7 +128,7 @@ export class PerformanceFixGenerator {
     const fixedLines = [
       `// Cache DOM element outside loop`,
       `const ${cacheVar} = ${domOperation};`,
-      ...lines.slice(startLine, endLine + 1).map(l => 
+      ...lines.slice(startLine, endLine + 1).map(l =>
         l.replace(domOperation, cacheVar)
       ),
     ];
@@ -151,17 +151,17 @@ export class PerformanceFixGenerator {
     };
   }
 
-  private fixFunctionInLoop(filePath: string, diagnosis: Diagnosis): Fix {
-    const content = fs.readFileSync(filePath, 'utf-8');
+  private async fixFunctionInLoop(filePath: string, diagnosis: Diagnosis): Promise<Fix> {
+    const content = await fs.readFile(filePath, 'utf-8');
     const lines = content.split('\n');
     const line = lines[(diagnosis.location.line || 1) - 1];
-    
+
     // 简单情况：将箭头函数提取到循环外
     const arrowMatch = line.match(/const\s+(\w+)\s*=\s*(\([^)]*\)\s*=>)/);
     if (arrowMatch) {
       const funcName = arrowMatch[1];
       const funcDef = line.trim();
-      
+
       return {
       id: `fix-${diagnosis.id}`,
       diagnosisId: diagnosis.id,
@@ -198,11 +198,11 @@ export class PerformanceFixGenerator {
     };
   }
 
-  private fixEventListenerLeak(filePath: string, diagnosis: Diagnosis): Fix {
-    const content = fs.readFileSync(filePath, 'utf-8');
+  private async fixEventListenerLeak(filePath: string, diagnosis: Diagnosis): Promise<Fix> {
+    const content = await fs.readFile(filePath, 'utf-8');
     const lines = content.split('\n');
     const line = lines[(diagnosis.location.line || 1) - 1];
-    
+
     // 提取事件监听器信息
     const match = line.match(/(\w+)\.addEventListener\(['"](\w+)['"]/);
     if (!match) {
@@ -236,11 +236,11 @@ export class PerformanceFixGenerator {
     };
   }
 
-  private fixTimerLeak(filePath: string, diagnosis: Diagnosis): Fix {
-    const content = fs.readFileSync(filePath, 'utf-8');
+  private async fixTimerLeak(filePath: string, diagnosis: Diagnosis): Promise<Fix> {
+    const content = await fs.readFile(filePath, 'utf-8');
     const lines = content.split('\n');
     const line = lines[(diagnosis.location.line || 1) - 1];
-    
+
     // 提取定时器变量名
     const match = line.match(/(const|let|var)\s+(\w+)\s*=\s*(setInterval|setTimeout)/);
     const timerVar = match ? match[2] : 'timer';

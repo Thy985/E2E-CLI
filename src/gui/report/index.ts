@@ -558,10 +558,8 @@ export class ReportGenerator {
    */
   private async saveReport(html: string, filename: string): Promise<string> {
     const outputDir = this.options.outputDir!;
-    
-    if (!fs.existsSync(outputDir)) {
-      await fs.promises.mkdir(outputDir, { recursive: true });
-    }
+
+    await fs.promises.mkdir(outputDir, { recursive: true });
 
     const filepath = path.join(outputDir, filename);
     await fs.promises.writeFile(filepath, html);

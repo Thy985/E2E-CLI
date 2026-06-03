@@ -4,7 +4,8 @@
  */
 
 import * as path from 'path';
-import * as fs from 'fs';
+import { existsSync } from 'fs';
+import * as fs from 'fs/promises';
 import { matchesAnyPattern } from '../utils/ignore';
 
 export interface QAConfig {
@@ -103,8 +104,8 @@ const CONFIG_FILES = [
  * Load configuration from project directory
  */
 export async function loadConfig(projectPath: string): Promise<QAConfig> {
-  const configPath = findConfigFile(projectPath);
-  
+  const configPath = await findConfigFile(projectPath);
+
   if (!configPath) {
     return { ...DEFAULT_CONFIG };
   }
@@ -121,10 +122,10 @@ export async function loadConfig(projectPath: string): Promise<QAConfig> {
 /**
  * Find config file in project directory
  */
-function findConfigFile(projectPath: string): string | null {
+async function findConfigFile(projectPath: string): Promise<string | null> {
   for (const file of CONFIG_FILES) {
     const fullPath = path.join(projectPath, file);
-    if (fs.existsSync(fullPath)) {
+    if (existsSync(fullPath)) {
       return fullPath;
     }
   }
@@ -136,7 +137,7 @@ function findConfigFile(projectPath: string): string | null {
  */
 async function parseConfigFile(filePath: string): Promise<QAConfig> {
   const ext = path.extname(filePath);
-  const content = fs.readFileSync(filePath, 'utf-8');
+  const content = await fs.readFile(filePath, 'utf-8');
 
   switch (ext) {
     case '.yaml':
@@ -397,9 +398,7 @@ export function getRuleSeverity(
  */
 export async function createDefaultConfig(projectPath: string, format: 'yaml' | 'json' | 'ts' = 'json'): Promise<string> {
   const configDir = path.join(projectPath, '.qa-agent');
-  if (!fs.existsSync(configDir)) {
-    fs.mkdirSync(configDir, { recursive: true });
-  }
+  await fs.mkdir(configDir, { recursive: true });
   
   let filePath: string;
   let content: string;
@@ -491,7 +490,7 @@ export default defineConfig({
       break;
   }
   
-  fs.writeFileSync(filePath, content, 'utf-8');
+  await fs.writeFile(filePath, content, 'utf-8');
   return filePath;
 }
 

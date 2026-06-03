@@ -3,7 +3,8 @@
  * Handles skill lifecycle: install, update, create, remove
  */
 
-import * as fs from 'fs';
+import { existsSync } from 'fs';
+import * as fs from 'fs/promises';
 import * as path from 'path';
 import { createLogger, Logger } from '../utils/logger';
 import { execAsync } from '../utils/shell';
@@ -45,13 +46,14 @@ export class SkillManager {
     this.logger = logger || createLogger({ level: 'info' });
     this.skillsDir = path.join(projectRoot || process.cwd(), '.qa-agent', 'skills');
     this.configPath = path.join(projectRoot || process.cwd(), '.qa-agent', 'skills-config.json');
-    
-    this.ensureSkillsDir();
+
+    // Note: ensureSkillsDir is async; call it before first use of fs operations.
+    void this.ensureSkillsDir();
   }
 
-  private ensureSkillsDir(): void {
-    if (!fs.existsSync(this.skillsDir)) {
-      fs.mkdirSync(this.skillsDir, { recursive: true });
+  private async ensureSkillsDir(): Promise<void> {
+    if (!existsSync(this.skillsDir)) {
+      await fs.mkdir(this.skillsDir, { recursive: true });
     }
   }
 
@@ -59,7 +61,7 @@ export class SkillManager {
    * Get list of installed skills
    */
   async listInstalled(): Promise<InstalledSkill[]> {
-    const config = this.loadConfig();
+    const config = await this.loadConfig();
     return config.skills || [];
   }
 
@@ -84,7 +86,7 @@ export class SkillManager {
     
     try {
       // Check if skill is already installed
-      const config = this.loadConfig();
+      const config = await this.loadConfig();
       const existingSkill = config.skills.find(s => s.name === packageName || s.name === fullPackageName);
       
       if (existingSkill && !options?.force) {
@@ -107,8 +109,8 @@ export class SkillManager {
 
 // Create a temporary directory for npm install
       const tempDir = path.join(this.skillsDir, '.temp');
-      if (!fs.existsSync(tempDir)) {
-        fs.mkdirSync(tempDir, { recursive: true });
+      if (!existsSync(tempDir)) {
+        await fs.mkdir(tempDir, { recursive: true });
       }
 
       // Use npm pack to download the package as a tarball
@@ -136,7 +138,7 @@ export class SkillManager {
       const tarballPath = path.join(tempDir, tarballName);
 
       // Check if tarball exists
-      if (!fs.existsSync(tarballPath)) {
+      if (!existsSync(tarballPath)) {
         return { success: false, message: 'Downloaded package not found' };
       }
 
@@ -166,7 +168,7 @@ export class SkillManager {
       }
 
       // Find the extracted package directory
-      const dirs = fs.readdirSync(tempDir);
+      const dirs = await fs.readdir(tempDir);
       let extractedDir = '';
       for (const dir of dirs) {
         // npm pack creates a directory like 'package' or '@scope/package'
@@ -176,18 +178,18 @@ export class SkillManager {
         }
       }
 
-      if (!extractedDir || !fs.existsSync(extractedDir)) {
+      if (!extractedDir || !existsSync(extractedDir)) {
         // Try finding by package.json
         for (const dir of dirs) {
           const potentialPath = path.join(tempDir, dir);
-          if (fs.existsSync(path.join(potentialPath, 'package.json'))) {
+          if (existsSync(path.join(potentialPath, 'package.json'))) {
             extractedDir = potentialPath;
             break;
           }
         }
       }
 
-      if (!extractedDir || !fs.existsSync(extractedDir)) {
+      if (!extractedDir || !existsSync(extractedDir)) {
         return { success: false, message: 'Failed to extract package' };
       }
 
@@ -197,27 +199,27 @@ export class SkillManager {
 
       // Read package.json to get skill info
       const pkgPath = path.join(skillPath, 'package.json');
-      if (!fs.existsSync(pkgPath)) {
+      if (!existsSync(pkgPath)) {
         return { success: false, message: 'Invalid skill package: missing package.json' };
       }
 
-      const pkgInfo = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+      const pkgInfo = JSON.parse(await fs.readFile(pkgPath, 'utf-8'));
       skillName = pkgInfo.name || skillName;
 
       // Move to skills directory
       const targetPath = path.join(this.skillsDir, skillName);
-      
+
       // Remove existing if force
-      if (fs.existsSync(targetPath)) {
-        fs.rmSync(targetPath, { recursive: true, force: true });
+      if (existsSync(targetPath)) {
+        await fs.rm(targetPath, { recursive: true, force: true });
       }
-      
+
       // Copy to skills directory
-      this.copyDirectory(skillPath, targetPath);
+      await this.copyDirectory(skillPath, targetPath);
 
       // Clean up temp
-      if (fs.existsSync(tempDir)) {
-        fs.rmSync(tempDir, { recursive: true, force: true });
+      if (existsSync(tempDir)) {
+        await fs.rm(tempDir, { recursive: true, force: true });
       }
 
       // Update config
@@ -231,10 +233,10 @@ export class SkillManager {
         installedAt: new Date().toISOString(),
       };
 
-      this.addSkillToConfig(skill);
+      this.addSkillToConfig(skill).catch(err => logger.error(`Failed to save skill config: ${err.message}`));
 
       logger.info(`✅ Skill "${skillName}" installed successfully!`);
-      
+
       return { 
         success: true, 
         message: `Skill "${skillName}" v${skill.version} installed successfully`,
@@ -252,7 +254,7 @@ export class SkillManager {
    */
   async update(skillName?: string): Promise<{ success: boolean; message: string; updated?: string[] }> {
     const logger = this.logger;
-    const config = this.loadConfig();
+    const config = await this.loadConfig();
     const updated: string[] = [];
 
     if (skillName) {
@@ -298,11 +300,11 @@ export class SkillManager {
       
       // Read current version
       const pkgPath = path.join(skill.path, 'package.json');
-      if (!fs.existsSync(pkgPath)) {
+      if (!existsSync(pkgPath)) {
         return { success: false, message: `Invalid skill: missing package.json` };
       }
 
-      const currentPkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+      const currentPkg = JSON.parse(await fs.readFile(pkgPath, 'utf-8'));
       
       // Check for updates on npm
       const searchResult = await this.searchNpm(skill.name);
@@ -317,10 +319,10 @@ export class SkillManager {
 
       // Reinstall the package using npm pack
       const tempDir = path.join(this.skillsDir, '.temp');
-      if (fs.existsSync(tempDir)) {
-        fs.rmSync(tempDir, { recursive: true, force: true });
+      if (existsSync(tempDir)) {
+        await fs.rm(tempDir, { recursive: true, force: true });
       }
-      fs.mkdirSync(tempDir, { recursive: true });
+      await fs.mkdir(tempDir, { recursive: true });
 
       // Download via npm pack
       const packResult = await execAsync(`npm pack ${skill.name}@latest`, { cwd: tempDir, timeout: 60000 });
@@ -334,31 +336,31 @@ export class SkillManager {
       await execAsync(`tar -xzf "${tarballName}" -C "${tempDir}"`, { cwd: tempDir, timeout: 30000 });
 
       // Find extracted directory
-      const dirs = fs.readdirSync(tempDir);
+      const dirs = await fs.readdir(tempDir);
       let newPath = '';
       for (const dir of dirs) {
         const potentialPath = path.join(tempDir, dir);
-        if (fs.existsSync(path.join(potentialPath, 'package.json'))) {
+        if (existsSync(path.join(potentialPath, 'package.json'))) {
           newPath = potentialPath;
           break;
         }
       }
 
-      if (newPath && fs.existsSync(path.join(newPath, 'package.json'))) {
-        const newPkg = JSON.parse(fs.readFileSync(path.join(newPath, 'package.json'), 'utf-8'));
-        
+      if (newPath && existsSync(path.join(newPath, 'package.json'))) {
+        const newPkg = JSON.parse(await fs.readFile(path.join(newPath, 'package.json'), 'utf-8'));
+
         // Clean and update
-        fs.rmSync(skill.path, { recursive: true, force: true });
-        this.copyDirectory(newPath, skill.path);
+        await fs.rm(skill.path, { recursive: true, force: true });
+        await this.copyDirectory(newPath, skill.path);
 
         // Update config
         skill.version = newPkg.version;
         skill.description = newPkg.description || skill.description;
-        this.updateSkillInConfig(skill);
+        await this.updateSkillInConfig(skill);
 
         logger.info(`✅ ${skill.name} updated to v${newPkg.version}`);
 
-        fs.rmSync(tempDir, { recursive: true, force: true });
+        await fs.rm(tempDir, { recursive: true, force: true });
         return { success: true, message: `Updated ${skill.name} to v${newPkg.version}` };
       }
 
@@ -384,40 +386,40 @@ export class SkillManager {
     const skillName = this.normalizeSkillName(name);
     
     // Check if already exists
-    const config = this.loadConfig();
+    const config = await this.loadConfig();
     if (config.skills.some(s => s.name === skillName)) {
       return { success: false, message: `Skill "${skillName}" already exists` };
     }
 
     // Check directory
     const skillPath = path.join(this.skillsDir, skillName);
-    if (fs.existsSync(skillPath)) {
+    if (existsSync(skillPath)) {
       return { success: false, message: `Directory "${skillPath}" already exists` };
     }
 
     try {
       logger.info(`Creating new skill: ${skillName}`);
-      
+
       // Create skill directory
-      fs.mkdirSync(skillPath, { recursive: true });
-      fs.mkdirSync(path.join(skillPath, 'checkers'), { recursive: true });
-      fs.mkdirSync(path.join(skillPath, 'fixers'), { recursive: true });
+      await fs.mkdir(skillPath, { recursive: true });
+      await fs.mkdir(path.join(skillPath, 'checkers'), { recursive: true });
+      await fs.mkdir(path.join(skillPath, 'fixers'), { recursive: true });
 
       const description = options?.description || `Custom skill: ${skillName}`;
       const template = options?.template || 'basic';
 
       // Generate skill files
       const files = this.generateSkillFiles(skillName, description, template);
-      
+
       for (const [filePath, content] of Object.entries(files)) {
         const fullPath = path.join(skillPath, filePath);
         const dir = path.dirname(fullPath);
-        
-        if (!fs.existsSync(dir)) {
-          fs.mkdirSync(dir, { recursive: true });
+
+        if (!existsSync(dir)) {
+          await fs.mkdir(dir, { recursive: true });
         }
-        
-        fs.writeFileSync(fullPath, content, 'utf-8');
+
+        await fs.writeFile(fullPath, content, 'utf-8');
       }
 
       // Add to config
@@ -430,7 +432,7 @@ export class SkillManager {
         installedAt: new Date().toISOString(),
       };
 
-      this.addSkillToConfig(skill);
+      await this.addSkillToConfig(skill);
 
       logger.info(`✅ Skill "${skillName}" created successfully at ${skillPath}`);
       logger.info('');
@@ -444,12 +446,12 @@ export class SkillManager {
 
     } catch (error: any) {
       logger.error(`Failed to create skill: ${error.message}`);
-      
+
       // Cleanup on failure
-      if (fs.existsSync(skillPath)) {
-        fs.rmSync(skillPath, { recursive: true, force: true });
+      if (existsSync(skillPath)) {
+        await fs.rm(skillPath, { recursive: true, force: true });
       }
-      
+
       return { success: false, message: `Creation failed: ${error.message}` };
     }
   }
@@ -459,8 +461,8 @@ export class SkillManager {
    */
   async remove(skillName: string): Promise<{ success: boolean; message: string }> {
     const logger = this.logger;
-    const config = this.loadConfig();
-    
+    const config = await this.loadConfig();
+
     const skill = config.skills.find(s => s.name === skillName);
     if (!skill) {
       return { success: false, message: `Skill "${skillName}" not found` };
@@ -468,13 +470,13 @@ export class SkillManager {
 
     try {
       // Remove from filesystem
-      if (fs.existsSync(skill.path)) {
-        fs.rmSync(skill.path, { recursive: true, force: true });
+      if (existsSync(skill.path)) {
+        await fs.rm(skill.path, { recursive: true, force: true });
       }
 
       // Update config
       config.skills = config.skills.filter(s => s.name !== skillName);
-      this.saveConfig(config);
+      await this.saveConfig(config);
 
       logger.info(`✅ Skill "${skillName}" removed`);
       return { success: true, message: `Skill "${skillName}" removed` };
@@ -487,7 +489,7 @@ export class SkillManager {
    * Enable or disable a skill
    */
   async toggle(skillName: string, enabled: boolean): Promise<{ success: boolean; message: string }> {
-    const config = this.loadConfig();
+    const config = await this.loadConfig();
     const skill = config.skills.find(s => s.name === skillName);
     
     if (!skill) {
@@ -495,7 +497,7 @@ export class SkillManager {
     }
 
     skill.enabled = enabled;
-    this.updateSkillInConfig(skill);
+    await this.updateSkillInConfig(skill);
 
     return { 
       success: true, 
@@ -513,41 +515,41 @@ export class SkillManager {
       .replace(/^-|-$/g, '');
   }
 
-  private loadConfig(): { skills: InstalledSkill[] } {
-    if (!fs.existsSync(this.configPath)) {
+  private async loadConfig(): Promise<{ skills: InstalledSkill[] }> {
+    if (!existsSync(this.configPath)) {
       return { skills: [] };
     }
     try {
-      return JSON.parse(fs.readFileSync(this.configPath, 'utf-8'));
+      return JSON.parse(await fs.readFile(this.configPath, 'utf-8'));
     } catch {
       return { skills: [] };
     }
   }
 
-  private saveConfig(config: { skills: InstalledSkill[] }): void {
-    if (!fs.existsSync(path.dirname(this.configPath))) {
-      fs.mkdirSync(path.dirname(this.configPath), { recursive: true });
+  private async saveConfig(config: { skills: InstalledSkill[] }): Promise<void> {
+    if (!existsSync(path.dirname(this.configPath))) {
+      await fs.mkdir(path.dirname(this.configPath), { recursive: true });
     }
-    fs.writeFileSync(this.configPath, JSON.stringify(config, null, 2), 'utf-8');
+    await fs.writeFile(this.configPath, JSON.stringify(config, null, 2), 'utf-8');
   }
 
-  private addSkillToConfig(skill: InstalledSkill): void {
-    const config = this.loadConfig();
-    
+  private async addSkillToConfig(skill: InstalledSkill): Promise<void> {
+    const config = await this.loadConfig();
+
     // Remove existing if present
     config.skills = config.skills.filter(s => s.name !== skill.name);
     config.skills.push(skill);
-    
-    this.saveConfig(config);
+
+    await this.saveConfig(config);
   }
 
-  private updateSkillInConfig(skill: InstalledSkill): void {
-    const config = this.loadConfig();
+  private async updateSkillInConfig(skill: InstalledSkill): Promise<void> {
+    const config = await this.loadConfig();
     const index = config.skills.findIndex(s => s.name === skill.name);
-    
+
     if (index >= 0) {
       config.skills[index] = skill;
-      this.saveConfig(config);
+      await this.saveConfig(config);
     }
   }
 
@@ -577,21 +579,21 @@ export class SkillManager {
     }
   }
 
-  private copyDirectory(src: string, dest: string): void {
-    if (!fs.existsSync(dest)) {
-      fs.mkdirSync(dest, { recursive: true });
+  private async copyDirectory(src: string, dest: string): Promise<void> {
+    if (!existsSync(dest)) {
+      await fs.mkdir(dest, { recursive: true });
     }
-    
-    const entries = fs.readdirSync(src, { withFileTypes: true });
-    
+
+    const entries = await fs.readdir(src, { withFileTypes: true });
+
     for (const entry of entries) {
       const srcPath = path.join(src, entry.name);
       const destPath = path.join(dest, entry.name);
-      
+
       if (entry.isDirectory()) {
-        this.copyDirectory(srcPath, destPath);
+        await this.copyDirectory(srcPath, destPath);
       } else {
-        fs.copyFileSync(srcPath, destPath);
+        await fs.copyFile(srcPath, destPath);
       }
     }
   }
