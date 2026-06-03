@@ -3,12 +3,7 @@
  */
 
 import { Hono } from 'hono';
-import { createSkillRegistry } from '../../skills/registry';
-import { A11ySkill } from '../../skills/builtin/a11y';
-import { E2ESkill } from '../../skills/builtin/e2e';
-import { PerformanceSkill } from '../../skills/builtin/performance';
-import { SecuritySkill } from '../../skills/builtin/security';
-import { UIUXSkill } from '../../skills/builtin/uiux';
+import { createSkillRegistry, getRegisteredSkills } from '../../skills';
 import { createModelClient } from '../../models';
 import { createTools } from '../../tools';
 import { createStorage } from '../../storage';
@@ -28,12 +23,10 @@ diagnoseRouter.post('/', async (c) => {
 
     const logger = createLogger({ level: 'info' });
     const skillRegistry = createSkillRegistry(logger);
-    
-    skillRegistry.register(new A11ySkill());
-    skillRegistry.register(new E2ESkill());
-    skillRegistry.register(new PerformanceSkill());
-    skillRegistry.register(new SecuritySkill());
-    skillRegistry.register(new UIUXSkill());
+
+    for (const skill of getRegisteredSkills()) {
+      skillRegistry.register(skill);
+    }
 
     // Get project info
     const projectInfo = await getProjectInfo(projectPath);
@@ -53,7 +46,7 @@ diagnoseRouter.post('/', async (c) => {
 
     // Run diagnosis
     const results = await skillRegistry.runDiagnosis(skills, context);
-    
+
     const issues: any[] = [];
     for (const [skillName, diagnoses] of results) {
       issues.push(...diagnoses);
@@ -78,12 +71,10 @@ diagnoseRouter.post('/', async (c) => {
 diagnoseRouter.get('/skills', async (c) => {
   const logger = createLogger({ level: 'info' });
   const skillRegistry = createSkillRegistry(logger);
-  
-  skillRegistry.register(new A11ySkill());
-  skillRegistry.register(new E2ESkill());
-  skillRegistry.register(new PerformanceSkill());
-  skillRegistry.register(new SecuritySkill());
-  skillRegistry.register(new UIUXSkill());
+
+  for (const skill of getRegisteredSkills()) {
+    skillRegistry.register(skill);
+  }
 
   const skills = skillRegistry.getAllInfo();
 
@@ -95,7 +86,7 @@ diagnoseRouter.get('/skills', async (c) => {
 
 async function getProjectInfo(projectPath: string) {
   const packageJsonPath = path.join(projectPath, 'package.json');
-  
+
   let name = path.basename(projectPath);
   let type: 'webapp' | 'library' | 'cli' | 'api' = 'webapp';
   let framework: string | undefined;

@@ -5,7 +5,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Fix, FileChange, SkillContext } from '../../types';
+import { Fix, FileChange } from '../../types';
 import { createLogger, Logger } from '../../utils/logger';
 
 export interface DebugFixResult {

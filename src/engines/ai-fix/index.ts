@@ -183,7 +183,7 @@ Output in JSON format:
       }
 
       const parsed = JSON.parse(jsonMatch[0]);
-      
+
       return {
         id: `ai-fix-${diagnosis.id}`,
         diagnosisId: diagnosis.id,
@@ -195,7 +195,7 @@ Output in JSON format:
           type: change.type,
           position: { line: change.line },
           content: change.content || change.replace,
-          original: change.search,
+          oldContent: change.search,
         })),
       };
     } catch (error) {

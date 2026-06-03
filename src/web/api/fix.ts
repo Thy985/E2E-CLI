@@ -3,17 +3,12 @@
  */
 
 import { Hono } from 'hono';
-import { createSkillRegistry } from '../../skills/registry';
-import { A11ySkill } from '../../skills/builtin/a11y';
-import { E2ESkill } from '../../skills/builtin/e2e';
-import { PerformanceSkill } from '../../skills/builtin/performance';
-import { SecuritySkill } from '../../skills/builtin/security';
-import { UIUXSkill } from '../../skills/builtin/uiux';
+import { createSkillRegistry, getRegisteredSkills } from '../../skills';
 import { createModelClient } from '../../models';
 import { createTools } from '../../tools';
 import { createStorage } from '../../storage';
 import { createLogger } from '../../utils/logger';
-import { SkillContext, Diagnosis, Fix } from '../../types';
+import { SkillContext, Diagnosis, Fix, ProjectInfo } from '../../types';
 import { loadConfig } from '../../config';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -35,16 +30,15 @@ fixRouter.post('/preview', async (c) => {
     const cwd = projectPath || process.cwd();
     const logger = createLogger({ level: 'info' });
     const skillRegistry = createSkillRegistry(logger);
-    
-    skillRegistry.register(new A11ySkill());
-    skillRegistry.register(new E2ESkill());
-    skillRegistry.register(new PerformanceSkill());
-    skillRegistry.register(new SecuritySkill());
-    skillRegistry.register(new UIUXSkill());
+
+    for (const skill of getRegisteredSkills()) {
+      skillRegistry.register(skill);
+    }
 
     const config = await loadConfig(cwd);
+    const project: ProjectInfo = await getProjectInfo(cwd);
     const context: SkillContext = {
-      project: { name: '', path: cwd },
+      project,
       config: config,
       logger: logger.child('Skill'),
       tools: createTools(cwd),
@@ -122,16 +116,39 @@ fixRouter.post('/apply', async (c) => {
   }
 });
 
+async function getProjectInfo(projectPath: string): Promise<ProjectInfo> {
+  const packageJsonPath = path.join(projectPath, 'package.json');
+
+  let name = path.basename(projectPath);
+  let type: ProjectInfo['type'] = 'webapp';
+  let framework: string | undefined;
+
+  try {
+    const content = await fs.readFile(packageJsonPath, 'utf-8');
+    const pkg = JSON.parse(content);
+    name = pkg.name || name;
+
+    const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+    if (deps.react) framework = 'react';
+    else if (deps.vue) framework = 'vue';
+    else if (deps.angular) framework = 'angular';
+    else if (deps.next) framework = 'next';
+
+    if (deps.express || deps.fastify || deps.koa) type = 'api';
+    else if (pkg.bin) type = 'cli';
+    else if (deps.typescript && !deps.react && !deps.vue) type = 'library';
+  } catch {
+    // Ignore
+  }
+
+  return { name, path: projectPath, type, framework };
+}
+
 async function applyFix(fix: Fix, projectPath: string): Promise<void> {
   for (const change of fix.changes) {
-    let filePath: string;
-    if (path.isAbsolute(change.file)) {
-      filePath = change.file;
-    } else if (change.file.startsWith(projectPath) || change.file.includes('src/')) {
-      filePath = change.file;
-    } else {
-      filePath = path.join(projectPath, change.file);
-    }
+    const filePath = path.isAbsolute(change.file)
+      ? change.file
+      : path.join(projectPath, change.file);
 
     switch (change.type) {
       case 'replace':
@@ -146,7 +163,8 @@ async function applyFix(fix: Fix, projectPath: string): Promise<void> {
         if (change.content && change.position) {
           const fileContent = await fs.readFile(filePath, 'utf-8');
           const lines = fileContent.split('\n');
-          lines.splice(change.position.line - 1, 0, change.content);
+          const insertAt = Math.max(0, Math.min(change.position.line - 1, lines.length));
+          lines.splice(insertAt, 0, change.content);
           await fs.writeFile(filePath, lines.join('\n'), 'utf-8');
         }
         break;

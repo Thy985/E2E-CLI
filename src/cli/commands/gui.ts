@@ -17,73 +17,98 @@ export interface GUIOptions {
   browser?: 'chromium' | 'firefox' | 'webkit';
   headless?: boolean;
   timeout?: number;
-}
-
-export interface TestGUIOptions extends GUIOptions {
+  record?: boolean;
+  play?: boolean;
+  visual?: boolean;
+  screenshot?: boolean;
+  list?: boolean;
+  export?: boolean;
+  file?: string;
   scenario?: string;
   verify?: string;
-}
-
-export interface VisualGUIOptions extends GUIOptions {
   name?: string;
   baselineDir?: string;
   currentDir?: string;
   threshold?: number;
   selectors?: string;
   update?: boolean;
-}
-
-export interface ActGUIOptions extends GUIOptions {
   task?: string;
-}
-
-export interface RecordGUIOptions extends GUIOptions {
   output?: string;
   interactive?: boolean;
-}
-
-export interface PlayGUIOptions extends GUIOptions {
-  file?: string;
   slowMo?: number;
   retry?: number;
+  format?: string;
+  report?: boolean;
 }
 
-export async function guiCommand(action: string, options: any) {
+/**
+ * Entry point invoked by Commander's `.action(guiCommand)`.
+ *
+ * The first argument is the Commander `Command` instance; the second is the
+ * parsed options bag. We translate flag combinations (e.g. `--record`,
+ * `--play`, `--visual`) into a single action and dispatch.
+ */
+export async function guiCommand(_command: unknown, options: GUIOptions) {
   const formatter = createFormatter();
 
-  switch (action) {
-    case 'test':
-      await testCommand(options, formatter);
-      break;
-    case 'visual':
-      await visualCommand(options, formatter);
-      break;
-    case 'act':
-      await actCommand(options, formatter);
-      break;
-    case 'screenshot':
-      await screenshotCommand(options, formatter);
-      break;
-    case 'record':
-      await recordCommand(options, formatter);
-      break;
-    case 'play':
-      await playCommand(options, formatter);
-      break;
-    case 'list':
-      await listCommand(options, formatter);
-      break;
-    case 'export':
-      await exportCommand(options, formatter);
-      break;
-    default:
-      formatter.error(`未知操作: ${action}`);
-      formatter.info('可用操作: test, visual, act, screenshot, record, play, list, export');
-      process.exit(1);
+  const action = pickAction(options);
+  if (!action) {
+    formatter.error('请指定 GUI 操作: --record | --play | --visual | --screenshot | --list | --export');
+    formatter.info('示例: qa-agent gui --url http://localhost:3000 --visual --name home');
+    process.exit(1);
+  }
+
+  try {
+    switch (action) {
+      case 'test':
+        await testCommand(options, formatter);
+        break;
+      case 'visual':
+        await visualCommand(options, formatter);
+        break;
+      case 'act':
+        await actCommand(options, formatter);
+        break;
+      case 'screenshot':
+        await screenshotCommand(options, formatter);
+        break;
+      case 'record':
+        await recordCommand(options, formatter);
+        break;
+      case 'play':
+        await playCommand(options, formatter);
+        break;
+      case 'list':
+        await listCommand(options, formatter);
+        break;
+      case 'export':
+        await exportCommand(options, formatter);
+        break;
+      default:
+        formatter.error(`未知操作: ${action}`);
+        process.exit(1);
+    }
+  } catch (error) {
+    formatter.error(
+      `GUI 操作失败: ${error instanceof Error ? error.message : String(error)}`
+    );
+    process.exit(1);
   }
 }
 
-async function testCommand(options: TestGUIOptions & { report?: boolean }, formatter: ReturnType<typeof createFormatter>) {
+function pickAction(options: GUIOptions): string | null {
+  if (options.record) return 'record';
+  if (options.play) return 'play';
+  if (options.visual) return 'visual';
+  if (options.screenshot) return 'screenshot';
+  if (options.list) return 'list';
+  if (options.export) return 'export';
+  if (options.task) return 'act';
+  if (options.scenario) return 'test';
+  return null;
+}
+
+async function testCommand(options: GUIOptions, formatter: ReturnType<typeof createFormatter>) {
   if (!options.url) {
     formatter.error('请指定 URL: --url <url>');
     process.exit(1);
@@ -135,7 +160,6 @@ async function testCommand(options: TestGUIOptions & { report?: boolean }, forma
       }
     }
 
-    // Generate report if requested
     if (options.report) {
       const reportGen = new ReportGenerator();
       const reportPath = await reportGen.generateTestReport(result, 'test');
@@ -150,7 +174,7 @@ async function testCommand(options: TestGUIOptions & { report?: boolean }, forma
   }
 }
 
-async function visualCommand(options: VisualGUIOptions, formatter: ReturnType<typeof createFormatter>) {
+async function visualCommand(options: GUIOptions, formatter: ReturnType<typeof createFormatter>) {
   if (!options.url) {
     formatter.error('请指定 URL: --url <url>');
     process.exit(1);
@@ -208,7 +232,7 @@ async function visualCommand(options: VisualGUIOptions, formatter: ReturnType<ty
   }
 }
 
-async function actCommand(options: ActGUIOptions, formatter: ReturnType<typeof createFormatter>) {
+async function actCommand(options: GUIOptions, formatter: ReturnType<typeof createFormatter>) {
   if (!options.url) {
     formatter.error('请指定 URL: --url <url>');
     process.exit(1);
@@ -226,7 +250,7 @@ async function actCommand(options: ActGUIOptions, formatter: ReturnType<typeof c
 
   const agent = new GUIAgent({
     browser: options.browser || 'chromium',
-    headless: options.headless ?? false, // Default to visible for interactive
+    headless: options.headless ?? false,
     timeout: options.timeout || 60000,
   });
 
@@ -288,14 +312,11 @@ async function screenshotCommand(options: GUIOptions, formatter: ReturnType<type
 
     const filename = `screenshot-${Date.now()}.png`;
     const filepath = `.qa-agent/screenshots/${filename}`;
-    
-    // Save screenshot
-    const fs = await import('fs');
-    const dir = '.qa-agent/screenshots';
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(filepath, screenshot);
+
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    await fs.mkdir(path.dirname(filepath), { recursive: true });
+    await fs.writeFile(filepath, screenshot);
 
     formatter.success(`截图已保存: ${filepath}`);
   } finally {
@@ -303,7 +324,7 @@ async function screenshotCommand(options: GUIOptions, formatter: ReturnType<type
   }
 }
 
-async function recordCommand(options: RecordGUIOptions, formatter: ReturnType<typeof createFormatter>) {
+async function recordCommand(options: GUIOptions, formatter: ReturnType<typeof createFormatter>) {
   if (!options.url) {
     formatter.error('请指定 URL: --url <url>');
     process.exit(1);
@@ -331,79 +352,17 @@ async function recordCommand(options: RecordGUIOptions, formatter: ReturnType<ty
     formatter.info('开始录制...');
     await recorder.start(options.url);
 
-    // Interactive mode - wait for user commands
     if (options.interactive) {
-      const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout,
-      });
-
-      console.log();
-      console.log('交互模式命令:');
-      console.log('  click <selector>  - 记录点击');
-      console.log('  type <selector> <text> - 记录输入');
-      console.log('  wait <selector>   - 记录等待');
-      console.log('  done              - 结束录制');
-      console.log();
-
-      const promptCommand = () => {
-        rl.question('> ', async (input) => {
-          const parts = input.trim().split(' ');
-          const cmd = parts[0];
-
-          try {
-            switch (cmd) {
-              case 'click':
-                if (parts[1]) {
-                  await recorder.recordClick(parts[1]);
-                  console.log(`  ✓ 已记录点击: ${parts[1]}`);
-                }
-                break;
-              case 'type':
-                if (parts[1] && parts[2]) {
-                  const text = parts.slice(2).join(' ');
-                  await recorder.recordInput(parts[1], text);
-                  console.log(`  ✓ 已记录输入: ${parts[1]} = "${text}"`);
-                }
-                break;
-              case 'wait':
-                if (parts[1]) {
-                  await recorder.recordWait(parts[1]);
-                  console.log(`  ✓ 已记录等待: ${parts[1]}`);
-                }
-                break;
-              case 'done':
-                rl.close();
-                return;
-              default:
-                console.log('  未知命令');
-            }
-          } catch (error) {
-            console.log(`  ✗ 错误: ${error}`);
-          }
-
-          promptCommand();
-        });
-      };
-
-      await new Promise<void>((resolve) => {
-        rl.on('close', () => {
-          resolve();
-        });
-        promptCommand();
-      });
+      await runInteractiveRecording(recorder);
     } else {
       // Wait for Ctrl+C
       await new Promise<void>((resolve) => {
-        process.on('SIGINT', () => {
-          resolve();
-        });
+        process.on('SIGINT', () => resolve());
       });
     }
 
-    // Stop recording
     const recording = await recorder.stop();
-    
+
     console.log();
     formatter.success(`录制已保存: .qa-agent/recordings/${recording.id}.json`);
     formatter.info(`共记录 ${recording.steps.length} 个步骤`);
@@ -412,14 +371,76 @@ async function recordCommand(options: RecordGUIOptions, formatter: ReturnType<ty
   }
 }
 
-async function playCommand(options: PlayGUIOptions, formatter: ReturnType<typeof createFormatter>) {
+async function runInteractiveRecording(recorder: Recorder): Promise<void> {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  console.log();
+  console.log('交互模式命令:');
+  console.log('  click <selector>  - 记录点击');
+  console.log('  type <selector> <text> - 记录输入');
+  console.log('  wait <selector>   - 记录等待');
+  console.log('  done              - 结束录制');
+  console.log();
+
+  const promptCommand = () => {
+    rl.question('> ', async (input) => {
+      const parts = input.trim().split(' ');
+      const cmd = parts[0];
+
+      try {
+        switch (cmd) {
+          case 'click':
+            if (parts[1]) {
+              await recorder.recordClick(parts[1]);
+              console.log(`  ✓ 已记录点击: ${parts[1]}`);
+            }
+            break;
+          case 'type':
+            if (parts[1] && parts[2]) {
+              const text = parts.slice(2).join(' ');
+              await recorder.recordInput(parts[1], text);
+              console.log(`  ✓ 已记录输入: ${parts[1]} = "${text}"`);
+            }
+            break;
+          case 'wait':
+            if (parts[1]) {
+              await recorder.recordWait(parts[1]);
+              console.log(`  ✓ 已记录等待: ${parts[1]}`);
+            }
+            break;
+          case 'done':
+            rl.close();
+            return;
+          default:
+            console.log('  未知命令');
+        }
+      } catch (error) {
+        console.log(`  ✗ 错误: ${error}`);
+      }
+
+      promptCommand();
+    });
+  };
+
+  await new Promise<void>((resolve) => {
+    rl.on('close', () => resolve());
+    promptCommand();
+  });
+}
+
+async function playCommand(options: GUIOptions, formatter: ReturnType<typeof createFormatter>) {
   if (!options.file) {
     formatter.error('请指定录制文件: --file <path>');
     process.exit(1);
   }
 
-  const fs = await import('fs');
-  if (!fs.existsSync(options.file)) {
+  const fs = await import('fs/promises');
+  try {
+    await fs.access(options.file);
+  } catch {
     formatter.error(`文件不存在: ${options.file}`);
     process.exit(1);
   }
@@ -444,7 +465,6 @@ async function playCommand(options: PlayGUIOptions, formatter: ReturnType<typeof
     formatter.info('加载录制...');
     const recording = await Recorder.load(options.file);
 
-    // Validate recording
     const validation = Player.validate(recording);
     if (!validation.valid) {
       formatter.error('录制文件无效:');
@@ -481,7 +501,7 @@ async function playCommand(options: PlayGUIOptions, formatter: ReturnType<typeof
   }
 }
 
-async function listCommand(options: any, formatter: ReturnType<typeof createFormatter>) {
+async function listCommand(_options: GUIOptions, formatter: ReturnType<typeof createFormatter>) {
   formatter.header('录制列表');
   console.log();
 
@@ -489,7 +509,7 @@ async function listCommand(options: any, formatter: ReturnType<typeof createForm
 
   if (recordings.length === 0) {
     formatter.info('暂无录制文件');
-    formatter.info('使用 qa-agent gui record --url <url> 创建录制');
+    formatter.info('使用 qa-agent gui --record --url <url> 创建录制');
     return;
   }
 
@@ -506,7 +526,7 @@ async function listCommand(options: any, formatter: ReturnType<typeof createForm
   }
 }
 
-async function exportCommand(options: { file?: string; format?: string }, formatter: ReturnType<typeof createFormatter>) {
+async function exportCommand(options: GUIOptions, formatter: ReturnType<typeof createFormatter>) {
   if (!options.file) {
     formatter.error('请指定录制文件: --file <path>');
     process.exit(1);
@@ -519,8 +539,10 @@ async function exportCommand(options: { file?: string; format?: string }, format
     process.exit(1);
   }
 
-  const fs = await import('fs');
-  if (!fs.existsSync(options.file)) {
+  const fs = await import('fs/promises');
+  try {
+    await fs.access(options.file);
+  } catch {
     formatter.error(`文件不存在: ${options.file}`);
     process.exit(1);
   }
@@ -529,7 +551,7 @@ async function exportCommand(options: { file?: string; format?: string }, format
   const output = await Recorder.export(recording, format as 'json' | 'yaml' | 'playwright');
 
   const outputPath = options.file.replace('.json', `.${format === 'playwright' ? 'spec.ts' : format}`);
-  await fs.promises.writeFile(outputPath, output);
+  await fs.writeFile(outputPath, output);
 
   formatter.success(`已导出到: ${outputPath}`);
 }

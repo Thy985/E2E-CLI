@@ -3,8 +3,8 @@
  * Applies fixes with rollback support and verification
  */
 
-import * as fs from 'fs';
 import * as path from 'path';
+import * as fs from 'fs/promises';
 import { Fix, FileChange, SkillContext } from '../../types';
 import { createLogger, Logger } from '../../utils/logger';
 import { RollbackManager } from './rollback';
@@ -105,11 +105,11 @@ export class FixEngine {
         this.logger.info(`Verifying fix: ${fix.id}`);
         const verifyResult = await this.verifyEngine.verifyFix(fix, context);
         result.verified = verifyResult.success;
-        
+
         if (!verifyResult.success) {
           result.warnings.push(...verifyResult.errors);
           this.logger.warn(`⚠️ Fix verification issues: ${fix.id}`);
-          
+
           // Rollback if verification failed
           if (rollbackId && verifyResult.diff.new > 0) {
             this.logger.info(`Rolling back fix due to new issues introduced`);
@@ -150,11 +150,11 @@ export class FixEngine {
     this.logger.info(`Applying ${fixes.length} fixes`);
 
     const results: FixResult[] = [];
-    
+
     for (const fix of fixes) {
       const result = await this.applyFix(fix, projectPath, context);
       results.push(result);
-      
+
       // Stop on critical error
       if (!result.success && result.errors.length > 0 && !result.applied) {
         this.logger.error(`Critical error, stopping fix application`);
@@ -195,19 +195,19 @@ export class FixEngine {
    */
   async previewFix(fix: Fix, projectPath: string): Promise<string> {
     const lines: string[] = [];
-    
+
     lines.push(`# Fix Preview: ${fix.id}\n`);
     lines.push(`**Description**: ${fix.description}`);
     lines.push(`**Risk Level**: ${fix.riskLevel}`);
     lines.push(`**Auto-Applicable**: ${fix.autoApplicable ? 'Yes' : 'No'}\n`);
-    
+
     lines.push(`## Changes (${fix.changes.length} files)\n`);
-    
+
     for (const change of fix.changes) {
       const filePath = path.join(projectPath, change.file);
       lines.push(`### ${change.file}`);
       lines.push(`**Type**: ${change.type}\n`);
-      
+
       if (change.type === 'replace') {
         lines.push('**Before**:');
         lines.push('```');
@@ -224,7 +224,7 @@ export class FixEngine {
         lines.push('```\n');
       }
     }
-    
+
     if (fix.verificationSteps && fix.verificationSteps.length > 0) {
       lines.push('## Verification Steps\n');
       for (const step of fix.verificationSteps) {
@@ -232,7 +232,7 @@ export class FixEngine {
       }
       lines.push('');
     }
-    
+
     return lines.join('\n');
   }
 
@@ -251,7 +251,7 @@ export class FixEngine {
 
   private async applyChange(change: FileChange, projectPath: string): Promise<void> {
     const filePath = path.join(projectPath, change.file);
-    
+
     if (change.type === 'replace') {
       await this.replaceInFile(filePath, change.oldContent || '', change.content || '');
     } else if (change.type === 'insert') {
@@ -262,37 +262,96 @@ export class FixEngine {
   }
 
   private async replaceInFile(filePath: string, search: string, replace: string): Promise<void> {
-    const content = fs.readFileSync(filePath, 'utf-8');
+    let content: string;
+    try {
+      content = await fs.readFile(filePath, 'utf-8');
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException;
+      if (err && err.code === 'ENOENT') {
+        // File doesn't exist — create the directory and file with the replace content
+        await fs.mkdir(path.dirname(filePath), { recursive: true });
+        await fs.writeFile(filePath, replace, 'utf-8');
+        this.logger.debug(`Created ${filePath}`);
+        return;
+      }
+      throw error;
+    }
+
+    if (!search) {
+      // No search pattern: overwrite the file with the replace content
+      await fs.writeFile(filePath, replace, 'utf-8');
+      this.logger.debug(`Overwrote ${filePath}`);
+      return;
+    }
+
     const newContent = content.replace(search, replace);
-    
+
     if (content === newContent) {
       this.logger.warn(`No changes made to ${filePath} - pattern not found`);
     } else {
-      fs.writeFileSync(filePath, newContent, 'utf-8');
+      await fs.writeFile(filePath, newContent, 'utf-8');
       this.logger.debug(`Replaced in ${filePath}`);
     }
   }
 
   private async insertInFile(filePath: string, line: number, content: string): Promise<void> {
-    const fileContent = fs.readFileSync(filePath, 'utf-8');
-    const lines = fileContent.split('\n');
-    
-    if (line >= 0 && line <= lines.length) {
-      lines.splice(line, 0, content);
-      fs.writeFileSync(filePath, lines.join('\n'), 'utf-8');
-      this.logger.debug(`Inserted at line ${line} in ${filePath}`);
-    } else {
-      // Append to end
-      fs.appendFileSync(filePath, '\n' + content, 'utf-8');
-      this.logger.debug(`Appended to ${filePath}`);
+    let existing: string;
+    try {
+      existing = await fs.readFile(filePath, 'utf-8');
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException;
+      if (err && err.code === 'ENOENT') {
+        // File doesn't exist — create it with the content
+        await fs.mkdir(path.dirname(filePath), { recursive: true });
+        await fs.writeFile(filePath, content, 'utf-8');
+        this.logger.debug(`Created ${filePath} with content`);
+        return;
+      }
+      throw error;
     }
+
+    const lines = existing.split('\n');
+    // `line` is 1-based (matches the FileChange.position convention).
+    // Clamp into [0, lines.length] so 0 means prepend and `lines.length` means append.
+    const insertAt = Math.max(0, Math.min(line - 1, lines.length));
+    lines.splice(insertAt, 0, content);
+    await fs.writeFile(filePath, lines.join('\n'), 'utf-8');
+    this.logger.debug(`Inserted at line ${insertAt} in ${filePath}`);
   }
 
   private async deleteInFile(filePath: string, content: string): Promise<void> {
-    const fileContent = fs.readFileSync(filePath, 'utf-8');
-    const newContent = fileContent.replace(content, '');
-    fs.writeFileSync(filePath, newContent, 'utf-8');
-    this.logger.debug(`Deleted from ${filePath}`);
+    if (!content) {
+      // No search content: delete the whole file
+      try {
+        await fs.unlink(filePath);
+        this.logger.debug(`Deleted ${filePath}`);
+      } catch (error) {
+        const err = error as NodeJS.ErrnoException;
+        if (err && err.code !== 'ENOENT') {
+          throw error;
+        }
+      }
+      return;
+    }
+
+    let existing: string;
+    try {
+      existing = await fs.readFile(filePath, 'utf-8');
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException;
+      if (err && err.code === 'ENOENT') {
+        return;
+      }
+      throw error;
+    }
+
+    const newContent = existing.replace(content, '');
+    if (existing === newContent) {
+      this.logger.warn(`No content removed from ${filePath} - pattern not found`);
+    } else {
+      await fs.writeFile(filePath, newContent, 'utf-8');
+      this.logger.debug(`Deleted content from ${filePath}`);
+    }
   }
 }
 
