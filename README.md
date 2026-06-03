@@ -68,11 +68,11 @@ qa-agent fix --dry-run
 # 项目健康度审计
 qa-agent audit
 
+# 生成 CI 配置
+qa-agent ci generate --platform github
+
 # 启动 Web Dashboard
 qa-agent web
-
-# 生成 CI 配置
-qa-agent ci init --platform github
 
 # SEO 检查
 qa-agent seo
@@ -201,14 +201,15 @@ qa-agent web [options]
 qa-agent ci <action> [options]
 
 操作:
-  init                 生成 CI 配置
-  detect               检测现有 CI 平台
+  generate             生成 CI 配置
   run                  CI 模式运行
 
 选项:
   --platform <name>    CI 平台 (github,gitlab,jenkins,circleci)
-  --skills <list>       诊断维度
+  --skills <list>      诊断维度
   --fail-on <level>    失败级别
+  --schedule <cron>    定时 cron 表达式
+  --path <path>        项目路径
 ```
 
 ### skill - Skills 管理
@@ -218,9 +219,14 @@ qa-agent skill <action> [name]
 
 操作:
   list                 列出已安装 Skills
-  install              安装新 Skill (待实现)
-  update               更新 Skill (待实现)
-  create               创建新 Skill (待实现)
+  install              安装新 Skill
+  update               更新 Skill
+  create               创建新 Skill
+  remove               卸载 Skill
+  info                 查看 Skill 详情
+  search               搜索 Skills
+  enable               启用 Skill
+  disable              禁用 Skill
 ```
 
 ## Skills 生态
@@ -258,14 +264,10 @@ qa-agent skill <action> [name]
 ### 快速配置
 
 ```bash
-# 生成 GitHub Actions 配置
-qa-agent ci init --platform github
+qa-agent ci generate --platform github
 
 # 生成 GitLab CI 配置
-qa-agent ci init --platform gitlab
-
-# 检测现有 CI 平台
-qa-agent ci detect
+qa-agent ci generate --platform gitlab
 ```
 
 ### GitHub Actions 示例
@@ -342,55 +344,60 @@ qa-agent web
 git clone https://github.com/your-org/qa-agent.git
 cd qa-agent
 
-# 安装依赖
-pnpm install
+# 安装依赖（Bun）
+bun install
 
 # 开发模式
-pnpm run dev
+bun run src/cli/index.ts diagnose
 
 # 运行测试
-pnpm test
+bun test
 
 # 类型检查
-pnpm run typecheck
+bunx tsc --noEmit
 
-# 构建
-pnpm run build
-
-# 构建 Windows 可执行文件
-pnpm run build:windows
+# 构建为单一可执行文件
+bun run build               # 当前平台
+bun run build:linux         # Linux
+bun run build:mac           # macOS
+bun run build:windows       # Windows
 ```
 
 ### 项目结构
 
 ```
 qa-agent/
-├── docs/               # 文档
+├── docs/                 # 文档
 ├── src/
-│   ├── cli/            # CLI 入口
-│   │   ├── commands/   # 命令实现
-│   │   └── output/     # 输出格式化
-│   ├── skills/         # Skills 插件
-│   │   └── builtin/    # 内置 Skills
-│   ├── engines/        # 核心引擎
-│   │   ├── ai-fix/     # AI 修复
-│   │   ├── audit/      # 审计引擎
-│   │   ├── diagnosis/  # 诊断引擎
-│   │   ├── fix/        # 修复引擎
-│   │   ├── report/     # 报告生成
-│   │   ├── sandbox/    # 沙箱系统
-│   │   └── verify/     # 验证引擎
-│   ├── gui/            # GUI 组件
-│   ├── integrations/    # 第三方集成
-│   ├── models/         # LLM 客户端
-│   ├── scheduler/      # 任务调度
-│   ├── storage/        # 存储
-│   ├── tools/          # 工具集
-│   ├── types/          # 类型定义
-│   ├── utils/          # 工具函数
-│   └── web/            # Web UI
-├── tests/              # 测试
-└── dist/               # 构建输出
+│   ├── cli/              # CLI 入口
+│   │   ├── commands/     # 13 个命令
+│   │   ├── output/       # 输出格式化
+│   │   └── index.ts      # Commander 入口
+│   ├── skills/           # Skills 插件
+│   │   ├── builtin/      # 10 个内置 Skills
+│   │   ├── base-skill.ts
+│   │   ├── registry.ts
+│   │   └── skill-manager.ts
+│   ├── engines/          # 核心引擎
+│   │   ├── ai-fix/       # AI 修复
+│   │   ├── audit/        # 审计
+│   │   ├── diagnosis/    # 诊断
+│   │   ├── fix/          # 修复
+│   │   ├── report/       # 报告
+│   │   ├── sandbox/      # 沙箱
+│   │   └── verify/       # 验证
+│   ├── gui/              # GUI 自动化
+│   ├── integrations/     # 第三方集成 (figma)
+│   ├── models/           # LLM 客户端
+│   ├── ci/               # CI 配置生成
+│   ├── web/              # Web Dashboard
+│   ├── storage/          # 存储
+│   ├── config/           # 配置加载
+│   ├── tools/            # 工具注册
+│   ├── types/            # 类型定义
+│   └── utils/            # 工具函数
+├── tests/                # 测试（bun test）
+└── package.json
 ```
 
 ## 路线图
@@ -403,12 +410,13 @@ qa-agent/
 - [x] 项目健康审计
 - [x] Web Dashboard
 - [x] CI/CD 集成
+- [x] skill list/install/update/create/remove 等子命令
+- [x] 配置文件支持（YAML/JSON/TS）
 
 ### v0.2.0
-- [ ] skill install/update/create 命令
 - [ ] watch 监控模式
-- [ ] 配置文件支持
-- [ ] Sandbox 系统完善
+- [ ] Sandbox 系统完善（Playwright 真实环境）
+- [ ] IDE 插件（VSCode）原型
 
 ### v0.3.0
 - [ ] 所有 Skills 完整自动修复

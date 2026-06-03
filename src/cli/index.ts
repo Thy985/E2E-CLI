@@ -127,8 +127,11 @@ program
   .addCommand(
     new Command('generate')
       .description('Generate CI configuration')
-      .option('-p, --provider <provider>', 'CI provider: github, gitlab, jenkins, azure', 'github')
-      .option('-o, --output <file>', 'Output file path')
+      .option('--platform <platform>', 'CI platform: github, gitlab, jenkins, circleci', 'github')
+      .option('--skills <list>', 'Comma-separated skills for CI to run', 'e2e,a11y,performance,security')
+      .option('--fail-on <level>', 'Quality gate failure level (critical|warning)', 'critical')
+      .option('--schedule <cron>', 'Cron schedule for nightly runs', '0 0 * * *')
+      .option('--path <path>', 'Project path', process.cwd())
       .action(ciCommand.generate)
   )
   .addCommand(
