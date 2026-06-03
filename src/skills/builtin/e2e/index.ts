@@ -13,6 +13,7 @@ import {
   Severity,
 } from '../../../types';
 import { generateId } from '../../../utils';
+import { getPrompt } from '../../../prompts/registry';
 
 export interface TestGenerationResult {
   code: string;
@@ -316,22 +317,15 @@ export class E2ESkill extends BaseSkill {
 
     logger.info(`生成测试: ${description}`);
 
-    const prompt = `根据以下描述生成 Playwright 测试代码:
+    const prompt = getPrompt('e2e-testgen', { description });
 
-描述: ${description}
-
-要求:
-1. 使用 TypeScript
-2. 使用语义化选择器 (getByRole, getByText, getByTestId)
-3. 包含适当的断言
-4. 添加清晰的注释
-
-请只输出测试代码，不要其他解释。`;
-
-    const code = await model.chat([
-      { role: 'system', content: '你是一个专业的测试工程师，擅长编写 Playwright E2E 测试。' },
-      { role: 'user', content: prompt },
-    ]);
+    const code = await model.chat(
+      [
+        { role: 'system', content: prompt.system },
+        { role: 'user', content: prompt.user },
+      ],
+      { temperature: 0.2 }
+    );
 
     // Extract selectors from generated code
     const selectors = this.extractSelectors(code);

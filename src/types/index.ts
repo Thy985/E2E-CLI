@@ -263,13 +263,24 @@ export interface ShellResult {
 // ============================================
 
 export interface ModelClient {
-  chat(messages: ModelMessage[]): Promise<string>;
+  chat(messages: ModelMessage[], opts?: ModelOptions): Promise<string>;
   embed?(text: string): Promise<number[]>;
+  meta?(): { provider: string; baseUrl: string; model: string; displayName: string };
 }
 
 export interface ModelMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
+}
+
+/**
+ * Optional per-call overrides for ModelClient.chat().
+ * Pass `json: true` to enforce JSON-mode output (response_format).
+ */
+export interface ModelOptions {
+  json?: boolean;
+  temperature?: number;
+  maxTokens?: number;
 }
 
 export interface ModelRequest {

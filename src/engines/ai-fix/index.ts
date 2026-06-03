@@ -1,50 +1,149 @@
 /**
  * AI Fix Engine
- * 
- * 使用 LLM 生成智能修复代码
- * 突破规则引擎的66%限制
+ *
+ * 突破规则引擎的边界，让 LLM 来生成修复代码。
+ *
+ * 这次重构的核心收益：
+ * - 走统一的 createModelClient（不是另起一套 fetch），自动获得：
+ *   · 6 家 provider 路由
+ *   · 重试 / 退避 / 超时
+ *   · 用量统计
+ * - 走 src/prompts/ 模板（带 version）
+ * - 走 tryParseJsonTyped + type guard，不再用 regex 抓 JSON
+ * - 真正使用 opts.model / temperature / maxTokens
+ *
+ * 调用方：fix.ts（被 CLI `qa-agent fix` 调用）
  */
 
-import { Diagnosis, Fix, SkillContext } from '../../types';
+import { Diagnosis, Fix, SkillContext, ModelClient } from '../../types';
+import { createModelClient } from '../../models';
+import { getPrompt } from '../../prompts/registry';
+import { tryParseJsonTyped, isObject, isString, isArrayOf } from '../../models/schema';
 
 export interface AIFixOptions {
+  /** model id, e.g. 'gpt-4o-mini', 'deepseek-chat', 'claude-sonnet-4-20250514' */
   model: string;
   temperature: number;
   maxTokens: number;
 }
 
-export class AIFixEngine {
-  private apiKey: string;
-  private baseUrl: string;
+export const DEFAULT_AI_FIX_OPTIONS: AIFixOptions = {
+  model: process.env.AI_FIX_MODEL || 'deepseek-chat',
+  temperature: 0.3,
+  maxTokens: 2000,
+};
 
-  constructor(apiKey?: string) {
-    this.apiKey = apiKey || process.env.OPENAI_API_KEY || 'dummy-key';
-    this.baseUrl = process.env.LLM_BASE_URL || 'http://localhost:20000/v1';
+interface AIFixChange {
+  file: string;
+  type: 'replace' | 'insert' | 'delete';
+  search?: string;
+  replace?: string;
+  content?: string;
+  line?: number;
+}
+
+interface AIFixResponse {
+  type: 'code-change';
+  description: string;
+  riskLevel: 'low' | 'medium' | 'high';
+  changes: AIFixChange[];
+}
+
+interface AIFixValidation {
+  valid: boolean;
+  confidence: number;
+  issues: string[];
+}
+
+// Type guards for LLM JSON output
+function isChange(v: unknown): v is AIFixChange {
+  if (!isObject(v)) return false;
+  if (!isString(v.file)) return false;
+  if (!isString(v.type)) return false;
+  if (!['replace', 'insert', 'delete'].includes(v.type)) return false;
+  return true;
+}
+
+function isAIFixResponse(v: unknown): v is AIFixResponse {
+  if (!isObject(v)) return false;
+  if (v.type !== 'code-change') return false;
+  if (!isString(v.description)) return false;
+  if (!isString(v.riskLevel)) return false;
+  if (!isArrayOf(v.changes, isChange)) return false;
+  return true;
+}
+
+function isValidationResponse(v: unknown): v is AIFixValidation {
+  if (!isObject(v)) return false;
+  if (typeof v.valid !== 'boolean') return false;
+  if (typeof v.confidence !== 'number') return false;
+  if (!Array.isArray(v.issues)) return false;
+  return v.issues.every((x) => typeof x === 'string');
+}
+
+export class AIFixEngine {
+  private model: ModelClient;
+
+  constructor(model?: ModelClient) {
+    this.model = model || createModelClient();
   }
 
   /**
-   * 使用 AI 生成修复
+   * Use AI to generate a fix for the given diagnosis.
+   * Returns null if generation fails or LLM is unavailable.
    */
   async generateFix(
     diagnosis: Diagnosis,
-    context: SkillContext
+    context: SkillContext,
+    options: Partial<AIFixOptions> = {}
   ): Promise<Fix | null> {
-    if (!this.apiKey) {
-      context.logger.warn('AI Fix Engine: No API key configured');
-      return null;
-    }
+    const opts: AIFixOptions = { ...DEFAULT_AI_FIX_OPTIONS, ...options };
 
     try {
-      // 构建 prompt
-      const prompt = this.buildPrompt(diagnosis, context);
-      
-      // 调用 LLM
-      const response = await this.callLLM(prompt);
-      
-      // 解析响应
-      const fix = this.parseResponse(response, diagnosis);
-      
-      return fix;
+      const codeContext =
+        diagnosis.evidence?.type === 'code' ? diagnosis.evidence.content : 'N/A';
+
+      const prompt = getPrompt('ai-fix', {
+        title: diagnosis.title,
+        description: diagnosis.description,
+        file: diagnosis.location.file,
+        line: String(diagnosis.location.line),
+        severity: diagnosis.severity,
+        codeContext,
+      });
+
+      const response = await this.model.chat(
+        [
+          { role: 'system', content: prompt.system },
+          { role: 'user', content: prompt.user },
+        ],
+        {
+          json: true,
+          temperature: opts.temperature,
+          maxTokens: opts.maxTokens,
+        }
+      );
+
+      const parsed = tryParseJsonTyped(response, isAIFixResponse);
+      if (!parsed) {
+        context.logger.warn('AI Fix: response did not match schema');
+        return null;
+      }
+
+      return {
+        id: `ai-fix-${diagnosis.id}`,
+        diagnosisId: diagnosis.id,
+        description: parsed.description,
+        riskLevel: (parsed.riskLevel as Fix['riskLevel']) || 'medium',
+        autoApplicable: true,
+        changes: parsed.changes.map((change) => ({
+          file: change.file,
+          type: change.type as 'replace' | 'insert' | 'delete',
+          position: { line: change.line as number },
+          content: change.content || change.replace,
+          oldContent: change.search,
+        })),
+      };
     } catch (error) {
       context.logger.error('AI Fix Engine failed:', error);
       return null;
@@ -52,172 +151,58 @@ export class AIFixEngine {
   }
 
   /**
-   * 批量生成修复
+   * Batch version: generate fixes for many diagnoses (sequential).
+   * Use Promise.all upstream if you want to parallelize.
    */
   async generateBatchFixes(
     diagnoses: Diagnosis[],
-    context: SkillContext
+    context: SkillContext,
+    options: Partial<AIFixOptions> = {}
   ): Promise<Map<string, Fix>> {
     const fixes = new Map<string, Fix>();
-
     for (const diagnosis of diagnoses) {
-      const fix = await this.generateFix(diagnosis, context);
-      if (fix) {
-        fixes.set(diagnosis.id, fix);
-      }
+      const fix = await this.generateFix(diagnosis, context, options);
+      if (fix) fixes.set(diagnosis.id, fix);
     }
-
     return fixes;
   }
 
   /**
-   * 验证修复质量
+   * Validate an existing fix by asking the LLM to review it.
+   * Used by fix.ts --validate path.
    */
   async validateFix(
     fix: Fix,
     originalIssue: Diagnosis,
-    context: SkillContext
+    _context: SkillContext,
+    options: Partial<AIFixOptions> = {}
   ): Promise<{ valid: boolean; confidence: number; issues: string[] }> {
-    const prompt = this.buildValidationPrompt(fix, originalIssue);
-    const response = await this.callLLM(prompt);
-    
-    return this.parseValidationResponse(response);
-  }
+    const opts: AIFixOptions = { ...DEFAULT_AI_FIX_OPTIONS, ...options };
 
-  // 私有方法
+    try {
+      const prompt = getPrompt('ai-fix-validate', {
+        issueTitle: originalIssue.title,
+        issueDescription: originalIssue.description,
+        fixDescription: fix.description,
+        fixRisk: fix.riskLevel,
+        changesJson: JSON.stringify(fix.changes, null, 2),
+      });
 
-  private buildPrompt(diagnosis: Diagnosis, context: SkillContext): string {
-    return `
-You are an expert frontend developer. Fix the following issue:
-
-Issue: ${diagnosis.title}
-Description: ${diagnosis.description}
-File: ${diagnosis.location.file}
-Line: ${diagnosis.location.line}
-
-Code Context:
-${diagnosis.evidence?.type === 'code' ? diagnosis.evidence.content : 'N/A'}
-
-Generate a fix in the following JSON format:
-{
-  "type": "code-change",
-  "description": "Brief description of the fix",
-  "riskLevel": "low|medium|high",
-  "changes": [
-    {
-      "file": "path/to/file",
-      "type": "replace|insert|delete",
-      "search": "text to search (for replace)",
-      "replace": "replacement text (for replace)",
-      "content": "content to insert (for insert)",
-      "line": line_number
-    }
-  ]
-}
-
-Important:
-1. Only output valid JSON
-2. Ensure the fix is syntactically correct
-3. Consider edge cases
-4. Maintain code style consistency
-`;
-  }
-
-  private buildValidationPrompt(fix: Fix, originalIssue: Diagnosis): string {
-    return `
-Validate the following code fix:
-
-Original Issue: ${originalIssue.title}
-Fix Description: ${fix.description}
-
-Changes:
-${JSON.stringify(fix.changes, null, 2)}
-
-Evaluate:
-1. Does the fix correctly address the issue?
-2. Is the code syntactically correct?
-3. Are there any potential side effects?
-4. Is the risk level appropriate?
-
-Output in JSON format:
-{
-  "valid": true|false,
-  "confidence": 0-100,
-  "issues": ["list of concerns if any"]
-}
-`;
-  }
-
-  private async callLLM(prompt: string): Promise<string> {
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4',
-        messages: [
-          { role: 'system', content: 'You are a code fixing assistant.' },
-          { role: 'user', content: prompt },
+      const response = await this.model.chat(
+        [
+          { role: 'system', content: prompt.system },
+          { role: 'user', content: prompt.user },
         ],
-        temperature: 0.3,
-        max_tokens: 2000,
-      }),
-    });
+        { json: true, temperature: opts.temperature, maxTokens: opts.maxTokens }
+      );
 
-    if (!response.ok) {
-      throw new Error(`LLM API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data.choices[0].message.content;
-  }
-
-  private parseResponse(response: string, diagnosis: Diagnosis): Fix | null {
-    try {
-      // 提取 JSON
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        return null;
+      const parsed = tryParseJsonTyped(response, isValidationResponse);
+      if (!parsed) {
+        return { valid: false, confidence: 0, issues: ['Failed to parse validation response'] };
       }
-
-      const parsed = JSON.parse(jsonMatch[0]);
-
-      return {
-        id: `ai-fix-${diagnosis.id}`,
-        diagnosisId: diagnosis.id,
-        description: parsed.description,
-        riskLevel: parsed.riskLevel || 'medium',
-        autoApplicable: true,
-        changes: parsed.changes.map((change: any) => ({
-          file: change.file,
-          type: change.type,
-          position: { line: change.line },
-          content: change.content || change.replace,
-          oldContent: change.search,
-        })),
-      };
-    } catch (error) {
-      return null;
-    }
-  }
-
-  private parseValidationResponse(response: string): { valid: boolean; confidence: number; issues: string[] } {
-    try {
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        return { valid: false, confidence: 0, issues: ['Failed to parse validation'] };
-      }
-
-      const parsed = JSON.parse(jsonMatch[0]);
-      return {
-        valid: parsed.valid,
-        confidence: parsed.confidence,
-        issues: parsed.issues || [],
-      };
-    } catch (error) {
-      return { valid: false, confidence: 0, issues: ['Parse error'] };
+      return parsed;
+    } catch {
+      return { valid: false, confidence: 0, issues: ['Validation request failed'] };
     }
   }
 }

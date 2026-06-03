@@ -7,6 +7,8 @@ import { BrowserController } from '../browser';
 import { ModelClient } from '../../types';
 import { ExecuteOptions, ExecuteResult, ExecutedStep } from '../types';
 import { ErrorRecovery, SmartWait } from '../recovery';
+import { getPrompt } from '../../prompts/registry';
+import { tryParseJsonTyped, isString, isArrayOf, isObject } from '../../models/schema';
 
 interface ActionPlan {
   steps: ActionStep[];
@@ -17,6 +19,20 @@ interface ActionStep {
   description: string;
   selector?: string;
   value?: string;
+}
+
+const VALID_ACTIONS: ReadonlyArray<ActionStep['action']> = [
+  'click', 'type', 'navigate', 'scroll', 'wait', 'press', 'select',
+];
+
+function isActionStep(v: unknown): v is ActionStep {
+  if (!isObject(v)) return false;
+  if (!isString(v.action)) return false;
+  if (!VALID_ACTIONS.includes(v.action as ActionStep['action'])) return false;
+  if (!isString(v.description)) return false;
+  if (v.selector !== undefined && !isString(v.selector)) return false;
+  if (v.value !== undefined && !isString(v.value)) return false;
+  return true;
 }
 
 export class SmartActor {
@@ -104,7 +120,6 @@ export class SmartActor {
    * Plan actions using LLM
    */
   private async planActions(task: string, pageContent: string, pageTitle: string): Promise<ActionPlan> {
-    // Get URL asynchronously if available
     let pageUrl = '';
     try {
       pageUrl = await (this.browser as any).getUrlAsync?.() || '';
@@ -112,63 +127,33 @@ export class SmartActor {
       // Ignore
     }
 
-    const prompt = `You are a browser automation expert. Analyze the task and create a step-by-step plan.
-
-Page Title: ${pageTitle}
-Page URL: ${pageUrl}
-
-Task: ${task}
-
-Available actions:
-- click: Click on an element (requires selector)
-- type: Type text into an input (requires selector and value)
-- navigate: Navigate to a URL (requires value as URL)
-- scroll: Scroll the page (value: "up", "down", "top", "bottom")
-- wait: Wait for an element (requires selector)
-- press: Press a key (value: key name like "Enter", "Escape")
-- select: Select an option from dropdown (requires selector and value)
-
-Respond with a JSON array of steps:
-[
-  {"action": "click", "description": "Click login button", "selector": "button[type='submit']"},
-  {"action": "type", "description": "Enter username", "selector": "#username", "value": "admin"}
-]
-
-Only respond with the JSON array, no other text.`;
+    const prompt = getPrompt('actor-plan', {
+      pageTitle,
+      pageUrl,
+      task,
+    });
 
     let response: string;
     try {
-      response = await this.model.chat([
-        { role: 'system', content: 'You are a browser automation expert that outputs JSON.' },
-        { role: 'user', content: prompt },
-      ]);
+      response = await this.model.chat(
+        [
+          { role: 'system', content: prompt.system },
+          { role: 'user', content: prompt.user },
+        ],
+        { json: true }
+      );
     } catch (error) {
       console.error('LLM error:', error);
-      // Return a simple click plan as fallback
       return {
-        steps: [
-          { action: 'click', description: task, selector: 'a' }
-        ]
+        steps: [{ action: 'click', description: task, selector: 'a' }],
       };
     }
 
-    // Parse response
-    try {
-      // Extract JSON from response
-      const jsonMatch = response.match(/\[[\s\S]*\]/);
-      if (jsonMatch) {
-        const steps = JSON.parse(jsonMatch[0]) as ActionStep[];
-        return { steps };
-      }
-    } catch (parseError) {
-      console.error('Parse error:', parseError);
-    }
+    const parsed = tryParseJsonTyped(response, (v): v is ActionStep[] => isArrayOf(v, isActionStep));
+    if (parsed) return { steps: parsed };
 
-    // Return a simple click plan as fallback
     return {
-      steps: [
-        { action: 'click', description: task, selector: 'a' }
-      ]
+      steps: [{ action: 'click', description: task, selector: 'a' }],
     };
   }
 
@@ -261,19 +246,18 @@ Only respond with the JSON array, no other text.`;
    * Find element by description
    */
   async findElement(description: string): Promise<string | null> {
-    const prompt = `Given the following element description, suggest the best CSS selector.
+    const prompt = getPrompt('selector-suggest', { description });
 
-Element description: ${description}
-
-Respond with only the CSS selector, nothing else.`;
-
-    const response = await this.model.chat([
-      { role: 'user', content: prompt },
-    ]);
+    const response = await this.model.chat(
+      [
+        { role: 'system', content: prompt.system },
+        { role: 'user', content: prompt.user },
+      ],
+      { temperature: 0.1 }
+    );
 
     const selector = response.trim().split('\n')[0];
-    
-    // Validate selector
+
     try {
       const info = await this.browser.getElementInfo(selector);
       return info ? selector : null;
