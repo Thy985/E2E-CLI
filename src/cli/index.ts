@@ -75,21 +75,41 @@ program
   )
   .addCommand(
     new Command('install')
-      .description('Install skill')
+      .description('Install skill from npm registry')
       .argument('<name>', 'Skill name')
+      .option('-f, --force', 'Force reinstall if already installed')
       .action(skillCommand.install)
   )
   .addCommand(
     new Command('update')
-      .description('Update skill')
-      .argument('<name>', 'Skill name')
+      .description('Update skill(s)')
+      .argument('[name]', 'Skill name (optional, updates all if not provided)')
       .action(skillCommand.update)
   )
   .addCommand(
     new Command('create')
-      .description('Create custom skill')
+      .description('Create a new custom skill from template')
       .argument('<name>', 'Skill name')
+      .option('-d, --description <desc>', 'Skill description')
       .action(skillCommand.create)
+  )
+  .addCommand(
+    new Command('remove')
+      .description('Remove installed skill')
+      .argument('<name>', 'Skill name')
+      .action(skillCommand.remove)
+  )
+  .addCommand(
+    new Command('enable')
+      .description('Enable a skill')
+      .argument('<name>', 'Skill name')
+      .action(skillCommand.enable)
+  )
+  .addCommand(
+    new Command('disable')
+      .description('Disable a skill')
+      .argument('<name>', 'Skill name')
+      .action(skillCommand.disable)
   );
 
 // Web command

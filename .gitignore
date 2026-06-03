@@ -29,6 +29,15 @@ Thumbs.db
 # QA-Agent specific
 .qa-agent/reports/
 
+# Runtime & cache directories
+.mavis/
+.opencode/
+.qa-agent/
+
+# Temporary test scripts
+test-shell.ts
+verify-shell.ts
+
 # Cache directories
 .bun-build/
 .18ab*/
