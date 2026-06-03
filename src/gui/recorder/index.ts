@@ -191,11 +191,9 @@ export class Recorder {
    */
   private async saveRecording(recording: Recording): Promise<string> {
     const outputDir = this.options.outputDir!;
-    
+
     // Ensure directory exists
-    if (!fs.existsSync(outputDir)) {
-      await fs.promises.mkdir(outputDir, { recursive: true });
-    }
+    await fs.promises.mkdir(outputDir, { recursive: true });
 
     // Generate filename
     const filename = `${recording.id}.json`;
@@ -213,10 +211,10 @@ export class Recorder {
   static async load(filepath: string): Promise<Recording> {
     const content = await fs.promises.readFile(filepath, 'utf-8');
     const recording = JSON.parse(content) as Recording;
-    
+
     // Convert date string back to Date object
     recording.createdAt = new Date(recording.createdAt);
-    
+
     return recording;
   }
 
@@ -224,7 +222,9 @@ export class Recorder {
    * List all recordings
    */
   static async list(outputDir: string = '.qa-agent/recordings'): Promise<string[]> {
-    if (!fs.existsSync(outputDir)) {
+    try {
+      await fs.promises.access(outputDir);
+    } catch {
       return [];
     }
 

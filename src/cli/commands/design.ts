@@ -105,8 +105,8 @@ export const designCommand = new Command('design')
 
           // 输出报告
           if (options.output) {
-            const fs = await import('fs');
-            fs.writeFileSync(options.output, report, 'utf-8');
+            const fs = await import('fs/promises');
+            await fs.writeFile(options.output, report, 'utf-8');
             logger.info(`✅ Report saved to: ${options.output}`);
           } else {
             console.log('\n' + report);
@@ -182,8 +182,8 @@ export const designCommand = new Command('design')
           }
 
           // 写入文件
-          const fs = await import('fs');
-          fs.writeFileSync(options.output, doc, 'utf-8');
+          const fs = await import('fs/promises');
+          await fs.writeFile(options.output, doc, 'utf-8');
 
           logger.info(`✅ Documentation exported to: ${options.output}`);
 

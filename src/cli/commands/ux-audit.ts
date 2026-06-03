@@ -1,6 +1,6 @@
 /**
  * UI/UX 审查命令
- * 
+ *
  * 命令: qa-agent ux-audit
  */
 
@@ -8,8 +8,6 @@ import { Command } from 'commander';
 import { loadConfig } from '../../config';
 import { createLogger } from '../../utils/logger';
 import { UIUXSkill } from '../../skills/builtin/uiux';
-import { createSkillRegistry } from '../../skills/registry';
-import { FixEngine } from '../../engines/fix';
 
 export const uxAuditCommand = new Command('ux-audit')
   .description('UI/UX视觉规范审查')
@@ -24,19 +22,15 @@ export const uxAuditCommand = new Command('ux-audit')
   .option('-o, --output-file <file>', '输出文件路径')
   .action(async (options) => {
     const logger = createLogger({ level: 'info' });
-    
+
     try {
       logger.info('🔍 Starting UI/UX Audit...\n');
 
       // 加载配置
       const config = await loadConfig(options.path);
-      
-      // 创建 Skill Registry
-      const registry = createSkillRegistry(logger);
-      
+
       // 注册 UI/UX Skill
       const uiuxSkill = new UIUXSkill();
-      registry.register(uiuxSkill);
 
       // 解析审查维度
       const dimensions = options.focus.split(',').map((d: string) => d.trim());
@@ -62,40 +56,12 @@ export const uxAuditCommand = new Command('ux-audit')
           critical: issues.filter((i: any) => i.severity === 'critical').length,
           warning: issues.filter((i: any) => i.severity === 'warning').length,
           info: issues.filter((i: any) => i.severity === 'info').length,
-        }
+        },
+        dimensions,
       };
 
-      // 如果有 --preview 选项，预览修复效果
-      if (options.preview && options.fix) {
-        logger.info('🔍 Previewing fixes in sandbox...');
-        
-        const fixEngine = new FixEngine({
-          autoApproveLowRisk: false,
-          sandboxEnabled: true,
-          previewBeforeApply: true,
-          verifyAfterFix: true,
-        });
-
-        for (const issue of issues) {
-          if (uiuxSkill.canAutoFix(issue)) {
-            try {
-              const fix = await uiuxSkill.fix(issue, context);
-              const previewResult = await fixEngine.previewFix(issue, fix, options.path);
-              
-              if (previewResult.success) {
-                logger.info(`✅ Preview ready for ${issue.title}`);
-                logger.info(`   Before: ${previewResult.beforeScreenshot}`);
-                logger.info(`   After: ${previewResult.afterScreenshot}`);
-                if (previewResult.diffPercentage !== undefined) {
-                  logger.info(`   Diff: ${previewResult.diffPercentage.toFixed(2)}%`);
-                }
-              }
-            } catch (error) {
-              logger.error(`Failed to preview fix for ${issue.title}:`, error);
-            }
-          }
-        }
-      }
+      // 输出结果
+      await outputResult(result, options, logger);
 
       // 返回码：有问题返回1，用于CI/CD
       process.exit(issues.length > 0 ? 1 : 0);
@@ -107,28 +73,32 @@ export const uxAuditCommand = new Command('ux-audit')
   });
 
 async function outputResult(result: any, options: any, logger: any) {
-  const { output } = options;
+  const output = options.output || 'text';
 
   switch (output) {
-    case 'json':
+    case 'json': {
       const jsonOutput = JSON.stringify(result, null, 2);
       if (options.outputFile) {
-        await Bun.write(options.outputFile, jsonOutput);
+        const fs = await import('fs/promises');
+        await fs.writeFile(options.outputFile, jsonOutput, 'utf-8');
         logger.info(`报告已保存到: ${options.outputFile}`);
       } else {
         console.log(jsonOutput);
       }
       break;
+    }
 
-    case 'html':
+    case 'html': {
       const htmlReport = generateHTMLReport(result);
       if (options.outputFile) {
-        await Bun.write(options.outputFile, htmlReport);
+        const fs = await import('fs/promises');
+        await fs.writeFile(options.outputFile, htmlReport, 'utf-8');
         logger.info(`HTML报告已保存到: ${options.outputFile}`);
       } else {
         console.log(htmlReport);
       }
       break;
+    }
 
     case 'text':
     default:
@@ -163,11 +133,11 @@ function printTextReport(result: any) {
       console.log(`\n  ${severity} ${issue.title}`);
       console.log(`     File: ${issue.location.file}:${issue.location.line}`);
       console.log(`     Description: ${issue.description}`);
-      
+
       if (issue.evidence?.code) {
         console.log(`     Code: ${issue.evidence.code}`);
       }
-      
+
       if (issue.metadata?.suggestion) {
         console.log(`     Suggestion: ${issue.metadata.suggestion}`);
       }

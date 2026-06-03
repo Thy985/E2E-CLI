@@ -10,8 +10,10 @@
  */
 
 import { createLogger, Logger as AppLogger } from '../../utils/logger';
-import { Diagnosis, Fix, SkillContext, Logger as SkillLogger } from '../../types';
+import { Diagnosis, Fix, SkillContext } from '../../types';
 import { execAsync } from '../../utils/shell';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 
 export interface VerificationResult {
   success: boolean;
@@ -245,16 +247,17 @@ export class VerifyEngine {
     const timeout = options.timeout || 120000;
 
     try {
-      const fs = await import('fs');
-      const path = await import('path');
       const packageJsonPath = path.join(project.path, 'package.json');
 
-      if (!fs.existsSync(packageJsonPath)) {
+      try {
+        await fs.access(packageJsonPath);
+      } catch {
         logger.debug('No package.json found, skipping tests');
         return null;
       }
 
-      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+      const packageJsonContent = await fs.readFile(packageJsonPath, 'utf-8');
+      const packageJson = JSON.parse(packageJsonContent);
       if (!packageJson.scripts?.test) {
         logger.debug('No test script found in package.json');
         return null;
@@ -289,17 +292,27 @@ export class VerifyEngine {
     outputPath?: string
   ): Promise<{ diffPercentage: number; diffImagePath?: string }> {
     try {
-      const fs = await import('fs');
       const { PNG } = await import('pngjs');
       const pixelmatch = (await import('pixelmatch')).default;
 
-      if (!fs.existsSync(beforePath) || !fs.existsSync(afterPath)) {
-        this.logger.warn(`Visual diff: missing screenshot (before=${beforePath}, after=${afterPath})`);
-        return { diffPercentage: 0 };
-      }
+      // Check both files exist
+      await Promise.all([
+        fs.access(beforePath),
+        fs.access(afterPath),
+      ]).catch(() => {
+        this.logger.warn(
+          `Visual diff: missing screenshot (before=${beforePath}, after=${afterPath})`
+        );
+        throw new Error('missing-screenshot');
+      });
 
-      const before = PNG.sync.read(fs.readFileSync(beforePath));
-      const after = PNG.sync.read(fs.readFileSync(afterPath));
+      const [beforeBuf, afterBuf] = await Promise.all([
+        fs.readFile(beforePath),
+        fs.readFile(afterPath),
+      ]);
+
+      const before = PNG.sync.read(beforeBuf);
+      const after = PNG.sync.read(afterBuf);
       const diff = new PNG({ width: before.width, height: before.height });
 
       const diffPixels = pixelmatch(
@@ -316,7 +329,7 @@ export class VerifyEngine {
 
       let diffImagePath: string | undefined;
       if (outputPath) {
-        fs.writeFileSync(outputPath, PNG.sync.write(diff));
+        await fs.writeFile(outputPath, PNG.sync.write(diff));
         diffImagePath = outputPath;
       }
 

@@ -44,12 +44,20 @@ export interface GUIOptions {
 /**
  * Entry point invoked by Commander's `.action(guiCommand)`.
  *
- * The first argument is the Commander `Command` instance; the second is the
- * parsed options bag. We translate flag combinations (e.g. `--record`,
- * `--play`, `--visual`) into a single action and dispatch.
+ * Commander passes the subcommand instance as the first argument; it has the
+ * parsed options attached directly as properties. We translate flag
+ * combinations (e.g. `--record`, `--play`, `--visual`) into a single action
+ * and dispatch.
  */
-export async function guiCommand(_command: unknown, options: GUIOptions) {
+export async function guiCommand(command: any, _actionOptions?: unknown) {
   const formatter = createFormatter();
+
+  // Pull the option values off the subcommand instance. When invoked
+  // programmatically the second argument is the options bag, but in CLI
+  // usage it's typically the parent's `Command` object.
+  const options: GUIOptions = command && typeof command === 'object' && 'opts' in command
+    ? command.opts()
+    : (command || {});
 
   const action = pickAction(options);
   if (!action) {

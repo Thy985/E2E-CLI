@@ -3,7 +3,7 @@
  * Screenshot comparison using pixelmatch
  */
 
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
 import * as path from 'path';
 import { PNG } from 'pngjs';
 import pixelmatch from 'pixelmatch';
@@ -61,7 +61,7 @@ export class VisualComparator {
     let diffImage: Buffer | undefined;
     if (output && diffPixels > 0) {
       const diffBuffer = PNG.sync.write(diff);
-      await fs.promises.writeFile(output, diffBuffer);
+      await fs.writeFile(output, diffBuffer);
       diffImage = diffBuffer;
     }
 
@@ -81,7 +81,7 @@ export class VisualComparator {
     let buffer: Buffer;
 
     if (typeof source === 'string') {
-      buffer = await fs.promises.readFile(source);
+      buffer = await fs.readFile(source);
     } else {
       buffer = source;
     }
@@ -117,17 +117,20 @@ export class VisualComparator {
    */
   async saveScreenshot(buffer: Buffer, filepath: string): Promise<void> {
     const dir = path.dirname(filepath);
-    if (!fs.existsSync(dir)) {
-      await fs.promises.mkdir(dir, { recursive: true });
-    }
-    await fs.promises.writeFile(filepath, buffer);
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(filepath, buffer);
   }
 
   /**
    * Check if baseline exists
    */
   async hasBaseline(filepath: string): Promise<boolean> {
-    return fs.existsSync(filepath);
+    try {
+      await fs.access(filepath);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**

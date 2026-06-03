@@ -50,8 +50,8 @@ export const dependencyCommand = new Command('dependency')
       } else if (options.output === 'html') {
         const html = generateHTMLReport(result);
         if (options.outputFile) {
-          const fs = await import('fs');
-          fs.writeFileSync(options.outputFile, html, 'utf-8');
+          const fs = await import('fs/promises');
+          await fs.writeFile(options.outputFile, html, 'utf-8');
           logger.info(`\n✅ Report saved to: ${options.outputFile}`);
         } else {
           console.log(html);

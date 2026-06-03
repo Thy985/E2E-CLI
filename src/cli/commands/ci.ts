@@ -38,30 +38,6 @@ export const ciCommand = {
   },
 };
 
-export async function ciCommandOld(action: string, options: CICommandOptions) {
-  const logger = createLogger({ level: 'info' });
-  const formatter = createFormatter();
-
-  switch (action) {
-    case 'init':
-      await initCI(options, formatter, logger);
-      break;
-    
-    case 'detect':
-      await detectCI(options, formatter);
-      break;
-    
-    case 'run':
-      await runCI(options, formatter, logger);
-      break;
-    
-    default:
-      formatter.error(`未知操作: ${action}`);
-      formatter.info('可用操作: init, detect, run');
-      process.exit(1);
-  }
-}
-
 async function initCI(
   options: CICommandOptions,
   formatter: ReturnType<typeof createFormatter>,
