@@ -31,6 +31,8 @@ export interface QAConfig {
   };
   ignore?: string[];
   rules?: Record<string, RuleConfig>;
+  /** Failure threshold: 'critical' (default) or 'warning' */
+  failOn?: 'critical' | 'warning';
   thresholds?: {
     score?: {
       warning?: number;
@@ -154,54 +156,113 @@ async function parseConfigFile(filePath: string): Promise<QAConfig> {
  * Parse YAML config (simple implementation)
  */
 function parseYaml(content: string): QAConfig {
-  // Simple YAML parser for basic configs
-  // For production, consider using a proper YAML library
-  const result: Record<string, unknown> = {};
+  // Try the runtime's built-in YAML parser first. Bun.YAML exists in some
+  // Bun versions; on Node we look for a user-installed `yaml` package.
+  // Falls back to a hand-rolled parser for the small subset we need.
+  try {
+    const bunYaml = (globalThis as { Bun?: { YAML?: { parse: (s: string) => unknown } } }).Bun?.YAML;
+    if (bunYaml) return (bunYaml.parse(content) as QAConfig) ?? {};
+  } catch { /* ignore */ }
+
+  // Synchronous YAML lookup via createRequire (works in both ESM Bun & Node).
+  try {
+    const { createRequire } = require('module') as typeof import('module');
+    const req = createRequire(import.meta.url);
+    const yaml = req('yaml') as { parse: (s: string) => unknown } | undefined;
+    if (yaml) return (yaml.parse(content) as QAConfig) ?? {};
+  } catch { /* ignore */ }
+
+  return parseYamlSimple(content);
+}
+
+function parseYamlSimple(content: string): QAConfig {
+  // Minimal YAML parser — supports:
+  //   - top-level objects
+  //   - nested objects (indentation-based)
+  //   - dash-prefixed lists (single-line `key: [a, b]` and block lists)
+  //   - quoted/unquoted scalars, ints, floats, booleans, null
+  //
+  // It does NOT support: block scalars (`|`/`>`), anchors/aliases, tags,
+  // multi-document streams. Those are unlikely to appear in a QA-Agent
+  // config in the wild.
+
+  const root: Record<string, unknown> = {};
   const lines = content.split('\n');
-  let currentKey = '';
-  let currentIndent = 0;
-  const stack: Array<{ key: string; obj: Record<string, unknown>; indent: number }> = [];
-  
-  for (const line of lines) {
-    if (line.trim().startsWith('#') || line.trim() === '') continue;
-    
-    const indent = line.search(/\S/);
-    const [key, ...valueParts] = line.trim().split(':');
-    const value = valueParts.join(':').trim();
-    
-    if (indent > currentIndent && stack.length > 0) {
-      // Nested
-      stack.push({ key: currentKey, obj: result[currentKey] as Record<string, unknown>, indent: currentIndent });
-    } else if (indent < currentIndent) {
-      // Pop stack
-      while (stack.length > 0 && stack[stack.length - 1].indent >= indent) {
-        stack.pop();
-      }
+
+  type Frame = { indent: number; container: Record<string, unknown> | unknown[]; isList: boolean; key?: string };
+  const stack: Frame[] = [{ indent: -1, container: root, isList: false }];
+  const indentOf = (s: string): number => s.search(/\S/);
+
+  for (const raw of lines) {
+    if (raw.trim() === '' || raw.trim().startsWith('#')) continue;
+    const indent = indentOf(raw);
+    const text = raw.trim();
+
+    // Pop until we find a parent with smaller indent.
+    while (stack.length > 1 && stack[stack.length - 1].indent >= indent) {
+      stack.pop();
     }
-    
-    currentIndent = indent;
-    currentKey = key.trim();
-    
-    if (value) {
-      // Has value
-      const parsedValue = parseYamlValue(value);
-      if (stack.length > 0) {
-        stack[stack.length - 1].obj[currentKey] = parsedValue;
-      } else {
-        result[currentKey] = parsedValue;
+    const parent = stack[stack.length - 1];
+
+    if (text.startsWith('- ') || text === '-') {
+      // Convert the parent.container to a list if it isn't already
+      if (!parent.isList) {
+        // The container might be the value of a key on the grandparent;
+        // we move the existing object out of the way.
+        const list: unknown[] = [];
+        if (parent.key && stack.length >= 2) {
+          const gp = stack[stack.length - 2].container as Record<string, unknown>;
+          gp[parent.key] = list;
+        } else {
+          // top-level list - currently not supported by our schema, ignore
+        }
+        parent.container = list;
+        parent.isList = true;
       }
+      const value = text === '-' ? null : parseYamlScalar(text.slice(2).trim());
+      (parent.container as unknown[]).push(value);
+      continue;
+    }
+
+    const colonIdx = text.indexOf(':');
+    if (colonIdx < 0) continue;
+    const key = text.slice(0, colonIdx).trim();
+    const rest = text.slice(colonIdx + 1).trim();
+
+    if (parent.isList) {
+      // Rare: key appearing as a sibling of a list item. Just skip.
+      continue;
+    }
+
+    if (rest === '') {
+      // New nested object
+      const child: Record<string, unknown> = {};
+      (parent.container as Record<string, unknown>)[key] = child;
+      stack.push({ indent, container: child, isList: false, key });
+    } else if (rest.startsWith('[') && rest.endsWith(']')) {
+      // Inline list: [a, b, c]
+      const inner = rest.slice(1, -1).trim();
+      const items = inner === '' ? [] : inner.split(',').map(s => parseYamlScalar(s.trim()));
+      (parent.container as Record<string, unknown>)[key] = items;
     } else {
-      // Object start
-      const newObj: Record<string, unknown> = {};
-      if (stack.length > 0) {
-        stack[stack.length - 1].obj[currentKey] = newObj;
-      } else {
-        result[currentKey] = newObj;
-      }
+      (parent.container as Record<string, unknown>)[key] = parseYamlScalar(rest);
     }
   }
-  
-  return result as unknown as QAConfig;
+
+  return root as unknown as QAConfig;
+}
+
+function parseYamlScalar(value: string): unknown {
+  if ((value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))) {
+    return value.slice(1, -1);
+  }
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  if (value === 'null' || value === '~') return null;
+  if (/^-?\d+$/.test(value)) return parseInt(value, 10);
+  if (/^-?\d+\.\d+$/.test(value)) return parseFloat(value);
+  return value;
 }
 
 function parseYamlValue(value: string): unknown {

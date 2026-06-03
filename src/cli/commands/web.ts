@@ -32,24 +32,21 @@ export async function webCommand(options: WebOptions) {
   const server = createWebServer(port);
   server.start();
 
-  // Open browser if requested
-  if (options.open !== false) {
+  // Open browser only if --open flag is set explicitly
+  if (options.open === true) {
     const url = `http://localhost:${port}`;
-    
+
     // Detect platform and open browser
     const platform = process.platform;
-    
+
     // Delay opening browser to ensure server is ready
     setTimeout(() => {
       try {
-        if (platform === 'darwin') {
-          spawn('open', [url], { detached: true, stdio: 'ignore' });
-        } else if (platform === 'win32') {
-          // Windows: use start command via cmd
-          spawn('cmd', ['/c', 'start', '""', url], { detached: true, stdio: 'ignore' });
-        } else {
-          spawn('xdg-open', [url], { detached: true, stdio: 'ignore' });
-        }
+        const child =
+          platform === 'darwin' ? spawn('open', [url], { detached: true, stdio: 'ignore' })
+          : platform === 'win32' ? spawn('cmd', ['/c', 'start', '""', url], { detached: true, stdio: 'ignore' })
+          : spawn('xdg-open', [url], { detached: true, stdio: 'ignore' });
+        child.on('error', () => { /* ignore - browser launch is best-effort */ });
       } catch {
         // Ignore errors when opening browser
         logger.warn(`无法自动打开浏览器，请手动访问: ${url}`);

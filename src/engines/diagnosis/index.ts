@@ -42,25 +42,28 @@ export interface PrioritizedDiagnosis extends Diagnosis {
   impactScore: number;
 }
 
+// Severity weights for priority scoring.
+// Lower number = higher urgency (will sort earlier). Critical issues are
+// the most urgent and thus get the smallest numbers; info is the least.
 const SEVERITY_WEIGHTS: Record<Severity, number> = {
-  critical: 100,
-  warning: 50,
-  info: 10,
+  critical: 0,
+  warning: 100,
+  info: 1000,
 };
 
 const TYPE_WEIGHTS: Partial<Record<DiagnosisType, number>> = {
-  security: 100,
-  accessibility: 80,
-  functionality: 80,
-  performance: 60,
-  'code-quality': 40,
-  'ui-ux': 40,
-  seo: 30,
-  'best-practice': 20,
-  dependency: 50,
-  complexity: 20,
-  api: 40,
-  e2e: 60,
+  security: 0,
+  accessibility: 50,
+  functionality: 50,
+  performance: 100,
+  'code-quality': 200,
+  'ui-ux': 200,
+  seo: 300,
+  'best-practice': 400,
+  dependency: 100,
+  complexity: 400,
+  api: 200,
+  e2e: 200,
 };
 
 export class DiagnosisEngine {
@@ -134,10 +137,18 @@ export class DiagnosisEngine {
     const autoFixBonus = d.fixSuggestion?.autoApplicable ? -10 : 0;
     const priority = severityWeight + typeWeight + autoFixBonus;
 
+    // impactScore: 0-100 where higher = more impactful.
+    // Critical security/accessibility issues max out at 100; info-only
+    // issues stay near 0.
+    const impactScore = Math.min(
+      100,
+      100 - severityWeight / 10 + (100 - typeWeight) / 5
+    );
+
     return {
       ...d,
       priority,
-      impactScore: Math.min(100, severityWeight + typeWeight / 2),
+      impactScore: Math.max(0, Math.min(100, impactScore)),
       rootCause: this.inferRootCause(d),
     };
   }

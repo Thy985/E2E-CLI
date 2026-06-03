@@ -324,25 +324,11 @@ export interface CLIContext {
   output: OutputFormat;
 }
 
-export interface Config {
-  version: number;
-  project?: {
-    name: string;
-    type?: string;
-  };
-  skills?: SkillConfigEntry[];
-  model?: {
-    provider: string;
-    model: string;
-  };
-  output?: {
-    format: string;
-    path: string;
-  };
-  ignore?: string[];
-  // Allow additional skill-specific config
-  [key: string]: any;
-}
+/**
+ * Alias of `QAConfig` from the config module. Re-exported here so consumers
+ * don't need to know which module defines the source-of-truth interface.
+ */
+export type Config = QAConfig;
 
 export interface SkillConfigEntry {
   name: string;
