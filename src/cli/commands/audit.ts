@@ -100,6 +100,15 @@ function displayAuditReport(
   if (report.compliance) {
     displayCompliance(report.compliance, formatter);
     console.log('');
+  } else if (options.compliance) {
+    console.log('─'.repeat(60));
+    console.log('  合规性检查');
+    console.log('─'.repeat(60));
+    console.log('');
+    console.log(`  ⚠️  未对 ${options.compliance} 执行实际合规扫描`);
+    console.log('  说明: 当前 audit 引擎未集成 axe-core 等合规工具');
+    console.log('  建议: 改用 a11y skill 获取可访问性诊断');
+    console.log('');
   }
 
   // Trends

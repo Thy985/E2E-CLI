@@ -48,6 +48,7 @@
     "hono": "^4.12.14",
     "inquirer": "^9.2.0",
     "js-yaml": "^4.2.0",
+    "minimatch": "^9.0.0",
     "ora": "^8.0.0",
     "pixelmatch": "^7.1.0",
     "playwright": "^1.59.1",

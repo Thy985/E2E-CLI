@@ -6,6 +6,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import * as yaml from 'js-yaml';
+import { minimatch } from 'minimatch';
 
 export interface QAConfig {
   version: number;
@@ -241,67 +242,46 @@ function mergeConfig(defaults: QAConfig, user: QAConfig): QAConfig {
 }
 
 /**
- * Check if a file should be ignored
+ * Check if a file should be ignored.
+ *
+ * Delegates to `minimatch` for full glob support (including `**`, `*`, `?`,
+ * brace expansion, extglobs, etc.). Paths are normalized to forward slashes
+ * to give consistent results across platforms.
  */
 export function shouldIgnore(filePath: string, config?: QAConfig): boolean {
   const normalizedPath = filePath.replace(/\\/g, '/');
-  
   const ignorePatterns = config?.ignore || [];
-  
+
   for (const pattern of ignorePatterns) {
-    const normalizedPattern = pattern.replace(/\\/g, '/');
-    
-    // Handle different glob patterns
-    if (normalizedPattern === '**/*') {
+    if (matchesIgnorePattern(normalizedPath, pattern)) {
       return true;
     }
-    
-    // Pattern like **/*.ext - match any file with extension
-    if (normalizedPattern.startsWith('**/*.')) {
-      const ext = normalizedPattern.slice(4); // Remove '**/*'
-      if (normalizedPath.endsWith(ext)) return true;
-      continue;
-    }
-    
-    // Pattern like dir/** - match anything under directory
-    if (normalizedPattern.endsWith('/**')) {
-      const prefix = normalizedPattern.slice(0, -3);
-      if (normalizedPath.startsWith(prefix + '/') || normalizedPath === prefix) return true;
-      continue;
-    }
-    
-    // Pattern like **/name/** - match directory anywhere
-    if (normalizedPattern.startsWith('**/') && normalizedPattern.endsWith('/**')) {
-      const dirName = normalizedPattern.slice(3, -3); // Remove '**/' and '/**'
-      if (normalizedPath.includes('/' + dirName + '/')) return true;
-      continue;
-    }
-    
-    // Pattern like **/name - match name anywhere
-    if (normalizedPattern.startsWith('**/')) {
-      const name = normalizedPattern.slice(3);
-      // Check if path ends with /name or is exactly name
-      if (normalizedPath.endsWith('/' + name) || normalizedPath === name) return true;
-      continue;
-    }
-    
-    // Pattern with wildcards - convert to regex
-    if (normalizedPattern.includes('*')) {
-      const regexPattern = normalizedPattern
-        .replace(/\*\*/g, '<<DOUBLESTAR>>')
-        .replace(/\*/g, '[^/]*')
-        .replace(/<<DOUBLESTAR>>/g, '.*')
-        .replace(/\?/g, '[^/]');
-      
-      const regex = new RegExp('^' + regexPattern + '$');
-      if (regex.test(normalizedPath)) return true;
-      continue;
-    }
-    
-    // Exact match
-    if (normalizedPath === normalizedPattern) return true;
   }
-  
+
+  return false;
+}
+
+function matchesIgnorePattern(normalizedPath: string, pattern: string): boolean {
+  const normalizedPattern = pattern.replace(/\\/g, '/').trim();
+  if (!normalizedPattern) return false;
+
+  // `**/*` matches every path, but we still let minimatch confirm so that
+  // edge cases (e.g. patterns with trailing slashes) behave as expected.
+  const opts = { dot: true, matchBase: true };
+  if (minimatch(normalizedPath, normalizedPattern, opts)) {
+    return true;
+  }
+
+  // minimatch with `matchBase` only matches when the basename has no
+  // slashes. A bare name like `dist` should also match `foo/dist/bar` —
+  // handle that case explicitly.
+  if (!normalizedPattern.includes('/') && !normalizedPattern.includes('*')) {
+    const segments = normalizedPath.split('/');
+    if (segments.includes(normalizedPattern)) {
+      return true;
+    }
+  }
+
   return false;
 }
 

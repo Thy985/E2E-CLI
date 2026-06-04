@@ -5,7 +5,7 @@ import { describe, it, expect } from 'bun:test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { parseConfigFile } from '../../src/config';
+import { parseConfigFile, shouldIgnore, QAConfig } from '../../src/config';
 
 describe('Config YAML parsing', () => {
   it('parses a simple yaml config', async () => {
@@ -80,5 +80,47 @@ describe('Config YAML parsing', () => {
     fs.writeFileSync(file, '- 1\n- 2\n', 'utf-8');
 
     await expect(parseConfigFile(file)).rejects.toThrow(/must be a mapping/);
+  });
+});
+
+describe('shouldIgnore', () => {
+  const cfg = (ignore: string[]): QAConfig => ({ version: 1, ignore });
+
+  it('returns false when no patterns configured', () => {
+    expect(shouldIgnore('src/foo.ts', cfg([]))).toBe(false);
+  });
+
+  it('returns false for path that matches nothing', () => {
+    expect(shouldIgnore('src/foo.ts', cfg(['dist/**', '*.log']))).toBe(false);
+  });
+
+  it('matches directory patterns', () => {
+    expect(shouldIgnore('dist/bundle.js', cfg(['dist/**']))).toBe(true);
+    expect(shouldIgnore('node_modules/lib/index.js', cfg(['node_modules/**']))).toBe(true);
+  });
+
+  it('matches extension patterns', () => {
+    expect(shouldIgnore('foo.log', cfg(['**/*.log']))).toBe(true);
+    expect(shouldIgnore('src/foo.log', cfg(['**/*.log']))).toBe(true);
+    expect(shouldIgnore('foo.txt', cfg(['**/*.log']))).toBe(false);
+  });
+
+  it('matches basename anywhere via bare name', () => {
+    // bare name like 'dist' should also match `foo/dist/bar`
+    expect(shouldIgnore('packages/app/dist/x.js', cfg(['dist']))).toBe(true);
+  });
+
+  it('matches **/name patterns', () => {
+    expect(shouldIgnore('a/b/c.test.ts', cfg(['**/*.test.ts']))).toBe(true);
+    expect(shouldIgnore('c.test.ts', cfg(['**/*.test.ts']))).toBe(true);
+  });
+
+  it('normalizes windows backslashes', () => {
+    expect(shouldIgnore('src\\foo.ts', cfg(['src/**']))).toBe(true);
+  });
+
+  it('matches dotfiles when dot option enabled', () => {
+    expect(shouldIgnore('.env', cfg(['.env']))).toBe(true);
+    expect(shouldIgnore('a/.gitkeep', cfg(['**/.gitkeep']))).toBe(true);
   });
 });

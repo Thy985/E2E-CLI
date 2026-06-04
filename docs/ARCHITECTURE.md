@@ -171,25 +171,7 @@ interface FixEngine {
 }
 ```
 
-### 3.3 验证引擎
-
-```typescript
-interface VerifyEngine {
-  // 回归测试
-  runRegression(tests: Test[]): TestResult;
-  
-  // 视觉对比
-  visualDiff(baseline: Screenshot, current: Screenshot): DiffResult;
-  
-  // 性能对比
-  perfDiff(baseline: Metrics, current: Metrics): PerfResult;
-  
-  // 综合验证
-  comprehensiveVerify(fix: AppliedFix): VerifyReport;
-}
-```
-
-### 3.4 沙箱系统 ⭐
+### 3.3 沙箱系统 ⭐
 
 ```typescript
 interface Sandbox {

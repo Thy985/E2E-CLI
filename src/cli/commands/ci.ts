@@ -107,11 +107,11 @@ async function initCI(
     console.log('测试 CI 配置:');
     
     if (config.platform === 'github') {
-      console.log('  - Push 到分支败发');
-      console.log('  - 或在 Actions 页面手动败发');
+      console.log('  - Push 到分支触发');
+      console.log('  - 或在 Actions 页面手动触发');
     } else if (config.platform === 'gitlab') {
-      console.log('  - Push 到分支败发');
-      console.log('  - 或在 CI/CD > Pipelines 手动败发');
+      console.log('  - Push 到分支触发');
+      console.log('  - 或在 CI/CD > Pipelines 手动触发');
     }
     
   } catch (error: any) {

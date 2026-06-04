@@ -100,16 +100,31 @@ async function runBatchFix(options: any, config: any, logger: any) {
 
 async function runSingleFix(options: any, config: any, logger: any) {
   logger.info(`Fixing issue: ${options.issue}\n`);
-  
+
   // 查找问题
   const issue = await findIssueById(options.issue, options.path, config, logger);
-  
+
   if (!issue) {
     logger.error(`Issue not found: ${options.issue}`);
     process.exit(1);
   }
 
-  // 生成并应用修复
+  const context = {
+    project: { path: options.path, name: 'project', type: 'webapp' as const },
+    config,
+    logger,
+    tools: {} as any,
+    model: {} as any,
+    storage: {} as any,
+  };
+
+  // 根据 issue.skill 选择对应的 Skill 并调用其 fix()
+  const skill = pickSkillFor(issue.skill);
+  if (!skill) {
+    logger.error(`No fixer available for skill: ${issue.skill}`);
+    process.exit(1);
+  }
+
   const fixEngine = new FixEngine({
     autoApproveLowRisk: true,
     sandboxEnabled: options.preview,
@@ -117,11 +132,49 @@ async function runSingleFix(options: any, config: any, logger: any) {
     verifyAfterFix: options.verify,
   });
 
-  // 这里应该调用 Skill 的 fix 方法
-  logger.info(`Would fix: ${issue.title}`);
-  
-  if (options.dryRun) {
-    logger.info('[DRY-RUN] No changes applied.');
+  try {
+    const fix = await skill.fix(issue, context);
+    logger.info(`Would fix: ${issue.title} (${fix.changes?.length ?? 0} changes)`);
+
+    if (options.dryRun) {
+      logger.info('[DRY-RUN] No changes applied.');
+      return;
+    }
+
+    if (fix.changes && fix.changes.length > 0) {
+      const result = await fixEngine.applyFix(fix, options.path);
+      if (result.success) {
+        logger.info(`✅ Fix applied: ${issue.title}`);
+        if (options.verify) {
+          const verified = await fixEngine.verifyFix(fix, options.path);
+          logger.info(verified ? '✅ Verification passed' : '⚠️ Verification failed');
+        }
+      } else {
+        logger.error(`❌ Fix failed: ${result.error ?? 'unknown'}`);
+        process.exit(1);
+      }
+    } else {
+      logger.info('No changes produced for this issue.');
+    }
+  } catch (error) {
+    logger.error(`Failed to fix issue: ${error}`);
+    process.exit(1);
+  }
+}
+
+function pickSkillFor(skillName: string): any | null {
+  switch (skillName) {
+    case 'uiux':
+    case 'ui-ux':
+      return new UIUXSkill();
+    case 'best-practices':
+      return new BestPracticesSkill();
+    case 'seo':
+      return new SEOSkill();
+    case 'dependency':
+      return new DependencySkill();
+    default:
+      return null;
   }
 }
 

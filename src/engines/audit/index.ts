@@ -243,25 +243,29 @@ export class AuditEngine {
     projectPath: string,
     standards: string[]
   ): Promise<ComplianceResult | undefined> {
-    // Simplified compliance check
-    // In production, this would be more comprehensive
-    const standard = standards[0]; // Focus on first standard
-    
-    if (standard === 'WCAG2.2') {
-      return {
-        standard: 'WCAG 2.2',
-        version: '2.2',
-        score: 75,
-        status: 'partial',
-        requirements: [
-          { id: '1.1.1', name: 'Non-text Content', status: 'pass', description: '图片有替代文本' },
-          { id: '1.3.1', name: 'Info and Relationships', status: 'fail', description: '部分表单缺少标签' },
-          { id: '2.1.1', name: 'Keyboard', status: 'pass', description: '键盘可访问' },
-          { id: '2.4.1', name: 'Bypass Blocks', status: 'na', description: '无跳过导航链接' },
-        ],
-      };
+    // Compliance checks require dedicated tooling (e.g. axe-core for WCAG).
+    // The previous version fabricated hard-coded scores/requirements, which
+    // misled users into thinking an audit was actually performed. Return
+    // undefined and surface a warning so the CLI can render it honestly.
+    void projectPath;
+    const supported = new Set(['WCAG2.2', 'ADA', 'GDPR']);
+    const unsupported = standards.filter(s => !supported.has(s));
+    const skipped = standards.filter(s => supported.has(s));
+
+    if (unsupported.length > 0) {
+      this.logger.warn(
+        `[compliance] 暂不支持的合规标准: ${unsupported.join(', ')}`
+      );
     }
 
+    if (skipped.length === 0) {
+      return undefined;
+    }
+
+    this.logger.warn(
+      `[compliance] 合规检查需要专门的工具（如 axe-core），当前未实装。` +
+        `已跳过: ${skipped.join(', ')}。请使用 a11y skill 做可访问性诊断。`
+    );
     return undefined;
   }
 
