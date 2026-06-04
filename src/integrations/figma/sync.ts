@@ -7,7 +7,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { FigmaClient } from './client';
-import { DesignTokens } from '../../skills/builtin/uiux/design-token-extractor';
+import { DesignTokens } from '../../skills/builtin/ui-ux/design-token-extractor';
 
 export interface SyncOptions {
   projectPath: string;

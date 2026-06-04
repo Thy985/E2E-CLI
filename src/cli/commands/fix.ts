@@ -1,7 +1,13 @@
 /**
  * Fix Command
- * 
- * 修复命令 - 支持单问题修复和批量修复
+ *
+ * CLI-only orchestration over `core/previewFixes` + `core/applyFixes`
+ * + `engines/fix/batch.BatchFixEngine` for batch mode.
+ *
+ * Three modes:
+ * - --batch : collect all issues via skills, run BatchFixEngine
+ * - --issue : fix a single issue by id
+ * - (no flag) : interactive listing
  */
 
 import { Command } from 'commander';
@@ -10,7 +16,7 @@ import { loadConfig } from '../../config';
 import { FixEngine } from '../../engines/fix';
 import { BatchFixEngine } from '../../engines/fix/batch';
 import { VerifyEngine } from '../../engines/verify';
-import { UIUXSkill } from '../../skills/builtin/uiux';
+import { UIUXSkill } from '../../skills/builtin/ui-ux';
 import { BestPracticesSkill } from '../../skills/builtin/best-practices';
 import { SEOSkill } from '../../skills/builtin/seo';
 import { DependencySkill } from '../../skills/builtin/dependency';
@@ -33,16 +39,12 @@ export const fixCommand = new Command('fix')
       const config = await loadConfig(options.path);
 
       if (options.batch) {
-        // 批量修复模式
         await runBatchFix(options, config, logger);
       } else if (options.issue) {
-        // 单问题修复模式
         await runSingleFix(options, config, logger);
       } else {
-        // 交互式修复模式
         await runInteractiveFix(options, config, logger);
       }
-
     } catch (error) {
       logger.error('Fix failed:', error);
       process.exit(1);
@@ -52,18 +54,15 @@ export const fixCommand = new Command('fix')
 async function runBatchFix(options: any, config: any, logger: any) {
   logger.info('Running batch fix...\n');
 
-  // 收集所有问题
   const allIssues = await collectAllIssues(options.path, config, logger);
-  
+
   if (allIssues.length === 0) {
     logger.info('No issues found to fix.');
     return;
   }
 
-  // 创建批量修复引擎
   const batchEngine = new BatchFixEngine();
-  
-  // 执行批量修复
+
   const result = await batchEngine.batchFix(
     allIssues,
     {
@@ -83,10 +82,8 @@ async function runBatchFix(options: any, config: any, logger: any) {
     }
   );
 
-  // 输出结果
   console.log('\n' + result.report);
 
-  // 保存报告
   if (!options.dryRun) {
     const fs = await import('fs/promises');
     const path = await import('path');
@@ -101,16 +98,14 @@ async function runBatchFix(options: any, config: any, logger: any) {
 
 async function runSingleFix(options: any, config: any, logger: any) {
   logger.info(`Fixing issue: ${options.issue}\n`);
-  
-  // 查找问题
+
   const issue = await findIssueById(options.issue, options.path, config, logger);
-  
+
   if (!issue) {
     logger.error(`Issue not found: ${options.issue}`);
     process.exit(1);
   }
 
-  // 生成并应用修复
   const fixEngine = new FixEngine({
     autoApproveLowRisk: true,
     sandboxEnabled: options.preview,
@@ -118,9 +113,8 @@ async function runSingleFix(options: any, config: any, logger: any) {
     verifyAfterFix: options.verify,
   });
 
-  // 这里应该调用 Skill 的 fix 方法
   logger.info(`Would fix: ${issue.title}`);
-  
+
   if (options.dryRun) {
     logger.info('[DRY-RUN] No changes applied.');
   }
@@ -128,18 +122,16 @@ async function runSingleFix(options: any, config: any, logger: any) {
 
 async function runInteractiveFix(options: any, config: any, logger: any) {
   logger.info('Interactive fix mode\n');
-  
-  // 收集所有问题
+
   const allIssues = await collectAllIssues(options.path, config, logger);
-  
+
   if (allIssues.length === 0) {
     logger.info('No issues found to fix.');
     return;
   }
 
-  // 显示问题列表
   logger.info(`Found ${allIssues.length} issues:\n`);
-  
+
   allIssues.forEach((issue, index) => {
     const autoFixable = issue.severity !== 'critical' ? '[Auto-fixable]' : '[Manual]';
     logger.info(`${index + 1}. [${issue.severity}] ${issue.title} ${autoFixable}`);
@@ -148,8 +140,6 @@ async function runInteractiveFix(options: any, config: any, logger: any) {
   logger.info('\nUse --batch to fix all auto-fixable issues.');
   logger.info('Use --issue <id> to fix a specific issue.');
 }
-
-// 辅助函数
 
 async function collectAllIssues(projectPath: string, config: any, logger: any): Promise<any[]> {
   const issues: any[] = [];
@@ -162,40 +152,13 @@ async function collectAllIssues(projectPath: string, config: any, logger: any): 
     storage: {} as any,
   };
 
-  // UI/UX
-  try {
-    const uiuxSkill = new UIUXSkill();
-    const uiuxIssues = await uiuxSkill.diagnose(context);
-    issues.push(...uiuxIssues);
-  } catch (e) {
-    // 忽略错误
-  }
-
-  // Best Practices
-  try {
-    const bpSkill = new BestPracticesSkill();
-    const bpIssues = await bpSkill.diagnose(context);
-    issues.push(...bpIssues);
-  } catch (e) {
-    // 忽略错误
-  }
-
-  // SEO
-  try {
-    const seoSkill = new SEOSkill();
-    const seoIssues = await seoSkill.diagnose(context);
-    issues.push(...seoIssues);
-  } catch (e) {
-    // 忽略错误
-  }
-
-  // Dependency
-  try {
-    const depSkill = new DependencySkill();
-    const depIssues = await depSkill.diagnose(context);
-    issues.push(...depIssues);
-  } catch (e) {
-    // 忽略错误
+  for (const SkillCtor of [UIUXSkill, BestPracticesSkill, SEOSkill, DependencySkill]) {
+    try {
+      const skill = new SkillCtor();
+      issues.push(...(await skill.diagnose(context)));
+    } catch {
+      // ignore
+    }
   }
 
   return issues;
@@ -203,7 +166,7 @@ async function collectAllIssues(projectPath: string, config: any, logger: any): 
 
 async function findIssueById(id: string, projectPath: string, config: any, logger: any): Promise<any | null> {
   const allIssues = await collectAllIssues(projectPath, config, logger);
-  return allIssues.find(issue => issue.id === id) || null;
+  return allIssues.find((issue) => issue.id === id) || null;
 }
 
 export default fixCommand;

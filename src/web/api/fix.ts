@@ -1,78 +1,38 @@
 /**
  * Fix API Routes
+ *
+ * Thin wrapper over `core/previewFixes` + `core/applyFixes`.
+ * All file I/O is in core/; this layer just does HTTP body parsing.
  */
 
 import { Hono } from 'hono';
-import { createSkillRegistry, getRegisteredSkills } from '../../skills';
-import { createModelClient } from '../../models';
-import { createTools } from '../../tools';
-import { createStorage } from '../../storage';
-import { createLogger } from '../../utils/logger';
-import { SkillContext, Diagnosis, Fix, ProjectInfo } from '../../types';
+import { previewFixes, applyFixes, cleanupFixes } from '../../core';
 import { loadConfig } from '../../config';
-import * as fs from 'fs/promises';
-import * as path from 'path';
 
 export const fixRouter = new Hono();
 
 fixRouter.post('/preview', async (c) => {
+  let result: Awaited<ReturnType<typeof previewFixes>> | null = null;
   try {
     const body = await c.req.json();
     const { issues, projectPath } = body;
 
     if (!issues || issues.length === 0) {
-      return c.json({
-        success: false,
-        error: 'No issues provided',
-      }, 400);
+      return c.json({ success: false, error: 'No issues provided' }, 400);
     }
 
     const cwd = projectPath || process.cwd();
-    const logger = createLogger({ level: 'info' });
-    const skillRegistry = createSkillRegistry(logger);
-
-    for (const skill of getRegisteredSkills()) {
-      skillRegistry.register(skill);
-    }
-
     const config = await loadConfig(cwd);
-    const project: ProjectInfo = await getProjectInfo(cwd);
-    const context: SkillContext = {
-      project,
-      config: config,
-      logger: logger.child('Skill'),
-      tools: createTools(cwd),
-      model: createModelClient(),
-      storage: createStorage(),
-    };
-
-    await skillRegistry.initializeAll(context);
-
-    const fixes: Array<{ fix: Fix; issue: Diagnosis }> = [];
-
-    for (const issue of issues) {
-      const skill = skillRegistry.get(issue.skill);
-      if (!skill || !skill.fix) continue;
-
-      try {
-        const fix = await skill.fix(issue, context);
-        fixes.push({ fix, issue });
-      } catch (error: any) {
-        console.warn(`Cannot fix ${issue.id}: ${error.message}`);
-      }
-    }
-
-    await skillRegistry.cleanupAll();
-
+    result = await previewFixes(cwd, config, issues);
     return c.json({
       success: true,
-      fixes,
+      fixes: result.fixes,
+      skipped: result.skipped,
     });
   } catch (error: any) {
-    return c.json({
-      success: false,
-      error: error.message,
-    }, 500);
+    return c.json({ success: false, error: error.message }, 500);
+  } finally {
+    if (result) await cleanupFixes(result);
   }
 });
 
@@ -82,92 +42,18 @@ fixRouter.post('/apply', async (c) => {
     const { fixes, projectPath } = body;
 
     if (!fixes || fixes.length === 0) {
-      return c.json({
-        success: false,
-        error: 'No fixes provided',
-      }, 400);
+      return c.json({ success: false, error: 'No fixes provided' }, 400);
     }
 
-    let applied = 0;
-    let failed = 0;
-    const errors: string[] = [];
-
-    for (const { fix } of fixes) {
-      try {
-        await applyFix(fix, projectPath || process.cwd());
-        applied++;
-      } catch (error: any) {
-        failed++;
-        errors.push(`${fix.description}: ${error.message}`);
-      }
-    }
-
+    const cwd = projectPath || process.cwd();
+    const applyResult = await applyFixes({ fixes, projectPath: cwd });
     return c.json({
       success: true,
-      applied,
-      failed,
-      errors: errors.length > 0 ? errors : undefined,
+      applied: applyResult.applied,
+      failed: applyResult.failed,
+      errors: applyResult.errors.length > 0 ? applyResult.errors : undefined,
     });
   } catch (error: any) {
-    return c.json({
-      success: false,
-      error: error.message,
-    }, 500);
+    return c.json({ success: false, error: error.message }, 500);
   }
 });
-
-async function getProjectInfo(projectPath: string): Promise<ProjectInfo> {
-  const packageJsonPath = path.join(projectPath, 'package.json');
-
-  let name = path.basename(projectPath);
-  let type: ProjectInfo['type'] = 'webapp';
-  let framework: string | undefined;
-
-  try {
-    const content = await fs.readFile(packageJsonPath, 'utf-8');
-    const pkg = JSON.parse(content);
-    name = pkg.name || name;
-
-    const deps = { ...pkg.dependencies, ...pkg.devDependencies };
-    if (deps.react) framework = 'react';
-    else if (deps.vue) framework = 'vue';
-    else if (deps.angular) framework = 'angular';
-    else if (deps.next) framework = 'next';
-
-    if (deps.express || deps.fastify || deps.koa) type = 'api';
-    else if (pkg.bin) type = 'cli';
-    else if (deps.typescript && !deps.react && !deps.vue) type = 'library';
-  } catch {
-    // Ignore
-  }
-
-  return { name, path: projectPath, type, framework };
-}
-
-async function applyFix(fix: Fix, projectPath: string): Promise<void> {
-  for (const change of fix.changes) {
-    const filePath = path.isAbsolute(change.file)
-      ? change.file
-      : path.join(projectPath, change.file);
-
-    switch (change.type) {
-      case 'replace':
-        if (change.oldContent && change.content) {
-          const fileContent = await fs.readFile(filePath, 'utf-8');
-          const newContent = fileContent.replace(change.oldContent, change.content);
-          await fs.writeFile(filePath, newContent, 'utf-8');
-        }
-        break;
-
-      case 'insert':
-        if (change.content && change.position) {
-          const fileContent = await fs.readFile(filePath, 'utf-8');
-          const lines = fileContent.split('\n');
-          const insertAt = Math.max(0, Math.min(change.position.line - 1, lines.length));
-          lines.splice(insertAt, 0, change.content);
-          await fs.writeFile(filePath, lines.join('\n'), 'utf-8');
-        }
-        break;
-    }
-  }
-}

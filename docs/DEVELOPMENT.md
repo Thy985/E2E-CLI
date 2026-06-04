@@ -250,7 +250,7 @@ bun run src/cli/index.ts skill create my-skill --description "我的 Skill"
 
 ### 3.2 UI/UX Skill 开发要点 ⭐
 
-UI/UX Skill 由 4 个子模块组成（[src/skills/builtin/uiux/](file:///workspace/src/skills/builtin/uiux)）：
+UI/UX Skill 由 4 个子模块组成（[src/skills/builtin/ui-ux/](file:///workspace/src/skills/builtin/ui-ux)）：
 
 | 文件 | 职责 |
 |------|------|

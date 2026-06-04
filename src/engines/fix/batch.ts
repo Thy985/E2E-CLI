@@ -199,7 +199,7 @@ export class BatchFixEngine {
           break;
         }
         case 'ui-ux': {
-          const mod = await import('../../skills/builtin/uiux');
+          const mod = await import('../../skills/builtin/ui-ux');
           SkillClass = mod.default || (mod as any).UIUXSkill;
           break;
         }

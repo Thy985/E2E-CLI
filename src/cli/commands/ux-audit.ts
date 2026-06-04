@@ -7,7 +7,7 @@
 import { Command } from 'commander';
 import { loadConfig } from '../../config';
 import { createLogger } from '../../utils/logger';
-import { UIUXSkill } from '../../skills/builtin/uiux';
+import { UIUXSkill } from '../../skills/builtin/ui-ux';
 
 export const uxAuditCommand = new Command('ux-audit')
   .description('UI/UX视觉规范审查')

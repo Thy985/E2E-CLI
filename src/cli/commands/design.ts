@@ -13,7 +13,7 @@ import { Command } from 'commander';
 import { createLogger } from '../../utils/logger';
 import { FigmaSync } from '../../integrations/figma/sync';
 import { FigmaCompare } from '../../integrations/figma/compare';
-import { DesignTokenExtractor } from '../../skills/builtin/uiux/design-token-extractor';
+import { DesignTokenExtractor } from '../../skills/builtin/ui-ux/design-token-extractor';
 import { loadConfig } from '../../config';
 
 export const designCommand = new Command('design')

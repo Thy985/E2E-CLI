@@ -2,7 +2,7 @@
   "$schema": "./memory.schema.json",
   "version": "1.0",
   "last_updated": "2026-06-04",
-  "last_updated_by": "ADR-0001 fix batch (v0.1 tech-debt cleanup)",
+  "last_updated_by": "ADR-0002 fix batch (v0.2 core extraction)",
   "project": {
     "name": "qa-agent",
     "display_name": "QA-Agent (AI 质量医生)",
@@ -96,24 +96,31 @@
     }
   },
   "core_modules": {
-    "src/cli/": "CLI 入口（commander.js），子命令 12+",
-    "src/engines/": "诊断/修复/审计/沙箱/报告 5 个 engine",
+    "src/core/": "业务逻辑层（v0.2 新建）：project-info / context / diagnose / fix，CLI 和 web API 共用",
+    "src/cli/": "CLI 入口（commander.js），thin wrap 调用 src/core/",
+    "src/engines/": "诊断/修复/审计/沙箱/报告 5 个 engine（orchestration 层）",
     "src/skills/": "内建 9+ skills（a11y/api/best-practices/complexity/dependency/e2e/performance/security/seo/ui-ux）",
     "src/models/": "LLM 客户端统一入口（已重构）",
     "src/prompts/": "Prompt 模板 registry（已建）",
     "src/storage/": "存储抽象（in-memory + JSON file）",
     "src/gui/": "Playwright GUI 自动化（actor/recorder/player/visual/...）",
-    "src/web/": "Hono web server + React 前端"
+    "src/web/": "Hono web server + thin wrap 调用 src/core/（v0.2 重构）"
+  },
+  "architecture_decisions": {
+    "core_layer": "src/core/ 统一业务逻辑（getProjectInfo / buildSkillContext / runDiagnose / previewFixes / applyFixes），CLI 和 web 入口只做 IO 包装",
+    "fix_pipeline": "applyFixes 是纯 IO（registry-free），批量 + sandbox 用 engines/fix/batch.ts",
+    "skill_drift": "BestPracticesSkill 之前在 cli/diagnose.ts 漏注册，v0.2 改用 getRegisteredSkills() 统一后自动包含"
   },
   "metrics": {
-    "test_count": 237,
-    "test_files": 19,
-    "test_status": "237 pass / 0 fail (2026-06-04 验证)",
+    "test_count": 250,
+    "test_files": 21,
+    "test_status": "250 pass / 0 fail (2026-06-04 验证)",
     "typecheck": "0 errors (tsc --noEmit)",
-    "src_files": 80,
-    "lines_of_code_approx": 8500
+    "src_files": 84,
+    "lines_of_code_approx": 8800,
+    "core_test_coverage": "12 个 core 单元测试（project-info + fix.applyFixes）"
   },
-  "adrs": ["0001"],
+  "adrs": ["0001", "0002"],
   "thresholds": {
     "coverage_warn": 0.6,
     "coverage_reject": 0.3,
@@ -157,12 +164,11 @@
     "verifier": "ADR-0001 fix batch (bun test + tsc --noEmit + drift grep)",
     "next_verification_due": "2026-07-04",
     "known_issues": [
-      "engines/audit/ 与 skills/builtin/ 职责重叠（ADR-0001 v0.2 TODO）",
-      "engines/fix/ 6 文件命名混乱（ADR-0001 v0.2 TODO）",
-      "src/types/index.ts 491 行未拆分（ADR-0001 v0.3 TODO）",
-      "web/api 与 cli/commands 业务逻辑重复（ADR-0001 v0.2 TODO）",
-      "src/skills/builtin/uiux/ 目录命名与 CLI 命令 ux-audit 不一致（ADR-0001 v0.2 TODO）",
-      "logger 是 console.log 而非结构化 JSON（ADR-0001 v0.3 TODO）"
+      "engines/fix/ 6 文件命名混乱（v0.2 推迟到 v0.3 重命名/合并）",
+      "src/types/index.ts 491 行未拆分（v0.3 TODO）",
+      "logger 是 console.log 而非结构化 JSON（v0.3 TODO）",
+      "applyFixes insert 空文件会多空行（v0.3 小修）",
+      "core/ 没覆盖 diagnose 和 context（v0.3 补测试）"
     ]
   }
 }

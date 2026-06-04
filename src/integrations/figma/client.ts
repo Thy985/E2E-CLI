@@ -8,7 +8,7 @@
  * 4. 设计变更检测
  */
 
-import { DesignTokens } from '../../skills/builtin/uiux/design-token-extractor';
+import { DesignTokens } from '../../skills/builtin/ui-ux/design-token-extractor';
 
 export interface FigmaConfig {
   accessToken: string;
