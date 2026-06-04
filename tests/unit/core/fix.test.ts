@@ -74,7 +74,30 @@ describe('core/fix.applyFixes', () => {
     ]);
     const result = await applyFixes({ fixes: [{ fix }], projectPath: tmpDir });
     expect(result.applied).toBe(1);
-    expect((await fs.readFile(path.join(tmpDir, 'nested/dir/c.txt'), 'utf-8')).trim()).toBe('first line');
+    expect(await fs.readFile(path.join(tmpDir, 'nested/dir/c.txt'), 'utf-8')).toBe('first line');
+  });
+
+  it('inserts into an empty new file without producing a trailing newline', async () => {
+    const file = path.join(tmpDir, 'fresh.txt');
+    const fix = makeFix([
+      { file: 'fresh.txt', type: 'insert', content: 'hello', position: { line: 1 } },
+    ]);
+    const result = await applyFixes({ fixes: [{ fix }], projectPath: tmpDir });
+    expect(result.applied).toBe(1);
+    // Regression guard for the `''.split('\n')` trailing-newline bug.
+    const content = await fs.readFile(file, 'utf-8');
+    expect(content).toBe('hello');
+    expect(content.endsWith('\n')).toBe(false);
+  });
+
+  it('preserves trailing newline when the inserted content already has one', async () => {
+    const file = path.join(tmpDir, 'crlf.txt');
+    const fix = makeFix([
+      { file: 'crlf.txt', type: 'insert', content: 'hello\n', position: { line: 1 } },
+    ]);
+    const result = await applyFixes({ fixes: [{ fix }], projectPath: tmpDir });
+    expect(result.applied).toBe(1);
+    expect(await fs.readFile(file, 'utf-8')).toBe('hello\n');
   });
 
   it('reports failed changes in errors list without throwing', async () => {

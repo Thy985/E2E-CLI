@@ -2,7 +2,7 @@
   "$schema": "./memory.schema.json",
   "version": "1.0",
   "last_updated": "2026-06-04",
-  "last_updated_by": "ADR-0003 fix batch (v0.3 fix engine cleanup)",
+  "last_updated_by": "ADR-0004 fix batch (v0.3.1 insert bug + runSingleFix stub repair)",
   "project": {
     "name": "qa-agent",
     "display_name": "QA-Agent (AI 质量医生)",
@@ -110,7 +110,9 @@
     "core_layer": "src/core/ 统一业务逻辑（getProjectInfo / buildSkillContext / runDiagnose / previewFixes / applyFixes），CLI 和 web 入口只做 IO 包装",
     "fix_pipeline": "applyFixes 是纯 IO（registry-free），批量 + sandbox + rollback + verify 用 engines/fix/{enhanced,batch,rollback}.ts",
     "skill_drift": "BestPracticesSkill 之前在 cli/diagnose.ts 漏注册，v0.2 改用 getRegisteredSkills() 统一后自动包含",
-    "fix_engine_singularity": "v0.3 起 engines/fix/index.ts 是 barrel，FixEngine 唯一实现来自 enhanced.ts（含 RollbackManager + VerifyEngine 集成），删除原 sandbox-based 的 index.ts FixEngine（无外部调用方）"
+    "fix_engine_singularity": "v0.3 起 engines/fix/index.ts 是 barrel，FixEngine 唯一实现来自 enhanced.ts（含 RollbackManager + VerifyEngine 集成），删除原 sandbox-based 的 index.ts FixEngine（无外部调用方）",
+    "insert_new_file_no_trailing_newline": "v0.3.1 起 core/applyFixes 和 engines/fix/enhanced.insertInFile 在 'isNewFile' (or existing === '') 时 strip 恰好一个 trailing \\n，避免 split 副产物引入多余换行",
+    "cli_run_single_fix_flow": "v0.3.1 起 cli/commands/fix.ts 抽出 executeSingleFix(issue, options, config, logger, built) 作为可测试纯函数；runSingleFix 退化为 commander 集成层（找 issue + build context + cleanup）"
   },
   "metrics": {
     "test_count": 250,
@@ -163,14 +165,12 @@
   ],
   "verification": {
     "last_verified_at": "2026-06-04",
-    "verifier": "ADR-0001 fix batch (bun test + tsc --noEmit + drift grep)",
+    "verifier": "ADR-0004 fix batch (bun test + tsc --noEmit + drift grep)",
     "next_verification_due": "2026-07-04",
     "known_issues": [
-      "src/types/index.ts 491 行未拆分（v0.3 TODO）",
-      "logger 是 console.log 而非结构化 JSON（v0.3 TODO）",
-      "applyFixes insert 空文件会多空行（v0.3 小修）",
-      "core/ 没覆盖 diagnose 和 context（v0.3 补测试）",
-      "cli/commands/fix.ts runSingleFix 是 stub，实际未调用 FixEngine.applyFix（v0.3 修 stub）"
+      "src/types/index.ts 491 行未拆分（v0.4 TODO）",
+      "logger 是 console.log 而非结构化 JSON（v0.4 TODO）",
+      "core/ 没覆盖 diagnose 和 context（v0.4 补测试）"
     ]
   }
 }

@@ -135,4 +135,37 @@ describe('FixEngine applyFix', () => {
     expect(result.success).toBe(true);
     expect(await fs.readFile(file, 'utf-8')).toBe('line1\ninserted\nline2\nline3');
   });
+
+  it('inserts into an empty new file without producing a trailing newline', async () => {
+    // Regression guard for the `''.split('\n') = ['']` trailing-newline bug.
+    const file = path.join(projectDir, 'empty.txt');
+    const engine = new FixEngine({
+      autoApproveLowRisk: true,
+      autoApproveMediumRisk: true,
+      autoApproveHighRisk: true,
+      sandboxEnabled: false,
+      previewBeforeApply: false,
+      verifyAfterApply: false,
+      createRollbackPoint: false,
+    });
+
+    const result = await engine.applyFix(
+      {
+        id: 'test-empty-insert',
+        diagnosisId: 'd-empty',
+        description: 'insert into empty file',
+        riskLevel: 'low',
+        autoApplicable: true,
+        changes: [
+          { file: 'empty.txt', type: 'insert', position: { line: 1 }, content: 'hello' },
+        ],
+      },
+      projectDir
+    );
+
+    expect(result.success).toBe(true);
+    const content = await fs.readFile(file, 'utf-8');
+    expect(content).toBe('hello');
+    expect(content.endsWith('\n')).toBe(false);
+  });
 });

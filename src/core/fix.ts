@@ -138,16 +138,30 @@ async function applyOneFix(fix: Fix, projectPath: string, options: ApplyFixesOpt
           throw new Error(`insert change missing content/position: ${change.file}`);
         }
         let fileContent = '';
+        let isNewFile = false;
         try {
           fileContent = await fs.readFile(filePath, 'utf-8');
         } catch {
           // File doesn't exist — start from empty
+          isNewFile = true;
         }
         const lines = fileContent.split('\n');
+        // `position.line` is 1-based. Clamp into [0, lines.length] so
+        // 1 means prepend and `lines.length + 1` means append.
         const insertAt = Math.max(0, Math.min(change.position.line - 1, lines.length));
         lines.splice(insertAt, 0, change.content);
+        let joined = lines.join('\n');
+        // Empty file `''` splits into `['']` (one empty-line element) and
+        // joining back adds a trailing newline that the user did not ask
+        // for. Drop exactly one trailing `\n` (this handles both
+        // `content='hello'` → 'hello' and `content='hello\n'` → 'hello\n').
+        // For non-empty files the trailing `\n` (if any) reflects the
+        // original file's content, so we must not strip it.
+        if (isNewFile && joined.endsWith('\n')) {
+          joined = joined.slice(0, -1);
+        }
         await fs.mkdir(path.dirname(filePath), { recursive: true });
-        await fs.writeFile(filePath, lines.join('\n'), 'utf-8');
+        await fs.writeFile(filePath, joined, 'utf-8');
         break;
       }
       default:

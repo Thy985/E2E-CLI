@@ -20,6 +20,8 @@ import { UIUXSkill } from '../../skills/builtin/ui-ux';
 import { BestPracticesSkill } from '../../skills/builtin/best-practices';
 import { SEOSkill } from '../../skills/builtin/seo';
 import { DependencySkill } from '../../skills/builtin/dependency';
+import { buildSkillContext, cleanupSkillContext } from '../../core';
+import { Diagnosis } from '../../types';
 
 export const fixCommand = new Command('fix')
   .description('Fix diagnosed issues')
@@ -106,17 +108,65 @@ async function runSingleFix(options: any, config: any, logger: any) {
     process.exit(1);
   }
 
+  // Build context so the issue's owning skill can produce a Fix, and so
+  // FixEngine.applyFix can verify against the same SkillContext.
+  const built = await buildSkillContext(options.path, config, { logger });
+
+  try {
+    await executeSingleFix(issue, options, config, logger, built);
+  } finally {
+    await cleanupSkillContext(built.registry, built.logger);
+  }
+}
+
+/**
+ * Core single-issue fix flow: build Fix from issue, dispatch to FixEngine.
+ * Exported for testability (see tests/unit/cli/fix-command.test.ts).
+ */
+export async function executeSingleFix(
+  issue: Diagnosis,
+  options: any,
+  config: any,
+  logger: any,
+  built: Awaited<ReturnType<typeof buildSkillContext>>
+): Promise<void> {
+  const skill = built.registry.get(issue.skill);
+  if (!skill || !skill.fix) {
+    logger.error(`Issue ${issue.id} has no fixable skill (${issue.skill}).`);
+    process.exit(1);
+  }
+
+  const fix = await skill.fix(issue, built.context);
+  if (!fix || !fix.changes || fix.changes.length === 0) {
+    logger.info(`No changes needed for: ${issue.title}`);
+    return;
+  }
+
   const fixEngine = new FixEngine({
     autoApproveLowRisk: true,
-    sandboxEnabled: options.preview,
-    previewBeforeApply: options.preview,
-    verifyAfterApply: options.verify,
+    autoApproveMediumRisk: options.yes === true,
+    autoApproveHighRisk: false,
+    sandboxEnabled: options.preview === true,
+    previewBeforeApply: options.preview === true,
+    verifyAfterApply: options.verify === true,
+    createRollbackPoint: !options.dryRun,
   });
 
-  logger.info(`Would fix: ${issue.title}`);
-
   if (options.dryRun) {
-    logger.info('[DRY-RUN] No changes applied.');
+    logger.info(`[DRY-RUN] Would fix: ${issue.title}`);
+    logger.info(fixEngine.previewFix(fix, options.path));
+    return;
+  }
+
+  const result = await fixEngine.applyFix(fix, options.path, built.context);
+  if (result.applied && result.verified) {
+    logger.info(`✅ Fixed and verified: ${issue.title}`);
+  } else if (result.applied) {
+    logger.info(`✅ Fixed (no verify): ${issue.title}`);
+  } else {
+    logger.error(`❌ Fix failed: ${issue.title}`);
+    for (const e of result.errors) logger.error(`   - ${e}`);
+    process.exit(1);
   }
 }
 

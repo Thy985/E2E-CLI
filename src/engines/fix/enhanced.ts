@@ -296,6 +296,7 @@ export class FixEngine {
 
   private async insertInFile(filePath: string, line: number, content: string): Promise<void> {
     let existing: string;
+    let isNewFile = false;
     try {
       existing = await fs.readFile(filePath, 'utf-8');
     } catch (error) {
@@ -312,10 +313,19 @@ export class FixEngine {
 
     const lines = existing.split('\n');
     // `line` is 1-based (matches the FileChange.position convention).
-    // Clamp into [0, lines.length] so 0 means prepend and `lines.length` means append.
+    // Clamp into [0, lines.length] so 1 means prepend and `lines.length + 1` means append.
     const insertAt = Math.max(0, Math.min(line - 1, lines.length));
     lines.splice(insertAt, 0, content);
-    await fs.writeFile(filePath, lines.join('\n'), 'utf-8');
+    let joined = lines.join('\n');
+    // Edge case: if `existing` was empty (`''`), split yields `['']` and
+    // joining back adds a trailing newline the caller didn't ask for.
+    // Drop exactly one trailing `\n` (handles both `content='hello'` and
+    // `content='hello\n'`). For non-empty files the trailing `\n` is part
+    // of the original content and must be preserved.
+    if (existing === '' && joined.endsWith('\n')) {
+      joined = joined.slice(0, -1);
+    }
+    await fs.writeFile(filePath, joined, 'utf-8');
     this.logger.debug(`Inserted at line ${insertAt} in ${filePath}`);
   }
 
