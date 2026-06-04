@@ -181,3 +181,77 @@ describe('createLogger', () => {
     expect(logger).toBeInstanceOf(Logger);
   });
 });
+
+describe('Logger v0.4 json format', () => {
+  it('defaults to text format and produces the legacy [prefix] [LEVEL] string', () => {
+    const logger = new Logger({ level: 'info' });
+    logger.info('hello');
+    expect(captured.log.length).toBe(1);
+    expect(captured.log[0][0]).toContain('[QA-Agent]');
+    expect(captured.log[0][0]).toContain('[INFO]');
+    expect(captured.log[0][0]).toContain('hello');
+  });
+
+  it('emits a single-line JSON object when format=json', () => {
+    const logger = new Logger({ level: 'info', format: 'json' });
+    logger.info('structured');
+    expect(captured.log.length).toBe(1);
+    const raw = captured.log[0][0] as string;
+    const obj = JSON.parse(raw);
+    expect(obj.level).toBe('info');
+    expect(obj.prefix).toBe('QA-Agent');
+    expect(obj.message).toBe('structured');
+    expect(typeof obj.ts).toBe('string');
+    // Single-line guarantee (no embedded \n).
+    expect(raw.includes('\n')).toBe(false);
+  });
+
+  it('includes a data field when format=json and data is provided', () => {
+    const logger = new Logger({ level: 'info', format: 'json' });
+    logger.info('with-data', { count: 3, items: ['a', 'b'] });
+    const obj = JSON.parse(captured.log[0][0] as string);
+    expect(obj.data).toEqual({ count: 3, items: ['a', 'b'] });
+  });
+
+  it('omits the data field when format=json and data is undefined', () => {
+    const logger = new Logger({ level: 'info', format: 'json' });
+    logger.info('no-data');
+    const obj = JSON.parse(captured.log[0][0] as string);
+    expect('data' in obj).toBe(false);
+  });
+
+  it('routes warn/error to console.warn/console.error in json mode', () => {
+    const logger = new Logger({ level: 'debug', format: 'json' });
+    logger.warn('w');
+    logger.error('e');
+    expect(captured.warn.length).toBe(1);
+    expect(captured.error.length).toBe(1);
+    expect(JSON.parse(captured.warn[0][0] as string).level).toBe('warn');
+    expect(JSON.parse(captured.error[0][0] as string).level).toBe('error');
+  });
+
+  it('setFormat() flips the format and propagates to child loggers', () => {
+    const parent = new Logger({ level: 'info' });
+    const child = parent.child('Sub');
+
+    parent.setFormat('json');
+    parent.info('p-json');
+    child.info('c-json');
+
+    expect(captured.log.length).toBe(2);
+    const pObj = JSON.parse(captured.log[0][0] as string);
+    const cObj = JSON.parse(captured.log[1][0] as string);
+    expect(pObj.message).toBe('p-json');
+    expect(cObj.message).toBe('c-json');
+    expect(cObj.prefix).toBe('QA-Agent:Sub');
+  });
+
+  it('serializes non-JSON values as a string fallback in json mode', () => {
+    const logger = new Logger({ level: 'info', format: 'json' });
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    logger.info('circular', circular);
+    const obj = JSON.parse(captured.log[0][0] as string);
+    expect(typeof obj.data).toBe('string');
+  });
+});

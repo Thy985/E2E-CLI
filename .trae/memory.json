@@ -2,7 +2,7 @@
   "$schema": "./memory.schema.json",
   "version": "1.0",
   "last_updated": "2026-06-04",
-  "last_updated_by": "ADR-0004 fix batch (v0.3.1 insert bug + runSingleFix stub repair)",
+  "last_updated_by": "ADR-0005 fix batch (v0.4 types 拆分 + logger JSON + core 补测试)",
   "project": {
     "name": "qa-agent",
     "display_name": "QA-Agent (AI 质量医生)",
@@ -115,16 +115,18 @@
     "cli_run_single_fix_flow": "v0.3.1 起 cli/commands/fix.ts 抽出 executeSingleFix(issue, options, config, logger, built) 作为可测试纯函数；runSingleFix 退化为 commander 集成层（找 issue + build context + cleanup）"
   },
   "metrics": {
-    "test_count": 250,
-    "test_files": 21,
-    "test_status": "250 pass / 0 fail (2026-06-04 验证)",
+    "test_count": 279,
+    "test_files": 24,
+    "test_status": "279 pass / 0 fail (2026-06-04 验证)",
     "typecheck": "0 errors (tsc --noEmit)",
-    "src_files": 82,
-    "lines_of_code_approx": 8550,
-    "core_test_coverage": "13 个 core 单元测试（project-info + fix.applyFixes）",
-    "engines_fix_files": "v0.3 后 4 个文件（-2 孤儿: simple-fix.ts, debug.ts）"
+    "src_files": 95,
+    "lines_of_code_approx": 8900,
+    "core_test_coverage": "21 个 core 单元测试（project-info + fix + diagnose + context + v0.4 json 格式）",
+    "engines_fix_files": "v0.3 后 4 个文件（-2 孤儿: simple-fix.ts, debug.ts）",
+    "types_split": "v0.4 起 14 子文件 + barrel index.ts（zero breaking）",
+    "logger_format": "v0.4 起 text 默认 + json opt-in（QA_AGENT_LOG_FORMAT=json 或 new Logger({format:'json'})）"
   },
-  "adrs": ["0001", "0002", "0003"],
+  "adrs": ["0001", "0002", "0003", "0004", "0005"],
   "thresholds": {
     "coverage_warn": 0.6,
     "coverage_reject": 0.3,
