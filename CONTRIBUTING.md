@@ -91,7 +91,6 @@ src/
 ├── cli/           # CLI commands
 ├── skills/        # Skill implementations
 ├── engines/       # Core engines (diagnosis, fix, verify)
-├── web/           # Web Dashboard
 ├── models/        # LLM clients
 └── types/         # TypeScript definitions
 ```
@@ -319,7 +318,7 @@ Include troubleshooting section
 ### Unit Tests
 
 ```typescript
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'bun:test';
 
 describe('YourSkill', () => {
   it('should detect specific issue', async () => {

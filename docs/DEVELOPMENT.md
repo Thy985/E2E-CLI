@@ -257,7 +257,7 @@ pnpm test:watch
 
 ```typescript
 // tests/unit/skills/uiux.test.ts
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'bun:test';
 import uiuxSkill from '../../../src/skills/builtin/uiux';
 
 describe('UI/UX Skill', () => {

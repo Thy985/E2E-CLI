@@ -7,10 +7,8 @@ import { Command } from 'commander';
 import { diagnoseCommand } from './commands/diagnose';
 import { auditCommand } from './commands/audit';
 import { skillCommand } from './commands/skill';
-import { webCommand } from './commands/web';
 import { ciCommand } from './commands/ci';
 import { initCommand } from './commands/init';
-import { guiCommand } from './commands/gui';
 import { uxAuditCommand } from './commands/ux-audit';
 import { designCommand } from './commands/design';
 import { bestPracticesCommand } from './commands/best-practices';
@@ -112,14 +110,6 @@ program
       .action(skillCommand.disable)
   );
 
-// Web command
-program
-  .command('web')
-  .description('Start web interface')
-  .option('-p, --port <port>', 'Port number', '3000')
-  .option('-o, --open', 'Auto-open browser')
-  .action(webCommand);
-
 // CI command
 program
   .command('ci')
@@ -137,17 +127,6 @@ program
       .option('-p, --path <path>', 'Project path', process.cwd())
       .action(ciCommand.run)
   );
-
-// GUI command
-program
-  .command('gui')
-  .description('GUI automation commands')
-  .option('-u, --url <url>', 'Target URL')
-  .option('-s, --scenario <scenario>', 'Test scenario description')
-  .option('--record', 'Record user actions')
-  .option('--play', 'Play recorded actions')
-  .option('--visual', 'Run visual regression test')
-  .action(guiCommand);
 
 // UI/UX Audit command
 program.addCommand(uxAuditCommand);

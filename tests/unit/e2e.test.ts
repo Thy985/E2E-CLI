@@ -2,23 +2,9 @@
  * E2E Skill Tests
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'bun:test';
 import { E2ESkill } from '../../src/skills/builtin/e2e';
-import { SkillContext, Diagnosis, Browser, Page } from '../../src/types';
-
-// Mock browser and page
-const mockPage: Page = {
-  goto: async () => {},
-  screenshot: async () => Buffer.from(''),
-  content: async () => '',
-  evaluate: async <T>(_fn: () => T) => null as unknown as T,
-  close: async () => {},
-};
-
-const mockBrowser: Browser = {
-  newPage: async () => mockPage,
-  close: async () => {},
-};
+import { SkillContext, Diagnosis } from '../../src/types';
 
 describe('E2ESkill', () => {
   let skill: E2ESkill;
@@ -47,11 +33,6 @@ describe('E2ESkill', () => {
           mkdir: async () => {},
           remove: async () => {},
           stat: async () => ({ size: 0, isFile: true, isDirectory: false }),
-        },
-        browser: {
-          launch: async () => mockBrowser,
-          newPage: async () => mockPage,
-          close: async () => {},
         },
         git: {
           getChangedFiles: async () => [],

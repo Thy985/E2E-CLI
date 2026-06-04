@@ -82,7 +82,7 @@ qa-agent dependency
 ```
 
 ## 命令概览
-
+```
 ### diagnose - 诊断
 
 ```bash
@@ -297,20 +297,7 @@ jobs:
           path: .qa-agent/reports/
 ```
 
-## Web Dashboard
-
-启动可视化界面：
-
-```bash
-qa-agent web
-```
-
-功能：
-- 📊 仪表盘 - 统计概览、最新报告、趋势图表
-- 🔍 诊断 - 选择维度、运行诊断、交互式修复
-- 📈 历史 - 历史记录、趋势分析
-
-## 输出示例
+## CI/CD 集成
 
 ```
 📊 诊断摘要
@@ -388,7 +375,6 @@ qa-agent/
 │   ├── tools/          # 工具集
 │   ├── types/          # 类型定义
 │   ├── utils/          # 工具函数
-│   └── web/            # Web UI
 ├── tests/              # 测试
 └── dist/               # 构建输出
 ```
@@ -412,7 +398,6 @@ qa-agent/
 
 ### v0.3.0
 - [ ] 所有 Skills 完整自动修复
-- [ ] Web UI 生产构建
 - [ ] 测试覆盖率 > 80%
 
 ### v1.0.0
