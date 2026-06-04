@@ -1,0 +1,162 @@
+{
+  "$schema": "./memory.schema.json",
+  "version": "1.0",
+  "last_updated": "2026-06-04",
+  "project": {
+    "name": "qa-agent",
+    "display_name": "QA-Agent (AI 质量医生)",
+    "version": "0.1.0",
+    "type": "cli-tool",
+    "description": "AI 驱动的代码质量诊断 + 修复 + 验证一体化工具",
+    "primary_language": "TypeScript",
+    "runtime": "Bun",
+    "test_framework": "bun:test",
+    "package_manager": "bun"
+  },
+  "stack": {
+    "cli_framework": "commander",
+    "web_framework": "hono",
+    "ui": "React (web only)",
+    "browser_automation": "playwright",
+    "a11y": "axe-core",
+    "image_diff": "pixelmatch",
+    "llm_clients": "@anthropic-ai/sdk + fetch (OpenAI 兼容)"
+  },
+  "decisions": {
+    "runtime": {
+      "value": "Bun (非 Node.js)",
+      "adrs": [],
+      "last_verified": "2026-06-04",
+      "confidence": 0.95,
+      "drift_signals": [],
+      "notes": "package.json scripts 全部用 bun；bun.lock 存在"
+    },
+    "storage": {
+      "value": "In-memory Map + JSON file (.qa-agent/cache/storage.json)",
+      "adrs": [],
+      "last_verified": "2026-06-04",
+      "confidence": 0.98,
+      "drift_signals": [],
+      "notes": "src/storage/index.ts 提供 createMemoryStorage / createFileStorage；不使用 SQLite / Redis / Vector DB"
+    },
+    "llm_architecture": {
+      "value": "统一 createModelClient + 6 provider 路由 + retry/schema/usage 子模块",
+      "adrs": [],
+      "last_verified": "2026-06-04",
+      "confidence": 0.98,
+      "drift_signals": [],
+      "notes": "src/models/ 拆为 providers / retry / schema / usage / index；4 个调用点（diagnose/fix/ai-fix/gui-actor）已统一"
+    },
+    "prompt_management": {
+      "value": "src/prompts/ 模板 registry（带 version + 变量注入）",
+      "adrs": [],
+      "last_verified": "2026-06-04",
+      "confidence": 0.95,
+      "drift_signals": [],
+      "notes": "已注册: ai-fix, ai-fix-validate, actor-plan, selector-suggest, e2e-testgen"
+    },
+    "json_parsing": {
+      "value": "括号计数法 extractJsonBlock + type predicate，禁用 regex 抓 JSON",
+      "adrs": [],
+      "last_verified": "2026-06-04",
+      "confidence": 0.95,
+      "drift_signals": []
+    },
+    "retry_strategy": {
+      "value": "指数退避 + jitter + 429/5xx 智能重试 + maxTotalMs 30s",
+      "adrs": [],
+      "last_verified": "2026-06-04",
+      "confidence": 0.95,
+      "drift_signals": []
+    },
+    "test_runner": {
+      "value": "bun:test (禁用 vitest 残留)",
+      "adrs": [],
+      "last_verified": "2026-06-04",
+      "confidence": 0.9,
+      "drift_signals": ["tests/unit/ 仍含 vitest.config.ts，需清理"],
+      "notes": "vitest.config.ts 存在但未被使用（package.json scripts 走 bun test）"
+    },
+    "package_manager_intent": {
+      "value": "bun (README/DEVELOPMENT 已统一)",
+      "adrs": [],
+      "last_verified": "2026-06-04",
+      "confidence": 0.9,
+      "drift_signals": ["pnpm-lock.yaml 仍存在（历史残留）"],
+      "notes": "package.json scripts 用 bun，README 已修正，但 pnpm-lock.yaml 还在仓库根"
+    },
+    "cli_command_naming": {
+      "value": "qa-agent <command> [subcommand]，主命令含 init/diagnose/fix/audit/ci/gui/web/ux-audit/design/best-practices/seo/dependency/skill",
+      "adrs": [],
+      "last_verified": "2026-06-04",
+      "confidence": 0.9,
+      "drift_signals": [],
+      "notes": "ci 子命令含 generate（已从旧 init 改名），与 README 对齐"
+    }
+  },
+  "core_modules": {
+    "src/cli/": "CLI 入口（commander.js），子命令 12+",
+    "src/engines/": "诊断/修复/审计/沙箱/报告 5 个 engine",
+    "src/skills/": "内建 9+ skills（a11y/api/best-practices/complexity/dependency/e2e/performance/security/seo/ui-ux）",
+    "src/models/": "LLM 客户端统一入口（已重构）",
+    "src/prompts/": "Prompt 模板 registry（已建）",
+    "src/storage/": "存储抽象（in-memory + JSON file）",
+    "src/gui/": "Playwright GUI 自动化（actor/recorder/player/visual/...）",
+    "src/web/": "Hono web server + React 前端"
+  },
+  "metrics": {
+    "test_count": 236,
+    "test_files": 19,
+    "test_status": "236 pass / 0 fail (2026-06-04 验证)",
+    "typecheck": "0 errors (tsc --noEmit)",
+    "src_files": 80,
+    "lines_of_code_approx": 8500
+  },
+  "thresholds": {
+    "coverage_warn": 0.6,
+    "coverage_reject": 0.3,
+    "file_count_warn": 3,
+    "line_count_warn": 200,
+    "confidence_decay_days": 30
+  },
+  "hard_blocks": {
+    "files": [
+      ".env",
+      "**/credentials*",
+      "**/secrets*",
+      "**/*.pem",
+      "**/*.key"
+    ],
+    "protected_paths": [
+      "src/storage/index.ts",
+      "src/models/providers.ts",
+      "src/types/index.ts",
+      ".trae/memory.json",
+      ".trae/adr/"
+    ],
+    "dangerous_actions": [
+      "git push --force",
+      "git push --force-with-lease",
+      "rm -rf",
+      "DROP TABLE",
+      "TRUNCATE"
+    ]
+  },
+  "adr_triggers": [
+    "引入 / 替换数据库 / 存储方案",
+    "引入 / 替换核心框架或运行时",
+    "修改 src/storage/、src/models/、src/cli/index.ts、src/types/ 的核心接口",
+    "新增中间件 / 状态管理 / 消息队列",
+    "改构建 / 部署 / CI 流水线",
+    "改 LLM 调用协议或新增 provider"
+  ],
+  "verification": {
+    "last_verified_at": "2026-06-04",
+    "verifier": "manual + bun test + tsc --noEmit",
+    "next_verification_due": "2026-07-04",
+    "known_issues": [
+      "tests/unit/ 仍含 vitest.config.ts（与 bun:test 决策冲突）",
+      "pnpm-lock.yaml 仍存在（应删除）"
+    ]
+  }
+}
