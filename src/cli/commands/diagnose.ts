@@ -10,7 +10,7 @@ import { A11ySkill } from '../../skills/builtin/a11y';
 import { E2ESkill } from '../../skills/builtin/e2e';
 import { PerformanceSkill } from '../../skills/builtin/performance';
 import { SecuritySkill } from '../../skills/builtin/security';
-import { UIUXSkill } from '../../skills/builtin/ui-ux';
+import { UIUXSkill } from '../../skills/builtin/uiux';
 import { SEOSkill } from '../../skills/builtin/seo';
 import { APISkill } from '../../skills/builtin/api';
 import { DependencySkill } from '../../skills/builtin/dependency';

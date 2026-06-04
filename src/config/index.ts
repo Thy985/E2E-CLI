@@ -5,6 +5,7 @@
 
 import * as path from 'path';
 import * as fs from 'fs';
+import * as yaml from 'js-yaml';
 
 export interface QAConfig {
   version: number;
@@ -131,7 +132,7 @@ function findConfigFile(projectPath: string): string | null {
 /**
  * Parse config file based on extension
  */
-async function parseConfigFile(filePath: string): Promise<QAConfig> {
+export async function parseConfigFile(filePath: string): Promise<QAConfig> {
   const ext = path.extname(filePath);
   const content = fs.readFileSync(filePath, 'utf-8');
 
@@ -150,93 +151,50 @@ async function parseConfigFile(filePath: string): Promise<QAConfig> {
 }
 
 /**
- * Parse YAML config (simple implementation)
+ * Parse YAML config using the battle-tested `js-yaml` library.
+ * 覆盖：嵌套 map、数组、多行字符串、锚点、注释里带 `:`、数字/布尔/null/Date 等所有常见情况。
  */
 function parseYaml(content: string): QAConfig {
-  // Simple YAML parser for basic configs
-  // For production, consider using a proper YAML library
-  const result: Record<string, unknown> = {};
-  const lines = content.split('\n');
-  let currentKey = '';
-  let currentIndent = 0;
-  const stack: Array<{ key: string; obj: Record<string, unknown>; indent: number }> = [];
-  
-  for (const line of lines) {
-    if (line.trim().startsWith('#') || line.trim() === '') continue;
-    
-    const indent = line.search(/\S/);
-    const [key, ...valueParts] = line.trim().split(':');
-    const value = valueParts.join(':').trim();
-    
-    if (indent > currentIndent && stack.length > 0) {
-      // Nested
-      stack.push({ key: currentKey, obj: result[currentKey] as Record<string, unknown>, indent: currentIndent });
-    } else if (indent < currentIndent) {
-      // Pop stack
-      while (stack.length > 0 && stack[stack.length - 1].indent >= indent) {
-        stack.pop();
-      }
+  try {
+    const loaded = yaml.load(content, { schema: yaml.JSON_SCHEMA });
+    if (loaded === null || loaded === undefined) {
+      return { version: 1 };
     }
-    
-    currentIndent = indent;
-    currentKey = key.trim();
-    
-    if (value) {
-      // Has value
-      const parsedValue = parseYamlValue(value);
-      if (stack.length > 0) {
-        stack[stack.length - 1].obj[currentKey] = parsedValue;
-      } else {
-        result[currentKey] = parsedValue;
-      }
-    } else {
-      // Object start
-      const newObj: Record<string, unknown> = {};
-      if (stack.length > 0) {
-        stack[stack.length - 1].obj[currentKey] = newObj;
-      } else {
-        result[currentKey] = newObj;
-      }
+    if (typeof loaded !== 'object' || Array.isArray(loaded)) {
+      throw new Error('YAML config must be a mapping at the root');
     }
+    return { version: 1, ...(loaded as Partial<QAConfig>) };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`Failed to parse YAML config: ${msg}`);
   }
-  
-  return result as unknown as QAConfig;
-}
-
-function parseYamlValue(value: string): unknown {
-  // Remove quotes
-  if ((value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))) {
-    return value.slice(1, -1);
-  }
-  
-  // Boolean
-  if (value === 'true') return true;
-  if (value === 'false') return false;
-  
-  // Number
-  if (/^-?\d+$/.test(value)) return parseInt(value, 10);
-  if (/^-?\d+\.\d+$/.test(value)) return parseFloat(value);
-  
-  // Array
-  if (value.startsWith('[') && value.endsWith(']')) {
-    return value.slice(1, -1).split(',').map(s => s.trim());
-  }
-  
-  return value;
 }
 
 /**
- * Parse JS/TS config file
+ * Parse JS/TS config file via dynamic import.
+ * .ts 文件需要 bun/tsx 之类的运行时；纯 .js 文件在 ESM 项目下也能 import。
  */
 async function parseJsConfig(filePath: string): Promise<QAConfig> {
   try {
-    // Use Bun's require for TS files
-    const config = require(filePath);
-    return { version: 1, ...(config?.default || config || {}) };
+    const fileUrl = pathToFileUrl(filePath);
+    const mod = await import(fileUrl);
+    const config = mod.default ?? mod;
+    if (!config || typeof config !== 'object') {
+      return { version: 1 };
+    }
+    return { version: 1, ...config };
   } catch {
     return { version: 1 };
   }
+}
+
+function pathToFileUrl(p: string): string {
+  // Node 也有 url.pathToFileURL，跨平台拼一份避免依赖运行时
+  const normalized = p.replace(/\\/g, '/');
+  if (normalized.startsWith('/')) {
+    return `file://${normalized}`;
+  }
+  return `file:///${normalized}`;
 }
 
 /**

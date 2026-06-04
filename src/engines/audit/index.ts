@@ -271,41 +271,45 @@ export class AuditEngine {
   ): Promise<TrendAnalysis | undefined> {
     // Look for historical reports
     const historyDir = path.join(projectPath, '.qa-agent', 'reports');
-    
+
     try {
       const files = await fs.readdir(historyDir);
       const jsonReports = files
         .filter(f => f.startsWith('diagnose-') && f.endsWith('.json'))
-        .sort()
-        .slice(-5); // Last 5 reports
+        .sort();
 
       if (jsonReports.length === 0) {
         return undefined;
       }
 
+      // 解析历史报告，顺便按时间窗口过滤
+      const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
       const history: TrendAnalysis['history'] = [];
-      
+
       for (const file of jsonReports) {
         try {
           const content = await fs.readFile(path.join(historyDir, file), 'utf-8');
           const report = JSON.parse(content);
+          const ts = Date.parse(report.timestamp);
+          if (!Number.isFinite(ts) || ts < cutoff) continue;
           history.push({
             date: report.timestamp,
-            score: report.summary?.score || 0,
-            issues: report.summary?.totalIssues || 0,
+            score: report.summary?.score ?? 0,
+            issues: report.summary?.totalIssues ?? 0,
           });
         } catch {
           // Skip invalid reports
         }
       }
 
-      if (history.length < 2) {
+      if (history.length < 1) {
         return undefined;
       }
 
-      const previousScore = history[history.length - 2].score;
+      // 上一次得分 = 最近一次历史报告
+      const previousScore = history[history.length - 1].score;
       const change = currentScore - previousScore;
-      
+
       let trend: 'improving' | 'stable' | 'declining';
       if (change > 5) trend = 'improving';
       else if (change < -5) trend = 'declining';

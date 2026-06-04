@@ -9,7 +9,6 @@ import { createLogger } from '../../utils/logger';
 import { loadConfig } from '../../config';
 import { FixEngine } from '../../engines/fix';
 import { BatchFixEngine } from '../../engines/fix/batch';
-import { VerifyEngine } from '../../engines/verify';
 import { UIUXSkill } from '../../skills/builtin/uiux';
 import { BestPracticesSkill } from '../../skills/builtin/best-practices';
 import { SEOSkill } from '../../skills/builtin/seo';

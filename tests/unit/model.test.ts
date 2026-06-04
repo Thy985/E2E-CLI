@@ -16,19 +16,36 @@ import {
 } from '../../src/models';
 
 describe('Model Provider Detection', () => {
-  it('should detect claude provider by sk-ant prefix', () => {
+  it('should detect claude provider by sk-ant- prefix', () => {
     expect(detectProvider('sk-ant-api03-abc123def456')).toBe('claude');
   });
 
-  it('should detect deepseek provider by sk- prefix with length', () => {
-    expect(detectProvider('sk-abcdefghijk1234567890abcdefghijk1234567890abcdefghijk123456')).toBe('deepseek');
+  it('should detect deepseek provider by sk- + hex pattern', () => {
+    // 32 位 hex，符合 DeepSeek 旧 key 格式
+    expect(detectProvider('sk-' + 'a'.repeat(32))).toBe('deepseek');
+    expect(detectProvider('sk-' + '0123456789abcdef'.repeat(2))).toBe('deepseek');
   });
 
-  it('should detect openai provider by sk- prefix', () => {
-    expect(detectProvider('sk-OpenAIKeyHere123456')).toBe('openai');
+  it('should detect openai provider by long sk- prefix', () => {
+    // OpenAI 新 key 长度普遍 > 60，且非纯 hex
+    expect(detectProvider('sk-OpenAIKeyHere1234567890abcdefghijk1234567890')).toBe('openai');
+    expect(detectProvider('sk-proj-abc123')).toBe('openai');
   });
 
-  it('should default to deepseek', () => {
+  it('should detect minimax provider by cmk- prefix', () => {
+    expect(detectProvider('cmk-abc123')).toBe('minimax');
+  });
+
+  it('should detect siliconflow provider by Bearer prefix', () => {
+    expect(detectProvider('Bearer some-token-here')).toBe('siliconflow');
+  });
+
+  it('should detect groq provider by gsk_ prefix', () => {
+    expect(detectProvider('gsk_' + 'a'.repeat(32))).toBe('groq');
+  });
+
+  it('should default to deepseek for empty / unknown', () => {
+    expect(detectProvider('')).toBe('deepseek');
     expect(detectProvider('unknown-key')).toBe('deepseek');
   });
 });

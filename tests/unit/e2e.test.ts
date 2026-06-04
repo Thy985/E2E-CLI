@@ -312,7 +312,41 @@ line 4`;
       expect(fix).toBeDefined();
       expect(fix.diagnosisId).toBe('E2E-test-123');
       expect(fix.changes.length).toBeGreaterThan(0);
-      expect(fix.autoApplicable).toBe(true);
+      // fix 是保守策略：只追加 TODO 注释，强制人工 review，因此 autoApplicable=false
+      expect(fix.autoApplicable).toBe(false);
+      expect(fix.notes).toBeDefined();
+    });
+
+    it('should throw if selector cannot be located in file', async () => {
+      const diagnosis: Diagnosis = {
+        id: 'E2E-test-456',
+        skill: 'e2e',
+        type: 'functionality',
+        severity: 'warning',
+        title: '使用脆弱的选择器',
+        description: '选择器可能不稳定',
+        location: {
+          file: 'e2e/test.spec.ts',
+          line: 10,
+        },
+        metadata: {
+          selector: 'div:nth-child(2)',
+          suggestion: 'getByRole()',
+        },
+      };
+
+      const contextMissingSelector = {
+        ...mockContext,
+        tools: {
+          ...mockContext.tools,
+          fs: {
+            ...mockContext.tools.fs,
+            readFile: async () => '// 啥都没有的相关代码',
+          },
+        },
+      };
+
+      await expect(skill.fix(diagnosis, contextMissingSelector)).rejects.toThrow(/Cannot locate selector/);
     });
   });
 });

@@ -70,7 +70,7 @@ export class VisualChecker {
         if (!isInTokens) {
           issues.push({
             id: `color-${file}-${index}`,
-            skill: 'uiux-audit',
+            skill: 'ui-ux',
             type: 'ui-ux',
             severity: 'warning',
             title: '使用非规范颜色',
@@ -107,12 +107,12 @@ export class VisualChecker {
       let match;
       while ((match = spacingRegex.exec(line)) !== null) {
         const value = parseInt(match[2]);
-        
+
         // 检查是否符合8px网格
         if (value % 8 !== 0 && value !== 4) {
           issues.push({
             id: `spacing-${file}-${index}`,
-            skill: 'uiux-audit',
+            skill: 'ui-ux',
             type: 'ui-ux',
             severity: 'info',
             title: '间距不符合8px网格',
@@ -155,7 +155,7 @@ export class VisualChecker {
         if (!standardRadii.includes(value)) {
           issues.push({
             id: `radius-${file}-${index}`,
-            skill: 'uiux-audit',
+            skill: 'ui-ux',
             type: 'ui-ux',
             severity: 'info',
             title: '圆角值不规范',

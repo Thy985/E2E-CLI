@@ -55,7 +55,7 @@ export class LayoutChecker {
         // 简单检查：如果只有2-3个元素，space-between可能不是最佳选择
         issues.push({
           id: `flex-${file}-${index}`,
-          skill: 'uiux-audit',
+          skill: 'ui-ux',
           type: 'ui-ux',
           severity: 'info',
           title: 'Flexbox对齐方式检查',
@@ -78,7 +78,7 @@ export class LayoutChecker {
       if (line.includes('display: flex') && !content.includes('align-items')) {
         issues.push({
           id: `flex-align-${file}-${index}`,
-          skill: 'uiux-audit',
+          skill: 'ui-ux',
           type: 'ui-ux',
           severity: 'info',
           title: '缺少垂直对齐设置',
@@ -110,7 +110,7 @@ export class LayoutChecker {
     if (fixedWidthRegex.test(content) && !content.includes('@media')) {
       issues.push({
         id: `responsive-${file}`,
-        skill: 'uiux-audit',
+        skill: 'ui-ux',
         type: 'ui-ux',
         severity: 'warning',
         title: '缺少响应式处理',
@@ -142,7 +142,7 @@ export class LayoutChecker {
         if (line.includes('container') || line.includes('wrapper') || line.includes('layout')) {
           issues.push({
             id: `container-${file}-${index}`,
-            skill: 'uiux-audit',
+            skill: 'ui-ux',
             type: 'ui-ux',
             severity: 'info',
             title: '建议添加最大宽度约束',
