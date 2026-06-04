@@ -2,6 +2,8 @@
 
 > 这是 AI 在执行用户任务前/后必须遵守的审查规则。
 > 配合 `.trae/memory.json`（项目状态）和 `.trae/adr/`（历史决策）使用。
+>
+> **v0.5 升级**：context loading + drift detection + memory health 现已工具链化到 [`scripts/preflight.sh`](../scripts/preflight.sh)。每个任务开工前必须先跑 `scripts/preflight.sh` 拿结构化报告，再按本规则做任务分类和输出决策块。退出码 0/1/2 = pass/warn/block。
 
 ## 0. 你的角色
 
@@ -18,17 +20,27 @@
 
 收到任何"实施型"任务时（不是问问题/查文档），按顺序执行：
 
+### 1.0 跑 preflight（v0.5 强制）
+
+```bash
+scripts/preflight.sh          # 文本报告（默认）
+scripts/preflight.sh --format=json  # JSON 给程序消费
+```
+
+读取输出中的：
+- `decision`: PASS / WARN / BLOCK — 决定是否进入 1.1 决策流程
+- `memory.known_issues`: 当前未解决的债
+- `drift.*`: 5 个 drift 信号计数
+- `hardblocks.files`: hard block 命中文件
+
+如果 `decision == BLOCK` — **不进入 1.1**，直接走 §3 hard block 流程。
+如果 `decision == WARN` — 在 1.3 决策块中显式呈现给用户。
+
 ### 1.1 加载上下文
 
 ```bash
-# 1) 读项目记忆
-cat .trae/memory.json
-
-# 2) 列出相关 ADR（如有）
-ls .trae/adr/ | head -20
-
-# 3) 看最近相关文件的 git 历史（限定 5 条 + 限定文件）
-git log -5 --oneline -- <affected_files>
+# preflight 已做：读 memory.json + 列 ADR + git log
+# 不需要再手动 cat
 ```
 
 如果 `.trae/memory.json` 不存在 → 输出 `[LOW-CONFIDENCE] 无项目记忆，全面审查结果参考价值有限`，再继续。
@@ -162,22 +174,14 @@ confidence_effective = confidence * (1 - min(days_since_verified, 90) / 90)
 
 ## 4. Memory Drift 检测
 
-每次审查时，**主动检查** 5 个高频漂移信号：
+preflight.sh 已自动跑这 5 个 grep 信号（见 §1.0），但 AI 在审查时仍可手动验证：
 
 ```bash
-# 1) storage: memory 说 JSON，但代码出现 SQLite / Redis / PG
+# preflight 已自动跑，AI 手动复现用：
 grep -lE "(sqlite|postgres|mysql|redis|chromadb|qdrant)" src/ -r 2>/dev/null
-
-# 2) runtime: memory 说 Bun，但代码出现 node:fs / process.env.NODE_ENV
 grep -lE "process\\.env\\.NODE_ENV" src/ -r 2>/dev/null
-
-# 3) llm: 出现新 provider（openai/anthropic/claude/minimax 之外）
 grep -lE "(gemini|cohere|mistral|llama)" src/models/ -r 2>/dev/null
-
-# 4) test: 出现 vitest 残留
-find . -name "*.test.ts" -exec grep -l "from 'vitest'" {} \; 2>/dev/null
-
-# 5) package_manager: 出现 pnpm/yarn 残留
+find src -name "*.ts" -not -path "*/node_modules/*" -exec grep -l "from 'vitest'" {} \; 2>/dev/null
 ls pnpm-lock.yaml yarn.lock 2>/dev/null
 ```
 
