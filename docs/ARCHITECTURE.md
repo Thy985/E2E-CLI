@@ -139,12 +139,12 @@ class DiagnosisEngine {
 
 由各 Skill 自行实现 `fix(diagnosis, context)`，由 `qa-agent fix` 命令统一调度：
 
-- `src/engines/fix/index.ts` 入口
-- `src/engines/fix/batch.ts` 批量修复
-- `src/engines/fix/rollback.ts` 回滚点管理
-- `src/engines/fix/enhanced.ts` 增强修复（待完善）
-- `src/engines/fix/simple-fix.ts` 简单修复
-- `src/engines/fix/debug.ts` 调试模式
+- `src/engines/fix/index.ts` Barrel（v0.3 起 re-export `./enhanced` 的 FixEngine）
+- `src/engines/fix/enhanced.ts` 修复引擎（RollbackManager + VerifyEngine 集成）
+- `src/engines/fix/batch.ts` 批量修复（BatchFixEngine）
+- `src/engines/fix/rollback.ts` 回滚点管理（独立组件）
+- 纯 IO 路径走 `src/core/fix.ts` 的 `applyFixes()`（v0.2 新增）
+- 历史：`simple-fix.ts` / `debug.ts` 已在 v0.3 清理（孤儿代码）
 
 ### 3.3 验证引擎 `src/engines/verify/`
 

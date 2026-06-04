@@ -2,7 +2,7 @@
   "$schema": "./memory.schema.json",
   "version": "1.0",
   "last_updated": "2026-06-04",
-  "last_updated_by": "ADR-0002 fix batch (v0.2 core extraction)",
+  "last_updated_by": "ADR-0003 fix batch (v0.3 fix engine cleanup)",
   "project": {
     "name": "qa-agent",
     "display_name": "QA-Agent (AI 质量医生)",
@@ -96,31 +96,33 @@
     }
   },
   "core_modules": {
-    "src/core/": "业务逻辑层（v0.2 新建）：project-info / context / diagnose / fix，CLI 和 web API 共用",
+    "src/core/": "业务逻辑层（v0.2）：project-info / context / diagnose / fix，CLI 和 web API 共用",
     "src/cli/": "CLI 入口（commander.js），thin wrap 调用 src/core/",
-    "src/engines/": "诊断/修复/审计/沙箱/报告 5 个 engine（orchestration 层）",
+    "src/engines/": "诊断/修复/审计/沙箱/报告 5 个 engine（orchestration 层）。v0.3 后 fix/ 简化为 4 个文件（index barrel + enhanced + batch + rollback）",
     "src/skills/": "内建 9+ skills（a11y/api/best-practices/complexity/dependency/e2e/performance/security/seo/ui-ux）",
-    "src/models/": "LLM 客户端统一入口（已重构）",
-    "src/prompts/": "Prompt 模板 registry（已建）",
+    "src/models/": "LLM 客户端统一入口（v0.1 重构）",
+    "src/prompts/": "Prompt 模板 registry（v0.1 新建）",
     "src/storage/": "存储抽象（in-memory + JSON file）",
     "src/gui/": "Playwright GUI 自动化（actor/recorder/player/visual/...）",
     "src/web/": "Hono web server + thin wrap 调用 src/core/（v0.2 重构）"
   },
   "architecture_decisions": {
     "core_layer": "src/core/ 统一业务逻辑（getProjectInfo / buildSkillContext / runDiagnose / previewFixes / applyFixes），CLI 和 web 入口只做 IO 包装",
-    "fix_pipeline": "applyFixes 是纯 IO（registry-free），批量 + sandbox 用 engines/fix/batch.ts",
-    "skill_drift": "BestPracticesSkill 之前在 cli/diagnose.ts 漏注册，v0.2 改用 getRegisteredSkills() 统一后自动包含"
+    "fix_pipeline": "applyFixes 是纯 IO（registry-free），批量 + sandbox + rollback + verify 用 engines/fix/{enhanced,batch,rollback}.ts",
+    "skill_drift": "BestPracticesSkill 之前在 cli/diagnose.ts 漏注册，v0.2 改用 getRegisteredSkills() 统一后自动包含",
+    "fix_engine_singularity": "v0.3 起 engines/fix/index.ts 是 barrel，FixEngine 唯一实现来自 enhanced.ts（含 RollbackManager + VerifyEngine 集成），删除原 sandbox-based 的 index.ts FixEngine（无外部调用方）"
   },
   "metrics": {
     "test_count": 250,
     "test_files": 21,
     "test_status": "250 pass / 0 fail (2026-06-04 验证)",
     "typecheck": "0 errors (tsc --noEmit)",
-    "src_files": 84,
-    "lines_of_code_approx": 8800,
-    "core_test_coverage": "12 个 core 单元测试（project-info + fix.applyFixes）"
+    "src_files": 82,
+    "lines_of_code_approx": 8550,
+    "core_test_coverage": "13 个 core 单元测试（project-info + fix.applyFixes）",
+    "engines_fix_files": "v0.3 后 4 个文件（-2 孤儿: simple-fix.ts, debug.ts）"
   },
-  "adrs": ["0001", "0002"],
+  "adrs": ["0001", "0002", "0003"],
   "thresholds": {
     "coverage_warn": 0.6,
     "coverage_reject": 0.3,
@@ -164,11 +166,11 @@
     "verifier": "ADR-0001 fix batch (bun test + tsc --noEmit + drift grep)",
     "next_verification_due": "2026-07-04",
     "known_issues": [
-      "engines/fix/ 6 文件命名混乱（v0.2 推迟到 v0.3 重命名/合并）",
       "src/types/index.ts 491 行未拆分（v0.3 TODO）",
       "logger 是 console.log 而非结构化 JSON（v0.3 TODO）",
       "applyFixes insert 空文件会多空行（v0.3 小修）",
-      "core/ 没覆盖 diagnose 和 context（v0.3 补测试）"
+      "core/ 没覆盖 diagnose 和 context（v0.3 补测试）",
+      "cli/commands/fix.ts runSingleFix 是 stub，实际未调用 FixEngine.applyFix（v0.3 修 stub）"
     ]
   }
 }

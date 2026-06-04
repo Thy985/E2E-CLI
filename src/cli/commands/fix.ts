@@ -110,7 +110,7 @@ async function runSingleFix(options: any, config: any, logger: any) {
     autoApproveLowRisk: true,
     sandboxEnabled: options.preview,
     previewBeforeApply: options.preview,
-    verifyAfterFix: options.verify,
+    verifyAfterApply: options.verify,
   });
 
   logger.info(`Would fix: ${issue.title}`);
