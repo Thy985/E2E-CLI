@@ -2,7 +2,7 @@
  * SkillRegistry Tests
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, mock, beforeEach } from 'bun:test';
 import { SkillRegistry, createSkillRegistry } from '../../src/skills/registry';
 import { Skill, SkillContext, SkillCapability, SkillTrigger, Diagnosis } from '../../src/types';
 import { Logger, createLogger } from '../../src/utils/logger';
@@ -242,36 +242,36 @@ function createMockContext(): SkillContext {
     logger: createLogger({ level: 'error' }),
     tools: {
       fs: {
-        readFile: vi.fn(),
-        writeFile: vi.fn(),
-        exists: vi.fn().mockResolvedValue(false),
-        glob: vi.fn().mockResolvedValue([]),
-        mkdir: vi.fn(),
-        remove: vi.fn(),
-        stat: vi.fn(),
+        readFile: mock(),
+        writeFile: mock(),
+        exists: mock(() => Promise.resolve(false)),
+        glob: mock(() => Promise.resolve([])),
+        mkdir: mock(),
+        remove: mock(),
+        stat: mock(),
       },
       browser: {
-        launch: vi.fn(),
-        newPage: vi.fn(),
-        close: vi.fn(),
+        launch: mock(),
+        newPage: mock(),
+        close: mock(),
       },
       git: {
-        getChangedFiles: vi.fn().mockResolvedValue([]),
-        getCurrentBranch: vi.fn().mockResolvedValue('main'),
-        getCommitHash: vi.fn().mockResolvedValue('abc123'),
+        getChangedFiles: mock(() => Promise.resolve([])),
+        getCurrentBranch: mock(() => Promise.resolve('main')),
+        getCommitHash: mock(() => Promise.resolve('abc123')),
       },
       shell: {
-        execute: vi.fn().mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 }),
+        execute: mock(() => Promise.resolve({ stdout: '', stderr: '', exitCode: 0 })),
       },
     },
     model: {
-      chat: vi.fn().mockResolvedValue(''),
+      chat: mock(() => Promise.resolve('')),
     },
     storage: {
-      get: vi.fn().mockResolvedValue(null),
-      set: vi.fn(),
-      delete: vi.fn(),
-      clear: vi.fn(),
+      get: mock(() => Promise.resolve(null)),
+      set: mock(),
+      delete: mock(),
+      clear: mock(),
     },
   };
 }

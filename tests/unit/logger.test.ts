@@ -1,32 +1,52 @@
 /**
  * Logger Tests
+ *
+ * Note: bun:test does not export `spyOn` (it ships `mock` instead).
+ * We capture console calls into arrays and assert against them.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { Logger, createLogger, LoggerOptions } from '../../src/utils/logger';
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import { Logger, createLogger } from '../../src/utils/logger';
+
+type ConsoleCalls = { log: unknown[][]; warn: unknown[][]; error: unknown[][] };
+
+const captured: ConsoleCalls = { log: [], warn: [], error: [] };
+const original = {
+  log: console.log.bind(console),
+  warn: console.warn.bind(console),
+  error: console.error.bind(console),
+};
+
+function reset(): void {
+  captured.log.length = 0;
+  captured.warn.length = 0;
+  captured.error.length = 0;
+}
+
+beforeEach(() => {
+  reset();
+  console.log = (...args: unknown[]) => {
+    captured.log.push(args);
+  };
+  console.warn = (...args: unknown[]) => {
+    captured.warn.push(args);
+  };
+  console.error = (...args: unknown[]) => {
+    captured.error.push(args);
+  };
+});
+
+afterEach(() => {
+  console.log = original.log;
+  console.warn = original.warn;
+  console.error = original.error;
+});
+
+function findCall(calls: unknown[][], predicate: (msg: string) => boolean): boolean {
+  return calls.some((call) => typeof call[0] === 'string' && predicate(call[0]));
+}
 
 describe('Logger', () => {
-  let logger: Logger;
-  let consoleSpy: {
-    log: ReturnType<typeof vi.spyOn>;
-    warn: ReturnType<typeof vi.spyOn>;
-    error: ReturnType<typeof vi.spyOn>;
-  };
-
-  beforeEach(() => {
-    consoleSpy = {
-      log: vi.spyOn(console, 'log').mockImplementation(() => {}),
-      warn: vi.spyOn(console, 'warn').mockImplementation(() => {}),
-      error: vi.spyOn(console, 'error').mockImplementation(() => {}),
-    };
-  });
-
-  afterEach(() => {
-    consoleSpy.log.mockRestore();
-    consoleSpy.warn.mockRestore();
-    consoleSpy.error.mockRestore();
-  });
-
   describe('constructor', () => {
     it('should create logger with default options', () => {
       const logger = new Logger();
@@ -48,16 +68,15 @@ describe('Logger', () => {
     it('should log debug message when level is debug', () => {
       const logger = new Logger({ level: 'debug' });
       logger.debug('test message');
-      expect(consoleSpy.log).toHaveBeenCalledWith(
-        expect.stringContaining('[QA-Agent]'),
-        ''
-      );
+      expect(captured.log.length).toBe(1);
+      expect(captured.log[0][0]).toContain('[QA-Agent]');
+      expect(captured.log[0][0]).toContain('test message');
     });
 
     it('should not log debug message when level is info', () => {
       const logger = new Logger({ level: 'info' });
       logger.debug('test message');
-      expect(consoleSpy.log).not.toHaveBeenCalled();
+      expect(captured.log.length).toBe(0);
     });
   });
 
@@ -65,20 +84,18 @@ describe('Logger', () => {
     it('should log info message when level is info', () => {
       const logger = new Logger({ level: 'info' });
       logger.info('test message');
-      expect(consoleSpy.log).toHaveBeenCalledWith(
-        expect.stringContaining('[INFO]'),
-        ''
-      );
+      expect(captured.log.length).toBe(1);
+      expect(captured.log[0][0]).toContain('[INFO]');
+      expect(captured.log[0][0]).toContain('test message');
     });
 
     it('should log info message with data', () => {
       const logger = new Logger({ level: 'info' });
       const data = { key: 'value' };
       logger.info('test message', data);
-      expect(consoleSpy.log).toHaveBeenCalledWith(
-        expect.stringContaining('[INFO]'),
-        data
-      );
+      expect(captured.log.length).toBe(1);
+      expect(captured.log[0][0]).toContain('[INFO]');
+      expect(captured.log[0][1]).toEqual(data);
     });
   });
 
@@ -86,16 +103,14 @@ describe('Logger', () => {
     it('should log warn message', () => {
       const logger = new Logger({ level: 'warn' });
       logger.warn('test message');
-      expect(consoleSpy.warn).toHaveBeenCalledWith(
-        expect.stringContaining('[WARN]'),
-        ''
-      );
+      expect(captured.warn.length).toBe(1);
+      expect(captured.warn[0][0]).toContain('[WARN]');
     });
 
     it('should not log warn message when level is error', () => {
       const logger = new Logger({ level: 'error' });
       logger.warn('test message');
-      expect(consoleSpy.warn).not.toHaveBeenCalled();
+      expect(captured.warn.length).toBe(0);
     });
   });
 
@@ -103,10 +118,8 @@ describe('Logger', () => {
     it('should log error message', () => {
       const logger = new Logger({ level: 'error' });
       logger.error('test message');
-      expect(consoleSpy.error).toHaveBeenCalledWith(
-        expect.stringContaining('[ERROR]'),
-        ''
-      );
+      expect(captured.error.length).toBe(1);
+      expect(captured.error[0][0]).toContain('[ERROR]');
     });
   });
 
@@ -117,18 +130,28 @@ describe('Logger', () => {
 
       child.info('test');
 
-      expect(consoleSpy.log).toHaveBeenCalled();
-      const call = consoleSpy.log.mock.calls[0];
-      expect(call[0]).toContain('Parent:Child');
+      expect(captured.log.length).toBe(1);
+      expect(captured.log[0][0]).toContain('Parent:Child');
     });
 
-    it('should preserve log level from parent', () => {
+    it('should preserve log level from parent (debug → child can debug)', () => {
       const parent = new Logger({ level: 'debug' });
       const child = parent.child('Child');
 
       child.debug('test');
 
-      expect(consoleSpy.log).toHaveBeenCalled();
+      expect(captured.log.length).toBe(1);
+      expect(captured.log[0][0]).toContain('[DEBUG]');
+    });
+
+    it('should propagate setLevel() from parent to child', () => {
+      const parent = new Logger({ level: 'info' });
+      const child = parent.child('Inner');
+
+      parent.setLevel('debug');
+      child.debug('after-setLevel');
+
+      expect(findCall(captured.log, (m) => m.includes('[DEBUG]'))).toBe(true);
     });
   });
 
@@ -140,9 +163,9 @@ describe('Logger', () => {
       logger.warn('test');
       logger.error('test');
 
-      expect(consoleSpy.log).not.toHaveBeenCalled();
-      expect(consoleSpy.warn).not.toHaveBeenCalled();
-      expect(consoleSpy.error).not.toHaveBeenCalled();
+      expect(captured.log.length).toBe(0);
+      expect(captured.warn.length).toBe(0);
+      expect(captured.error.length).toBe(0);
     });
   });
 });

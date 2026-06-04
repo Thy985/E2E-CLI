@@ -2,7 +2,7 @@
  * Security Skill Tests
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'bun:test';
 import { SecuritySkill } from '../../src/skills/builtin/security';
 import { SkillContext, Browser, Page } from '../../src/types';
 

@@ -38,7 +38,7 @@ This project and everyone participating in it is governed by our commitment to:
 ### Prerequisites
 
 - **Node.js** >= 18.0.0
-- **Bun** >= 1.0.0 (recommended) or **pnpm** >= 8.0.0
+- **Bun** >= 1.0.0 (recommended)
 - **Git**
 - **Docker** (optional, for sandbox testing)
 

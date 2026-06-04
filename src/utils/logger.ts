@@ -1,8 +1,11 @@
 /**
  * Logger implementation
+ *
+ * 设计要点：
+ * - `level` 通过对象引用（`levelRef`）在 parent/child 间共享
+ * - `setLevel()` 修改 ref.v，所有引用同一 ref 的 logger 立即响应
+ * - `quiet` 同理（`quietRef`）
  */
-
-import { Severity } from '../types';
 
 export interface LoggerOptions {
   level: 'debug' | 'info' | 'warn' | 'error';
@@ -15,17 +18,32 @@ const LOG_LEVELS = {
   info: 1,
   warn: 2,
   error: 3,
+} as const;
+
+const LEVEL_NAMES: Record<number, LoggerOptions['level']> = {
+  0: 'debug',
+  1: 'info',
+  2: 'warn',
+  3: 'error',
 };
 
 export class Logger {
-  private level: number;
+  private levelRef: { v: number };
+  private quietRef: { v: boolean };
   private prefix: string;
-  private quiet: boolean;
 
   constructor(options: LoggerOptions = { level: 'info' }) {
-    this.level = LOG_LEVELS[options.level];
+    this.levelRef = { v: LOG_LEVELS[options.level] };
+    this.quietRef = { v: options.quiet ?? false };
     this.prefix = options.prefix || 'QA-Agent';
-    this.quiet = options.quiet || false;
+  }
+
+  private get level(): number {
+    return this.levelRef.v;
+  }
+
+  private get quiet(): boolean {
+    return this.quietRef.v;
   }
 
   debug(message: string, data?: any): void {
@@ -52,14 +70,27 @@ export class Logger {
     }
   }
 
+  /**
+   * Create a child logger. Shares `level` and `quiet` with the parent
+   * (via shared object references) so setLevel() on the parent propagates.
+   * The prefix is independent.
+   */
   child(prefix: string): Logger {
-    return new Logger({
-      level: Object.keys(LOG_LEVELS).find(
-        k => LOG_LEVELS[k as keyof typeof LOG_LEVELS] === this.level
-      ) as LoggerOptions['level'],
+    const child = new Logger({
+      level: LEVEL_NAMES[this.level] ?? 'info',
       prefix: `${this.prefix}:${prefix}`,
       quiet: this.quiet,
     });
+    child.levelRef = this.levelRef;
+    child.quietRef = this.quietRef;
+    return child;
+  }
+
+  /**
+   * Update the active level. Propagates to any child created via #child().
+   */
+  setLevel(level: LoggerOptions['level']): void {
+    this.levelRef.v = LOG_LEVELS[level];
   }
 }
 

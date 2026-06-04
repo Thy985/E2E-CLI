@@ -2,7 +2,7 @@
  * E2E Skill Tests
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'bun:test';
 import { E2ESkill } from '../../src/skills/builtin/e2e';
 import { SkillContext, Diagnosis, Browser, Page } from '../../src/types';
 

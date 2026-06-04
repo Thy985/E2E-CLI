@@ -2,6 +2,7 @@
   "$schema": "./memory.schema.json",
   "version": "1.0",
   "last_updated": "2026-06-04",
+  "last_updated_by": "ADR-0001 fix batch (v0.1 tech-debt cleanup)",
   "project": {
     "name": "qa-agent",
     "display_name": "QA-Agent (AI 质量医生)",
@@ -70,20 +71,20 @@
       "drift_signals": []
     },
     "test_runner": {
-      "value": "bun:test (禁用 vitest 残留)",
-      "adrs": [],
+      "value": "bun:test (vitest 已清理)",
+      "adrs": ["0001"],
       "last_verified": "2026-06-04",
-      "confidence": 0.9,
-      "drift_signals": ["tests/unit/ 仍含 vitest.config.ts，需清理"],
-      "notes": "vitest.config.ts 存在但未被使用（package.json scripts 走 bun test）"
+      "confidence": 0.98,
+      "drift_signals": [],
+      "notes": "vitest.config.ts 已删除；6 个 test 文件 import 已统一为 bun:test（logger/a11y/security/report/skill-registry/e2e）；vi.fn → mock，vi.spyOn → console 手动 stub"
     },
     "package_manager_intent": {
-      "value": "bun (README/DEVELOPMENT 已统一)",
-      "adrs": [],
+      "value": "bun (pnpm 残留已清理)",
+      "adrs": ["0001"],
       "last_verified": "2026-06-04",
-      "confidence": 0.9,
-      "drift_signals": ["pnpm-lock.yaml 仍存在（历史残留）"],
-      "notes": "package.json scripts 用 bun，README 已修正，但 pnpm-lock.yaml 还在仓库根"
+      "confidence": 0.98,
+      "drift_signals": [],
+      "notes": "pnpm-lock.yaml 已删除；README 和 CONTRIBUTING.md 已清理 pnpm 字样"
     },
     "cli_command_naming": {
       "value": "qa-agent <command> [subcommand]，主命令含 init/diagnose/fix/audit/ci/gui/web/ux-audit/design/best-practices/seo/dependency/skill",
@@ -105,13 +106,14 @@
     "src/web/": "Hono web server + React 前端"
   },
   "metrics": {
-    "test_count": 236,
+    "test_count": 237,
     "test_files": 19,
-    "test_status": "236 pass / 0 fail (2026-06-04 验证)",
+    "test_status": "237 pass / 0 fail (2026-06-04 验证)",
     "typecheck": "0 errors (tsc --noEmit)",
     "src_files": 80,
     "lines_of_code_approx": 8500
   },
+  "adrs": ["0001"],
   "thresholds": {
     "coverage_warn": 0.6,
     "coverage_reject": 0.3,
@@ -152,11 +154,15 @@
   ],
   "verification": {
     "last_verified_at": "2026-06-04",
-    "verifier": "manual + bun test + tsc --noEmit",
+    "verifier": "ADR-0001 fix batch (bun test + tsc --noEmit + drift grep)",
     "next_verification_due": "2026-07-04",
     "known_issues": [
-      "tests/unit/ 仍含 vitest.config.ts（与 bun:test 决策冲突）",
-      "pnpm-lock.yaml 仍存在（应删除）"
+      "engines/audit/ 与 skills/builtin/ 职责重叠（ADR-0001 v0.2 TODO）",
+      "engines/fix/ 6 文件命名混乱（ADR-0001 v0.2 TODO）",
+      "src/types/index.ts 491 行未拆分（ADR-0001 v0.3 TODO）",
+      "web/api 与 cli/commands 业务逻辑重复（ADR-0001 v0.2 TODO）",
+      "src/skills/builtin/uiux/ 目录命名与 CLI 命令 ux-audit 不一致（ADR-0001 v0.2 TODO）",
+      "logger 是 console.log 而非结构化 JSON（ADR-0001 v0.3 TODO）"
     ]
   }
 }

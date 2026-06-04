@@ -33,9 +33,6 @@ bun install -g qa-agent
 
 # 使用 npm
 npm install -g qa-agent
-
-# 使用 pnpm
-pnpm add -g qa-agent
 ```
 
 ### 基本使用

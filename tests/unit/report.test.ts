@@ -2,7 +2,7 @@
  * ReportGenerator Tests
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'bun:test';
 import { ReportGenerator, createReportGenerator } from '../../src/engines/report';
 import { Diagnosis, ProjectInfo, DiagnosisType, Severity } from '../../src/types';
 
