@@ -1,9 +1,9 @@
 /**
  * Tools Module
- * Provides file system, browser, git, and shell tools
+ * Provides file system, git, and shell tools for the CLI pipeline.
  */
 
-import { ToolRegistry, FileSystemTool, BrowserTool, GitTool, ShellTool } from '../types';
+import { ToolRegistry, FileSystemTool, GitTool, ShellTool } from '../types';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { glob as globFn } from 'glob';
@@ -65,26 +65,6 @@ function createFileSystemTool(basePath: string = process.cwd()): FileSystemTool 
         isFile: stats.isFile(),
         isDirectory: stats.isDirectory(),
       };
-    },
-  };
-}
-
-/**
- * Create browser tool (placeholder - requires Playwright)
- */
-function createBrowserTool(): BrowserTool {
-  return {
-    async launch(options = {}) {
-      // Placeholder - would use Playwright in production
-      throw new Error('Browser tool not implemented in MVP');
-    },
-
-    async newPage() {
-      throw new Error('Browser tool not implemented in MVP');
-    },
-
-    async close() {
-      // No-op
     },
   };
 }
@@ -153,7 +133,6 @@ function createShellTool(basePath: string = process.cwd()): ShellTool {
 export function createTools(basePath: string = process.cwd()): ToolRegistry {
   return {
     fs: createFileSystemTool(basePath),
-    browser: createBrowserTool(),
     git: createGitTool(basePath),
     shell: createShellTool(basePath),
   };

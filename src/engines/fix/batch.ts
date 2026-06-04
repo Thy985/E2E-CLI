@@ -3,7 +3,7 @@
  */
 
 import { Diagnosis, Fix, SkillContext } from '../../types';
-import { FixEngine } from './enhanced';
+import { FixEngine } from './index';
 import { createLogger, Logger } from '../../utils/logger';
 
 export interface BatchFixOptions {
@@ -31,12 +31,9 @@ export class BatchFixEngine {
   constructor() {
     this.fixEngine = new FixEngine({
       autoApproveLowRisk: true,
-      autoApproveMediumRisk: false,
-      autoApproveHighRisk: false,
       sandboxEnabled: false,
       previewBeforeApply: false,
-      verifyAfterApply: false,
-      createRollbackPoint: false,
+      verifyAfterFix: false,
     });
     this.logger = createLogger({ level: 'info' });
   }

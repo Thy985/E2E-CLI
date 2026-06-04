@@ -65,6 +65,9 @@ export const uxAuditCommand = new Command('ux-audit')
         }
       };
 
+      // 渲染输出（之前该步骤缺失，导致命令只退出码不打印报告）
+      await outputResult(result, options, logger);
+
       // 如果有 --preview 选项，预览修复效果
       if (options.preview && options.fix) {
         logger.info('🔍 Previewing fixes in sandbox...');

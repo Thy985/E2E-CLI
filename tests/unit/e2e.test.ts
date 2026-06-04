@@ -2,23 +2,9 @@
  * E2E Skill Tests
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'bun:test';
 import { E2ESkill } from '../../src/skills/builtin/e2e';
-import { SkillContext, Diagnosis, Browser, Page } from '../../src/types';
-
-// Mock browser and page
-const mockPage: Page = {
-  goto: async () => {},
-  screenshot: async () => Buffer.from(''),
-  content: async () => '',
-  evaluate: async <T>(_fn: () => T) => null as unknown as T,
-  close: async () => {},
-};
-
-const mockBrowser: Browser = {
-  newPage: async () => mockPage,
-  close: async () => {},
-};
+import { SkillContext, Diagnosis } from '../../src/types';
 
 describe('E2ESkill', () => {
   let skill: E2ESkill;
@@ -47,11 +33,6 @@ describe('E2ESkill', () => {
           mkdir: async () => {},
           remove: async () => {},
           stat: async () => ({ size: 0, isFile: true, isDirectory: false }),
-        },
-        browser: {
-          launch: async () => mockBrowser,
-          newPage: async () => mockPage,
-          close: async () => {},
         },
         git: {
           getChangedFiles: async () => [],
@@ -312,7 +293,41 @@ line 4`;
       expect(fix).toBeDefined();
       expect(fix.diagnosisId).toBe('E2E-test-123');
       expect(fix.changes.length).toBeGreaterThan(0);
-      expect(fix.autoApplicable).toBe(true);
+      // fix 是保守策略：只追加 TODO 注释，强制人工 review，因此 autoApplicable=false
+      expect(fix.autoApplicable).toBe(false);
+      expect(fix.notes).toBeDefined();
+    });
+
+    it('should throw if selector cannot be located in file', async () => {
+      const diagnosis: Diagnosis = {
+        id: 'E2E-test-456',
+        skill: 'e2e',
+        type: 'functionality',
+        severity: 'warning',
+        title: '使用脆弱的选择器',
+        description: '选择器可能不稳定',
+        location: {
+          file: 'e2e/test.spec.ts',
+          line: 10,
+        },
+        metadata: {
+          selector: 'div:nth-child(2)',
+          suggestion: 'getByRole()',
+        },
+      };
+
+      const contextMissingSelector = {
+        ...mockContext,
+        tools: {
+          ...mockContext.tools,
+          fs: {
+            ...mockContext.tools.fs,
+            readFile: async () => '// 啥都没有的相关代码',
+          },
+        },
+      };
+
+      await expect(skill.fix(diagnosis, contextMissingSelector)).rejects.toThrow(/Cannot locate selector/);
     });
   });
 });

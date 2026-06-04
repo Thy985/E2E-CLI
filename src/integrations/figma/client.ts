@@ -156,7 +156,7 @@ export class FigmaClient {
     });
 
     if (!response.ok) return [];
-    const data = await response.json();
+    const data = (await response.json()) as { meta?: { variables?: any[] } };
     return data.meta?.variables || [];
   }
 
@@ -203,8 +203,8 @@ export class FigmaClient {
       throw new Error(`Export failed: ${exportResponse.statusText}`);
     }
 
-    const exportData = await exportResponse.json();
-    const imageUrl = exportData.images[nodeId];
+    const exportData = await exportResponse.json() as { images?: Record<string, string> };
+    const imageUrl = exportData.images?.[nodeId];
 
     if (!imageUrl) {
       throw new Error('Export URL not found');

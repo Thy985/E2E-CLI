@@ -2,22 +2,22 @@
  * Logger Tests
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { Logger, createLogger, LoggerOptions } from '../../src/utils/logger';
+import { describe, it, expect, spyOn, beforeEach, afterEach } from 'bun:test';
+import { Logger, createLogger } from '../../src/utils/logger';
 
 describe('Logger', () => {
   let logger: Logger;
   let consoleSpy: {
-    log: ReturnType<typeof vi.spyOn>;
-    warn: ReturnType<typeof vi.spyOn>;
-    error: ReturnType<typeof vi.spyOn>;
+    log: ReturnType<typeof spyOn>;
+    warn: ReturnType<typeof spyOn>;
+    error: ReturnType<typeof spyOn>;
   };
 
   beforeEach(() => {
     consoleSpy = {
-      log: vi.spyOn(console, 'log').mockImplementation(() => {}),
-      warn: vi.spyOn(console, 'warn').mockImplementation(() => {}),
-      error: vi.spyOn(console, 'error').mockImplementation(() => {}),
+      log: spyOn(console, 'log').mockImplementation(() => {}),
+      warn: spyOn(console, 'warn').mockImplementation(() => {}),
+      error: spyOn(console, 'error').mockImplementation(() => {}),
     };
   });
 

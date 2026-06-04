@@ -27,12 +27,13 @@ import { InteractionChecker } from './checkers/interaction-checker';
 import { CSSFixGenerator } from './fixers/css-fix-generator';
 
 export class UIUXSkill extends BaseSkill {
-  name = 'uiux-audit';
+  name = 'ui-ux';
   version = '1.0.0';
   description = 'UI/UX视觉规范审查与修复';
-  
+
   triggers: SkillTrigger[] = [
     { type: 'command', pattern: 'ux-audit', priority: 100 },
+    { type: 'command', pattern: 'ui-ux', priority: 90 },
     { type: 'keyword', pattern: /ui|ux|视觉|设计|样式|css|style/i, priority: 80 },
     { type: 'file', pattern: /\.(css|scss|less|tsx|jsx|vue|html)$/i, priority: 60 },
   ];

@@ -2,7 +2,7 @@
  * A11y Skill Tests
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, mock } from 'bun:test';
 import { A11ySkill } from '../../src/skills/builtin/a11y';
 import { createLogger } from '../../src/utils/logger';
 import { createTools } from '../../src/tools';
@@ -11,8 +11,8 @@ import { ModelClient } from '../../src/types';
 
 // Mock model client for testing
 const mockModelClient: ModelClient = {
-  chat: vi.fn().mockResolvedValue('mock response'),
-  embed: vi.fn().mockResolvedValue(Array(1536).fill(0)),
+  chat: mock(async () => 'mock response'),
+  embed: mock(async () => Array(1536).fill(0)),
 };
 
 describe('A11ySkill', () => {

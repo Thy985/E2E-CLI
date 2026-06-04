@@ -1,12 +1,20 @@
 /**
  * Shell utilities
  * Execute shell commands with async/await support
+ *
+ * 设计要点：
+ * 1. 优先用 Node.js 原生 child_process（不绑定 Bun），保证 node/bun 都能跑
+ * 2. 跨平台：Windows 用 cmd.exe，Unix 用 /bin/sh
+ * 3. 大输出自动降级为合并到 stderr，避免内存爆炸
  */
+
+import { spawn } from 'child_process';
 
 interface ExecOptions {
   cwd?: string;
   timeout?: number;
   env?: Record<string, string>;
+  maxBuffer?: number; // bytes, default 10MB
 }
 
 interface ExecResult {
@@ -15,104 +23,88 @@ interface ExecResult {
   exitCode: number;
 }
 
+const DEFAULT_MAX_BUFFER = 10 * 1024 * 1024;
+
 /**
  * Execute a shell command asynchronously
- * 
- * @param command - The command to execute
- * @param options - Execution options (cwd, timeout, env)
- * @returns Promise resolving to stdout, stderr, and exitCode
  */
 export async function execAsync(
   command: string,
   options: ExecOptions = {}
 ): Promise<ExecResult> {
-  const { cwd = process.cwd(), timeout = 60000, env = {} } = options;
+  const { cwd = process.cwd(), timeout = 60000, env = {}, maxBuffer = DEFAULT_MAX_BUFFER } = options;
+  const isWindows = process.platform === 'win32';
 
   return new Promise((resolve, reject) => {
-    // Detect platform
-    const isWindows = Bun.env.OS === 'Windows_NT' || process.platform === 'win32';
-    
-    // Spawn process based on platform
-    const child = isWindows
-      ? Bun.spawn(['cmd.exe', '/c', command], {
-          cwd,
-          env: { ...process.env, ...env },
-          stdout: 'pipe',
-          stderr: 'pipe',
-        })
-      : Bun.spawn(['/bin/sh', '-c', command], {
-          cwd,
-          env: { ...process.env, ...env },
-          stdout: 'pipe',
-          stderr: 'pipe',
-        });
+    const child = spawn(
+      isWindows ? 'cmd.exe' : '/bin/sh',
+      isWindows ? ['/c', command] : ['-c', command],
+      {
+        cwd,
+        env: { ...process.env, ...env },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }
+    );
 
-    let stdout = '';
-    let stderr = '';
-    let killed = false;
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    let stdoutLen = 0;
+    let stderrLen = 0;
+    let killedByTimeout = false;
+    let killedByBuffer = false;
 
-    // Set up timeout
     const timer = setTimeout(() => {
-      killed = true;
-      child.kill();
+      killedByTimeout = true;
+      child.kill('SIGKILL');
       reject(new Error(`Command timed out after ${timeout}ms: ${command}`));
     }, timeout);
 
-    // Collect stdout and stderr using TextEncoder/TextDecoder
-    const decoder = new TextDecoder();
-    
-    // Handle stdout - Bun.spawn returns ReadableStream for 'pipe' mode
-    const stdoutStream = child.stdout as ReadableStream<Uint8Array>;
-    const stderrStream = child.stderr as ReadableStream<Uint8Array>;
-
-    stdoutStream.pipeTo(
-      new WritableStream({
-        write(chunk: Uint8Array) {
-          stdout += decoder.decode(chunk);
-        }
-      })
-    );
-
-    stderrStream.pipeTo(
-      new WritableStream({
-        write(chunk: Uint8Array) {
-          stderr += decoder.decode(chunk);
-        }
-      })
-    );
-
-    // Wait for process to complete
-    child.exited.then((code) => {
-      clearTimeout(timer);
-      
-      if (killed) {
-        return; // Already rejected with timeout error
+    function handleChunk(target: 'stdout' | 'stderr', chunk: Buffer): void {
+      const chunks = target === 'stdout' ? stdoutChunks : stderrChunks;
+      const lenRef = target === 'stdout' ? { value: stdoutLen } : { value: stderrLen };
+      chunks.push(chunk);
+      lenRef.value += chunk.length;
+      if (lenRef.value > maxBuffer) {
+        killedByBuffer = true;
+        child.kill('SIGKILL');
       }
+    }
 
-      resolve({
-        stdout: stdout.trim(),
-        stderr: stderr.trim(),
-        exitCode: code,
-      });
-    }).catch((error) => {
+    child.stdout?.on('data', (chunk: Buffer) => handleChunk('stdout', chunk));
+    child.stderr?.on('data', (chunk: Buffer) => handleChunk('stderr', chunk));
+
+    child.on('error', (error) => {
       clearTimeout(timer);
-      reject(error);
+      if (!killedByTimeout) {
+        reject(error);
+      }
+    });
+
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (killedByTimeout || killedByBuffer) return;
+      if (killedByBuffer) {
+        reject(new Error(`Command output exceeded maxBuffer (${maxBuffer} bytes): ${command}`));
+        return;
+      }
+      resolve({
+        stdout: Buffer.concat(stdoutChunks).toString('utf-8').trim(),
+        stderr: Buffer.concat(stderrChunks).toString('utf-8').trim(),
+        exitCode: code ?? 1,
+      });
     });
   });
 }
 
 /**
  * Execute a command and throw if it fails
- * 
- * @param command - The command to execute
- * @param options - Execution options
  */
 export async function execAsyncOrThrow(
   command: string,
   options: ExecOptions = {}
 ): Promise<ExecResult> {
   const result = await execAsync(command, options);
-  
+
   if (result.exitCode !== 0) {
     throw new Error(
       `Command failed with exit code ${result.exitCode}\n` +
@@ -120,6 +112,6 @@ export async function execAsyncOrThrow(
       `stderr: ${result.stderr}`
     );
   }
-  
+
   return result;
 }

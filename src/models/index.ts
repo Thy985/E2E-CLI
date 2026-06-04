@@ -42,18 +42,25 @@ const PROVIDER_CONFIGS: Record<ModelProvider, { baseUrl: string; defaultModel: s
 };
 
 /**
- * Detect provider from API key format
+ * Detect provider from API key format.
+ *
+ * 重要：纯靠字符串猜 provider 是脆弱的，强烈建议显式传入 config.provider。
+ * 这里的启发式只用于"用户没传 provider 时的兜底"。
  */
 export function detectProvider(apiKey: string): ModelProvider {
-  if (apiKey.startsWith('sk-ant')) return 'claude';
-  // DeepSeek keys: sk- prefix, 32-48 chars, hex-like pattern
-  if (apiKey.startsWith('sk-') && /^[a-f0-9]{32,48}$/i.test(apiKey.slice(3))) return 'deepseek';
-  if (apiKey.startsWith('sk-') && apiKey.length > 60) return 'deepseek';
-  if (apiKey.startsWith('sk-')) return 'openai';
-  if (apiKey.startsWith('Bearer')) return 'siliconflow';
-  if (apiKey.match(/^[a-zA-Z0-9]{32,}$/) && !apiKey.includes('-')) return 'groq';
+  if (!apiKey) return 'deepseek';
+  if (apiKey.startsWith('sk-ant-')) return 'claude';
   if (apiKey.startsWith('cmk-')) return 'minimax';
-  return 'deepseek'; // default
+  if (apiKey.startsWith('Bearer ')) return 'siliconflow';
+  if (apiKey.startsWith('sk-')) {
+    // OpenAI 新 key 形如 sk-proj-... / sk-... 长度较长；DeepSeek 形如 sk- + hex
+    if (apiKey.startsWith('sk-proj-') || apiKey.length > 60) return 'openai';
+    if (/^[a-f0-9]{32,48}$/i.test(apiKey.slice(3))) return 'deepseek';
+    return 'openai';
+  }
+  // Groq key 形如 gsk_...，但与硅基流动难分，这里保守兜底
+  if (/^gsk_/.test(apiKey)) return 'groq';
+  return 'deepseek';
 }
 
 /**
@@ -73,25 +80,18 @@ export function createModelClient(config?: Partial<ModelConfig>): ModelClient {
 
   return {
     async chat(messages: ModelMessage[]): Promise<string> {
-      const endpoint = `${baseUrl}/chat/completions`;
+      // Claude 用独立 API 路径
+      if (provider === 'claude') {
+        return chatWithClaude(apiKey, messages, model);
+      }
 
-      const body: Record<string, unknown> = {
+      const endpoint = `${baseUrl}/chat/completions`;
+      const body = {
         model,
-        messages: messages.map(m => ({
-          role: m.role,
-          content: m.content,
-        })),
+        messages: messages.map(m => ({ role: m.role, content: m.content })),
         temperature: 0.7,
         max_tokens: 2048,
       };
-
-      // Claude uses a different API format
-      if (provider === 'claude') {
-        body.max_tokens = body.max_tokens as number;
-        delete body.model;
-        // Claude uses messages endpoint differently
-        return chatWithClaude(apiKey, messages, PROVIDER_CONFIGS[provider].defaultModel);
-      }
 
       try {
         const response = await fetch(endpoint, {
@@ -252,23 +252,29 @@ export function getSupportedProviders(): string[] {
 }
 
 /**
- * Create mock model client for MVP functionality without API key
+ * Create mock model client for MVP functionality without API key.
+ *
+ * 警告：mock 输出仅用于本地烟测/UI 占位，**不具有任何语义价值**。
+ * - mock chat：仅在用户没配 key 时让 CLI 不至于崩溃
+ * - mock embed：返回固定维度的零向量。任何依赖相似度排序的逻辑（如 dedup、近邻检索）
+ *   在 mock 下结果都是垃圾。上生产前请务必配置真实 API key。
  */
 export function createMockModelClient(): ModelClient {
   return {
     async chat(messages: ModelMessage[]): Promise<string> {
-      // Return a mock response for MVP functionality
       const lastMessage = messages[messages.length - 1];
       if (lastMessage?.content.includes('fix')) {
-        return '建议检查代码中的问题并进行修复。';
+        return '【MOCK】建议检查代码中的问题并进行修复。配置 MODEL_API_KEY 启用真实 AI 能力。';
       }
-      return '这是一个模拟响应。请配置 MODEL_API_KEY 环境变量以启用完整的 AI 功能。';
+      return '【MOCK】这是一个占位响应。请配置 MODEL_API_KEY 环境变量以启用完整的 AI 功能。';
     },
 
-    async embed(text: string): Promise<number[]> {
-      // Return a deterministic mock embedding based on text hash
-      const hash = text.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-      return Array(1536).fill(0).map((_, i) => Math.sin(hash + i) * 0.5);
+    async embed(_text: string): Promise<number[]> {
+      // 显式返回 0 向量 + 抛出警告，比"假语义"更安全
+      if (process.env.NODE_ENV !== 'test') {
+        console.warn('[qa-agent] Mock embed 返回零向量，不能用于任何语义检索。');
+      }
+      return new Array(1536).fill(0);
     },
   };
 }

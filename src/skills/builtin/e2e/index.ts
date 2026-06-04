@@ -194,34 +194,34 @@ export class E2ESkill extends BaseSkill {
     return diagnoses;
   }
 
+  /**
+   * 扫描脆弱的 E2E 选择器。
+   * 关键修复：
+   * 1. 跳过单行注释（//）与块注释（/* ... *\/），避免误报
+   * 2. "深度选择器" 改用 descendant combinator 形式（必须真的像选择器）
+   * 3. ID 启发式只在 6~32 位十六进制内才视为动态 ID，避免误伤短 ID
+   */
   private findFragileSelectors(content: string): { selector: string; line: number; suggestion: string }[] {
     const issues: { selector: string; line: number; suggestion: string }[] = [];
     const lines = content.split('\n');
 
+    let inBlockComment = false;
     lines.forEach((line, index) => {
-      // Check for CSS selectors with nth-child
-      const nthMatch = line.match(/['"`]([^'"`]*:nth-child[^'"`]*)['"`]/);
+      const cleaned = stripComments(line, inBlockComment);
+      inBlockComment = trackBlockComment(cleaned, inBlockComment);
+      if (!cleaned.trim()) return;
+
+      const nthMatch = cleaned.match(/['"`]([^'"`]*:nth-(?:child|of-type)[^'"`]*)['"`]/);
       if (nthMatch) {
         issues.push({
           selector: nthMatch[1],
           line: index + 1,
-          suggestion: '使用 data-testid 或 role 选择器替代 nth-child',
+          suggestion: '使用 data-testid 或 role 选择器替代 nth-child/nth-of-type',
         });
       }
 
-      // Check for CSS selectors with nth-of-type
-      const nthOfTypeMatch = line.match(/['"`]([^'"`]*:nth-of-type[^'"`]*)['"`]/);
-      if (nthOfTypeMatch) {
-        issues.push({
-          selector: nthOfTypeMatch[1],
-          line: index + 1,
-          suggestion: 'Use data-testid or role selector instead of nth-of-type',
-        });
-      }
-
-      // Check for XPath selectors
-      const xpathMatch = line.match(/['\"`](\/\/[^'\"`]*)['\"`]/);
-      if (xpathMatch) {
+      const xpathMatch = cleaned.match(/['"`](\/\/[^'"`]+|\/[a-zA-Z][^'"`]*)['"`]/);
+      if (xpathMatch && /^\/{1,2}[a-zA-Z\[\]]/.test(xpathMatch[1])) {
         issues.push({
           selector: xpathMatch[1],
           line: index + 1,
@@ -229,19 +229,17 @@ export class E2ESkill extends BaseSkill {
         });
       }
 
-      // Check for index-based selectors like .eq()
-      const eqMatch = line.match(/\.eq\((\d+)\)/);
-      if (eqMatch) {
+      const indexMatch = cleaned.match(/\.(?:eq|nth)\((\d+)\)/);
+      if (indexMatch) {
         issues.push({
-          selector: `.eq(${eqMatch[1]})`,
+          selector: `.${indexMatch[0].split('(')[0]}(${indexMatch[1]})`,
           line: index + 1,
           suggestion: 'Use getByRole() or data-testid instead of index-based selection',
         });
       }
 
-      // Check for deep CSS selectors
-      const deepMatch = line.match(/['"`]([^'"`]*\s{2,}[^'"`]*)['"`]/);
-      if (deepMatch) {
+      const deepMatch = cleaned.match(/['"`]([^'"`]*[\s>+~]+[#.\[]a-zA-Z\d_-?[^'"`]*)['"`]/);
+      if (deepMatch && /[\s>+~]/.test(deepMatch[1]) && /[#.\[]/.test(deepMatch[1])) {
         issues.push({
           selector: deepMatch[1],
           line: index + 1,
@@ -249,8 +247,7 @@ export class E2ESkill extends BaseSkill {
         });
       }
 
-      // Check for ID selectors that might be dynamic
-      const idMatch = line.match(/['"`]#([a-f0-9]{8,})['"`]/i);
+      const idMatch = cleaned.match(/['"`]#([a-f0-9]{6,32})['"`]/i);
       if (idMatch) {
         issues.push({
           selector: `#${idMatch[1]}`,
@@ -366,30 +363,104 @@ export class E2ESkill extends BaseSkill {
 
   async fix(diagnosis: Diagnosis, context: SkillContext): Promise<Fix> {
     const filePath = diagnosis.location.file;
-    const content = await context.tools.fs.readFile(filePath);
+    const oldSelector = diagnosis.metadata?.selector;
+    const suggestion = diagnosis.metadata?.suggestion;
 
-    if (diagnosis.metadata?.selector) {
-      // Fix fragile selector
-      const oldSelector = diagnosis.metadata.selector;
-      const suggestion = diagnosis.metadata.suggestion;
+    // 自我修复脆弱选择器会破坏原有测试逻辑（不知道真实 DOM 结构），
+    // 改用一个保守的占位符：保留选择器字面量，在后面追加 `data-testid` 提示注释，
+    // 至少让"修复"动作可见、可回滚，并强制要求人工 review。
+    if (oldSelector) {
+      const content = await context.tools.fs.readFile(filePath);
+      const escaped = oldSelector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const pattern = new RegExp(`(['"\`])${escaped}\\1`);
+      if (!pattern.test(content)) {
+        throw new Error(`Cannot locate selector "${oldSelector}" in ${filePath} — file may have been modified.`);
+      }
+
+      const replacement = `$1${oldSelector}$1 /* TODO(qa-agent): ${suggestion ?? 'replace with stable selector'} */`;
 
       return {
         id: `Fix-${generateId()}`,
         diagnosisId: diagnosis.id,
-        description: `修复脆弱选择器: ${oldSelector}`,
+        description: `为脆弱选择器 ${oldSelector} 添加 TODO 标记，需要人工重构`,
         changes: [{
           file: filePath,
           type: 'replace',
           oldContent: oldSelector,
-          content: suggestion,
+          content: replacement,
         }],
         riskLevel: 'low',
-        autoApplicable: true,
+        autoApplicable: false,
+        notes: '修复仅添加 TODO 注释，未真正替换选择器。请人工 review 并改写为稳定的 data-testid / role 选择器。',
       };
     }
 
     throw new Error('Cannot fix this diagnosis automatically');
   }
+}
+
+// ============================================
+// 模块级辅助
+// ============================================
+
+/**
+ * 去掉单行注释（//）与块注释（/* ... *\/），
+ * 同时保留字符串字面量。粗略但对常规 TS/JS 代码足够。
+ */
+function stripComments(line: string, inBlockComment: boolean): string {
+  let result = '';
+  let i = 0;
+
+  while (i < line.length) {
+    if (inBlockComment) {
+      const end = line.indexOf('*/', i);
+      if (end === -1) return result;
+      i = end + 2;
+      inBlockComment = false;
+      continue;
+    }
+    const two = line.slice(i, i + 2);
+    if (two === '//') {
+      // 后面整行都是注释，丢弃
+      return result;
+    }
+    if (two === '/*') {
+      inBlockComment = true;
+      i += 2;
+      continue;
+    }
+    // 跳过字符串字面量
+    const ch = line[i];
+    if (ch === '"' || ch === "'" || ch === '`') {
+      result += ch;
+      i++;
+      while (i < line.length && line[i] !== ch) {
+        if (line[i] === '\\') {
+          result += line[i] + (line[i + 1] ?? '');
+          i += 2;
+        } else {
+          result += line[i];
+          i++;
+        }
+      }
+      if (i < line.length) {
+        result += line[i];
+        i++;
+      }
+      continue;
+    }
+    result += ch;
+    i++;
+  }
+
+  return result;
+}
+
+function trackBlockComment(cleaned: string, previous: boolean): boolean {
+  // 进入块注释但未在同一行闭合
+  if (previous) return /\*\//.test(cleaned) ? false : true;
+  // 不在本函数里判断 //，stripComments 已经处理
+  return /\/\*/.test(cleaned) && !/\*\//.test(cleaned.slice(cleaned.indexOf('/*') + 2));
 }
 
 // Export default instance

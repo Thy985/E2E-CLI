@@ -54,7 +54,7 @@ export class InteractionChecker {
     if (!hasHover) {
       issues.push({
         id: `button-hover-${file}`,
-        skill: 'uiux-audit',
+        skill: 'ui-ux',
         type: 'ui-ux',
         severity: 'warning',
         title: '按钮缺少 hover 状态',
@@ -78,7 +78,7 @@ export class InteractionChecker {
     if (!hasActive) {
       issues.push({
         id: `button-active-${file}`,
-        skill: 'uiux-audit',
+        skill: 'ui-ux',
         type: 'ui-ux',
         severity: 'info',
         title: '按钮缺少 active 状态',
@@ -102,7 +102,7 @@ export class InteractionChecker {
     if (!hasDisabled) {
       issues.push({
         id: `button-disabled-${file}`,
-        skill: 'uiux-audit',
+        skill: 'ui-ux',
         type: 'ui-ux',
         severity: 'info',
         title: '按钮缺少 disabled 状态',
@@ -136,7 +136,7 @@ export class InteractionChecker {
     if (!hasFocus) {
       issues.push({
         id: `input-focus-${file}`,
-        skill: 'uiux-audit',
+        skill: 'ui-ux',
         type: 'ui-ux',
         severity: 'warning',
         title: '输入框缺少 focus 状态',
@@ -170,7 +170,7 @@ export class InteractionChecker {
     if (!hasHover) {
       issues.push({
         id: `link-hover-${file}`,
-        skill: 'uiux-audit',
+        skill: 'ui-ux',
         type: 'ui-ux',
         severity: 'info',
         title: '链接缺少 hover 状态',
