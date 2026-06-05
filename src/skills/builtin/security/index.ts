@@ -1,6 +1,11 @@
 /**
  * Security Skill
  * Checks security vulnerabilities and best practices
+ * 
+ * Uses AST-based analysis (via @typescript-eslint/parser) for accurate
+ * detection of eval(), innerHTML, dangerouslySetInnerHTML, etc.
+ * Falls back to regex for patterns not easily detectable via AST
+ * (e.g., hardcoded secrets in string literals).
  */
 
 import { BaseSkill } from '../../base-skill';
@@ -13,6 +18,13 @@ import {
 import { generateId } from '../../../utils';
 import { shouldIgnore, isRuleEnabled, getRuleSeverity } from '../../../config';
 import { shouldIgnoreLine, shouldIgnoreSection } from '../../../utils/ignore';
+import {
+  parseFile,
+  detectEvalCalls,
+  detectXSSRisk,
+  detectInsecureRandom,
+  detectDocumentWrite,
+} from '../../../utils/ast-analyzer';
 
 // Security rules to check
 const SECURITY_RULES = [
@@ -230,74 +242,99 @@ export class SecuritySkill extends BaseSkill {
       return diagnoses;
     }
 
-    // Skip security skill definition file (contains rule patterns)
-    const isSecurityDefinition = normalizedPath.includes('skills/builtin/security/index');
-    
-    for (const rule of SECURITY_RULES) {
-      // Skip disabled-security rule in security skill definition file
-      if (rule.id === 'disabled-security' && isSecurityDefinition) {
-        continue;
-      }
-      
-      // Check if rule is disabled in config
-      if (config && !isRuleEnabled(rule.id, config, this.name)) {
-        continue;
-      }
-      
+    // ---- Phase 1: AST-based analysis (accurate, zero false positives) ----
+    const astFile = parseFile(filePath, content);
+    if (astFile) {
+      const astIssues = this.runASTChecks(astFile, config);
+      diagnoses.push(...astIssues);
+    }
+
+    // ---- Phase 2: Regex-based analysis (for patterns not covered by AST) ----
+    diagnoses.push(...this.runRegexChecks(filePath, content, config));
+
+    return diagnoses;
+  }
+
+  /**
+   * Run AST-based security checks.
+   * These are more accurate than regex because they use the parsed syntax tree.
+   */
+  private runASTChecks(astFile: ReturnType<typeof parseFile>, config?: SkillContext['config']): Diagnosis[] {
+    if (!astFile) return [];
+    const diagnoses: Diagnosis[] = [];
+
+    // eval() / new Function() detection via AST
+    for (const issue of detectEvalCalls(astFile)) {
+      if (config && !isRuleEnabled(issue.ruleId, config, this.name)) continue;
+      if (shouldIgnoreLine(astFile.source, issue.line, issue.ruleId)) continue;
+      const severity = config
+        ? getRuleSeverity(issue.ruleId, config, 'warning', this.name)
+        : 'warning' as Severity;
+      diagnoses.push(this.makeDiagnosis(astFile.filePath, issue.ruleId, issue.line, severity, issue.message, issue.snippet));
+    }
+
+    // XSS risk detection (dangerouslySetInnerHTML, innerHTML, document.write)
+    for (const issue of [...detectXSSRisk(astFile), ...detectDocumentWrite(astFile)]) {
+      if (config && !isRuleEnabled(issue.ruleId, config, this.name)) continue;
+      if (shouldIgnoreLine(astFile.source, issue.line, issue.ruleId)) continue;
+      const severity = config
+        ? getRuleSeverity(issue.ruleId, config, 'warning', this.name)
+        : 'warning' as Severity;
+      diagnoses.push(this.makeDiagnosis(astFile.filePath, issue.ruleId, issue.line, severity, issue.message, issue.snippet));
+    }
+
+    // Insecure random detection
+    for (const issue of detectInsecureRandom(astFile)) {
+      if (config && !isRuleEnabled(issue.ruleId, config, this.name)) continue;
+      if (shouldIgnoreLine(astFile.source, issue.line, issue.ruleId)) continue;
+      const severity = config
+        ? getRuleSeverity(issue.ruleId, config, 'info', this.name)
+        : 'info' as Severity;
+      diagnoses.push(this.makeDiagnosis(astFile.filePath, issue.ruleId, issue.line, severity, issue.message, issue.snippet));
+    }
+
+    return diagnoses;
+  }
+
+  /**
+   * Run regex-based security checks for patterns that are hard to detect via AST.
+   * E.g., hardcoded secrets, SQL injection patterns, HTTP URLs, CORS config.
+   */
+  private runRegexChecks(filePath: string, content: string, config?: SkillContext['config']): Diagnosis[] {
+    const diagnoses: Diagnosis[] = [];
+    const isSecurityDefinition = filePath.replace(/\\/g, '/').includes('skills/builtin/security/index');
+
+    // Regex-only rules (hardcoded secrets, SQL injection, HTTP URL, CORS, disabled security)
+    const regexRules = SECURITY_RULES.filter(rule =>
+      !['eval-usage', 'xss-risk', 'insecure-random'].includes(rule.id)
+    );
+
+    for (const rule of regexRules) {
+      if (rule.id === 'disabled-security' && isSecurityDefinition) continue;
+      if (config && !isRuleEnabled(rule.id, config, this.name)) continue;
+
       for (const pattern of rule.patterns) {
         const matches = content.matchAll(pattern);
-        
         for (const match of matches) {
           const lineNumber = this.getLineNumber(content, match.index!);
-          
-          // Skip false positives in comments
           const line = content.split('\n')[lineNumber - 1];
-          if (line?.trim().startsWith('//') || line?.trim().startsWith('*')) {
-            continue;
-          }
+          if (line?.trim().startsWith('//') || line?.trim().startsWith('*')) continue;
+          if (line?.includes('@example') || line?.includes('```')) continue;
+          if (shouldIgnoreLine(content, lineNumber, rule.id)) continue;
+          if (shouldIgnoreSection(content, lineNumber, lineNumber, rule.id)) continue;
 
-          // Skip false positives in example code or documentation
-          if (line?.includes('@example') || line?.includes('```')) {
-            continue;
-          }
-
-          // Apply context-aware filtering for rules that define it (e.g., insecure-random)
-          if ('contextFilter' in rule && typeof rule.contextFilter === 'function' && line) {
-            if (!(rule as any).contextFilter(line)) {
-              continue;
-            }
-          }
-
-          // Check for ignore comments
-          if (shouldIgnoreLine(content, lineNumber, rule.id)) {
-            continue;
-          }
-
-          // Check for ignore section
-          if (shouldIgnoreSection(content, lineNumber, lineNumber, rule.id)) {
-            continue;
-          }
-
-          // Get severity from config or use default
-          const severity = config 
+          const severity = config
             ? getRuleSeverity(rule.id, config, rule.severity, this.name)
             : rule.severity;
-
           diagnoses.push({
             id: `Sec-${generateId()}`,
             skill: this.name,
             type: 'security' as DiagnosisType,
-            severity: severity,
+            severity,
             title: rule.title,
             description: rule.description,
-            location: {
-              file: filePath,
-              line: lineNumber,
-            },
-            metadata: {
-              ruleId: rule.id,
-              matchedCode: match[0].slice(0, 50),
-            },
+            location: { file: filePath, line: lineNumber },
+            metadata: { ruleId: rule.id, matchedCode: match[0].slice(0, 50) },
             fixSuggestion: {
               description: rule.suggestion,
               autoApplicable: false,
@@ -309,6 +346,33 @@ export class SecuritySkill extends BaseSkill {
     }
 
     return diagnoses;
+  }
+
+  /** Create a standardized Diagnosis object. */
+  private makeDiagnosis(
+    filePath: string,
+    ruleId: string,
+    line: number,
+    severity: Severity,
+    message: string,
+    snippet: string
+  ): Diagnosis {
+    const ruleMeta = SECURITY_RULES.find(r => r.id === ruleId);
+    return {
+      id: `Sec-${generateId()}`,
+      skill: this.name,
+      type: 'security' as DiagnosisType,
+      severity,
+      title: ruleMeta?.title ?? ruleId,
+      description: message,
+      location: { file: filePath, line },
+      metadata: { ruleId, matchedCode: snippet.slice(0, 50) },
+      fixSuggestion: {
+        description: ruleMeta?.suggestion ?? '修复此安全问题',
+        autoApplicable: false,
+        riskLevel: 'high',
+      },
+    };
   }
 
   private async checkConfigFiles(projectPath: string, tools: SkillContext['tools'], config?: SkillContext['config']): Promise<Diagnosis[]> {

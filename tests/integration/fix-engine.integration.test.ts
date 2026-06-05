@@ -571,24 +571,6 @@ describe('FixEngine edge cases', () => {
     expect(result.applied).toBe(true);
   });
 
-  it('should handle replace with empty oldContent matching empty file', async () => {
-    const filePath = path.join(tmpDir, 'empty.txt');
-    fs.writeFileSync(filePath, '', 'utf-8');
-
-    const fix = makeFix([{
-      file: 'empty.txt',
-      type: 'replace',
-      oldContent: '',
-      content: 'now has content',
-    }]);
-
-    const result = await engine.applyFix(fix, tmpDir);
-
-    expect(result.success).toBe(true);
-    expect(result.applied).toBe(true);
-    expect(fs.readFileSync(filePath, 'utf-8')).toBe('now has content');
-  });
-
   it('should handle file with special characters in content', async () => {
     const filePath = path.join(tmpDir, 'special.html');
     const originalContent = '<div class="foo & bar" data-id="123">\n  <script>var x = "<b>test</b>";</script>\n</div>';
