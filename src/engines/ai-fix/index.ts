@@ -295,7 +295,8 @@ Output in JSON format:
       { role: 'user', content: prompt },
     ];
 
-    return this.modelClient.chat(messages);
+    const response = await this.modelClient.chat(messages);
+    return response.content;
   }
 
   private parseResponse(response: string, diagnosis: Diagnosis): Fix | null {

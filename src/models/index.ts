@@ -3,7 +3,7 @@
  * Provides LLM integration for multiple providers
  */
 
-import { ModelClient, ModelMessage } from '../types';
+import { ModelClient, ModelMessage, ModelResponse } from '../types';
 
 export type ModelProvider = 'deepseek' | 'openai' | 'claude' | 'siliconflow' | 'groq' | 'minimax';
 
@@ -79,10 +79,11 @@ export function createModelClient(config?: Partial<ModelConfig>): ModelClient {
   }
 
   return {
-    async chat(messages: ModelMessage[]): Promise<string> {
+    async chat(messages: ModelMessage[]): Promise<ModelResponse> {
       // Claude 用独立 API 路径
       if (provider === 'claude') {
-        return chatWithClaude(apiKey, messages, model);
+        const result = await chatWithClaude(apiKey, messages, model);
+        return { content: result };
       }
 
       const endpoint = `${baseUrl}/chat/completions`;
@@ -109,7 +110,7 @@ export function createModelClient(config?: Partial<ModelConfig>): ModelClient {
         }
 
         const data = await response.json() as { choices: Array<{ message: { content: string } }> };
-        return data.choices[0]?.message?.content || '';
+        return { content: data.choices[0]?.message?.content || '' };
       } catch (error) {
         console.error(`Model API call failed (${provider}):`, error);
         throw error;
@@ -261,12 +262,16 @@ export function getSupportedProviders(): string[] {
  */
 export function createMockModelClient(): ModelClient {
   return {
-    async chat(messages: ModelMessage[]): Promise<string> {
+    async chat(messages: ModelMessage[]): Promise<ModelResponse> {
       const lastMessage = messages[messages.length - 1];
       if (lastMessage?.content.includes('fix')) {
-        return '【MOCK】建议检查代码中的问题并进行修复。配置 MODEL_API_KEY 启用真实 AI 能力。';
+        return {
+          content: '【MOCK】建议检查代码中的以下问题：1. 类型不一致（如接口返回 Promise<string> 但实现返回 string）；2. 缺少错误处理；3. 硬编码的值应提取为常量。请配置 MODEL_API_KEY 启用真实 AI 能力。',
+        };
       }
-      return '【MOCK】这是一个占位响应。请配置 MODEL_API_KEY 环境变量以启用完整的 AI 功能。';
+      return {
+        content: '【MOCK】这是一个占位响应。请配置 MODEL_API_KEY 环境变量以启用完整的 AI 功能。',
+      };
     },
 
     async embed(_text: string): Promise<number[]> {

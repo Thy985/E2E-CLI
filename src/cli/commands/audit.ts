@@ -40,7 +40,7 @@ export async function auditCommand(options: any) {
     formatter.succeedSpinner('审计完成');
 
     // Display results
-    displayAuditReport(report, formatter, options);
+    displayAuditReport(report, options, logger);
 
     // Save report
     await saveReport(report, options, formatter);
@@ -63,67 +63,67 @@ export async function auditCommand(options: any) {
 
 function displayAuditReport(
   report: AuditReport,
-  formatter: ReturnType<typeof createFormatter>,
-  options: AuditOptions
+  options: AuditOptions,
+  logger: ReturnType<typeof createLogger>
 ): void {
   if (options.quiet) return;
 
-  console.log('');
-  console.log('═'.repeat(60));
-  console.log('  项目健康度审计报告');
-  console.log('═'.repeat(60));
-  console.log('');
+  logger.info('');
+  logger.info('═'.repeat(60));
+  logger.info('  项目健康度审计报告');
+  logger.info('═'.repeat(60));
+  logger.info('');
 
   // Project info
-  console.log(`项目: ${report.project.name}`);
-  console.log(`类型: ${report.project.type || '未知'}`);
-  console.log(`框架: ${report.project.framework || '未知'}`);
-  console.log(`时间: ${new Date(report.timestamp).toLocaleString('zh-CN')}`);
-  console.log(`耗时: ${report.duration}ms`);
-  console.log('');
+  logger.info(`项目: ${report.project.name}`);
+  logger.info(`类型: ${report.project.type || '未知'}`);
+  logger.info(`框架: ${report.project.framework || '未知'}`);
+  logger.info(`时间: ${new Date(report.timestamp).toLocaleString('zh-CN')}`);
+  logger.info(`耗时: ${report.duration}ms`);
+  logger.info('');
 
   // Overall score
-  displayOverallScore(report.summary, formatter);
-  console.log('');
+  displayOverallScore(report.summary, logger);
+  logger.info('');
 
   // Category scores
-  displayCategoryScores(report.categories, formatter);
-  console.log('');
+  displayCategoryScores(report.categories, logger);
+  logger.info('');
 
   // Detailed checks
   if (options.verbose) {
-    displayDetailedChecks(report.categories, formatter);
-    console.log('');
+    displayDetailedChecks(report.categories, logger);
+    logger.info('');
   }
 
   // Compliance
   if (report.compliance) {
-    displayCompliance(report.compliance, formatter);
-    console.log('');
+    displayCompliance(report.compliance, logger);
+    logger.info('');
   } else if (options.compliance) {
-    console.log('─'.repeat(60));
-    console.log('  合规性检查');
-    console.log('─'.repeat(60));
-    console.log('');
-    console.log(`  ⚠️  未对 ${options.compliance} 执行实际合规扫描`);
-    console.log('  说明: 当前 audit 引擎未集成 axe-core 等合规工具');
-    console.log('  建议: 改用 a11y skill 获取可访问性诊断');
-    console.log('');
+    logger.info('─'.repeat(60));
+    logger.info('  合规性检查');
+    logger.info('─'.repeat(60));
+    logger.info('');
+    logger.info(`  ⚠️  未对 ${options.compliance} 执行实际合规扫描`);
+    logger.info('  说明: 当前 audit 引擎未集成 axe-core 等合规工具');
+    logger.info('  建议: 改用 a11y skill 获取可访问性诊断');
+    logger.info('');
   }
 
   // Trends
   if (report.trends) {
-    displayTrends(report.trends, formatter);
-    console.log('');
+    displayTrends(report.trends, logger);
+    logger.info('');
   }
 
   // Recommendations
-  displayRecommendations(report.recommendations, formatter);
+  displayRecommendations(report.recommendations, logger);
 }
 
 function displayOverallScore(
   summary: AuditReport['summary'],
-  _formatter: ReturnType<typeof createFormatter>
+  logger: ReturnType<typeof createLogger>
 ): void {
   const gradeEmoji: Record<string, string> = {
     A: '🏆',
@@ -139,128 +139,128 @@ function displayOverallScore(
     critical: '❤️',
   };
 
-  console.log('─'.repeat(60));
-  console.log('  综合健康度');
-  console.log('─'.repeat(60));
-  console.log('');
-  console.log(`  得分: ${summary.overallScore}/100 ${gradeEmoji[summary.overallGrade]}`);
-  console.log(`  等级: ${summary.overallGrade}`);
-  console.log(`  状态: ${statusEmoji[summary.healthStatus]} ${summary.healthStatus}`);
-  console.log('');
-  console.log(`  问题总数: ${summary.totalIssues}`);
-  console.log(`  严重问题: ${summary.criticalIssues}`);
+  logger.info('─'.repeat(60));
+  logger.info('  综合健康度');
+  logger.info('─'.repeat(60));
+  logger.info('');
+  logger.info(`  得分: ${summary.overallScore}/100 ${gradeEmoji[summary.overallGrade]}`);
+  logger.info(`  等级: ${summary.overallGrade}`);
+  logger.info(`  状态: ${statusEmoji[summary.healthStatus]} ${summary.healthStatus}`);
+  logger.info('');
+  logger.info(`  问题总数: ${summary.totalIssues}`);
+  logger.info(`  严重问题: ${summary.criticalIssues}`);
 }
 
 function displayCategoryScores(
   categories: AuditCategory[],
-  _formatter: ReturnType<typeof createFormatter>
+  logger: ReturnType<typeof createLogger>
 ): void {
-  console.log('─'.repeat(60));
-  console.log('  分类得分');
-  console.log('─'.repeat(60));
-  console.log('');
+  logger.info('─'.repeat(60));
+  logger.info('  分类得分');
+  logger.info('─'.repeat(60));
+  logger.info('');
 
   for (const category of categories) {
     const statusIcon = category.status === 'pass' ? '✅' : 
                        category.status === 'warning' ? '⚠️' : '❌';
     const bar = createScoreBar(category.score);
     
-    console.log(`  ${statusIcon} ${category.displayName.padEnd(8)} ${bar} ${category.score}/100`);
+    logger.info(`  ${statusIcon} ${category.displayName.padEnd(8)} ${bar} ${category.score}/100`);
     
     if (category.description) {
-      console.log(`     ${category.description}`);
+      logger.info(`     ${category.description}`);
     }
   }
 }
 
 function displayDetailedChecks(
   categories: AuditCategory[],
-  _formatter: ReturnType<typeof createFormatter>
+  logger: ReturnType<typeof createLogger>
 ): void {
-  console.log('─'.repeat(60));
-  console.log('  详细检查');
-  console.log('─'.repeat(60));
-  console.log('');
+  logger.info('─'.repeat(60));
+  logger.info('  详细检查');
+  logger.info('─'.repeat(60));
+  logger.info('');
 
   for (const category of categories) {
-    console.log(`  ${category.displayName}:`);
+    logger.info(`  ${category.displayName}:`);
     
     for (const check of category.checks) {
       const statusIcon = check.status === 'pass' ? '✓' : 
                          check.status === 'warning' ? '!' : 
                          check.status === 'fail' ? '✗' : '-';
       
-      console.log(`    ${statusIcon} ${check.name}: ${check.score}/${check.maxScore}`);
+      logger.info(`    ${statusIcon} ${check.name}: ${check.score}/${check.maxScore}`);
       if (check.details) {
-        console.log(`      ${check.details}`);
+        logger.info(`      ${check.details}`);
       }
     }
-    console.log('');
+    logger.info('');
   }
 }
 
 function displayCompliance(
   compliance: NonNullable<AuditReport['compliance']>,
-  _formatter: ReturnType<typeof createFormatter>
+  logger: ReturnType<typeof createLogger>
 ): void {
-  console.log('─'.repeat(60));
-  console.log(`  合规性检查: ${compliance.standard}`);
-  console.log('─'.repeat(60));
-  console.log('');
+  logger.info('─'.repeat(60));
+  logger.info(`  合规性检查: ${compliance.standard}`);
+  logger.info('─'.repeat(60));
+  logger.info('');
 
   const statusText = compliance.status === 'compliant' ? '✅ 合规' :
                      compliance.status === 'partial' ? '⚠️ 部分合规' : '❌ 不合规';
   
-  console.log(`  状态: ${statusText}`);
-  console.log(`  得分: ${compliance.score}/100`);
-  console.log('');
+  logger.info(`  状态: ${statusText}`);
+  logger.info(`  得分: ${compliance.score}/100`);
+  logger.info('');
 
   for (const req of compliance.requirements) {
     const icon = req.status === 'pass' ? '✓' : req.status === 'fail' ? '✗' : '-';
-    console.log(`  ${icon} ${req.id}: ${req.name}`);
+    logger.info(`  ${icon} ${req.id}: ${req.name}`);
     if (req.description) {
-      console.log(`    ${req.description}`);
+      logger.info(`    ${req.description}`);
     }
   }
 }
 
 function displayTrends(
   trends: NonNullable<AuditReport['trends']>,
-  _formatter: ReturnType<typeof createFormatter>
+  logger: ReturnType<typeof createLogger>
 ): void {
-  console.log('─'.repeat(60));
-  console.log('  趋势分析');
-  console.log('─'.repeat(60));
-  console.log('');
+  logger.info('─'.repeat(60));
+  logger.info('  趋势分析');
+  logger.info('─'.repeat(60));
+  logger.info('');
 
   const trendEmoji = trends.trend === 'improving' ? '📈' :
                      trends.trend === 'declining' ? '📉' : '➡️';
   
-  console.log(`  趋势: ${trendEmoji} ${trends.trend}`);
-  console.log(`  变化: ${trends.change > 0 ? '+' : ''}${trends.change} 分`);
-  console.log(`  上次: ${trends.previousScore}/100`);
-  console.log(`  当前: ${trends.currentScore}/100`);
-  console.log('');
+  logger.info(`  趋势: ${trendEmoji} ${trends.trend}`);
+  logger.info(`  变化: ${trends.change > 0 ? '+' : ''}${trends.change} 分`);
+  logger.info(`  上次: ${trends.previousScore}/100`);
+  logger.info(`  当前: ${trends.currentScore}/100`);
+  logger.info('');
 
   if (trends.history.length > 1) {
-    console.log('  历史记录:');
+    logger.info('  历史记录:');
     for (const point of trends.history.slice(-5)) {
       const date = new Date(point.date).toLocaleDateString('zh-CN');
-      console.log(`    ${date}: ${point.score}/100 (${point.issues} 问题)`);
+      logger.info(`    ${date}: ${point.score}/100 (${point.issues} 问题)`);
     }
   }
 }
 
 function displayRecommendations(
   recommendations: AuditReport['recommendations'],
-  _formatter: ReturnType<typeof createFormatter>
+  logger: ReturnType<typeof createLogger>
 ): void {
   if (recommendations.length === 0) return;
 
-  console.log('─'.repeat(60));
-  console.log('  改进建议');
-  console.log('─'.repeat(60));
-  console.log('');
+  logger.info('─'.repeat(60));
+  logger.info('  改进建议');
+  logger.info('─'.repeat(60));
+  logger.info('');
 
   const priorityEmoji: Record<string, string> = {
     high: '🔴',
@@ -270,14 +270,14 @@ function displayRecommendations(
 
   for (let i = 0; i < Math.min(recommendations.length, 5); i++) {
     const rec = recommendations[i];
-    console.log(`  ${priorityEmoji[rec.priority]} [${rec.category}] ${rec.title}`);
-    console.log(`     ${rec.description}`);
-    console.log(`     影响: ${rec.impact}`);
-    console.log('');
+    logger.info(`  ${priorityEmoji[rec.priority]} [${rec.category}] ${rec.title}`);
+    logger.info(`     ${rec.description}`);
+    logger.info(`     影响: ${rec.impact}`);
+    logger.info('');
   }
 
   if (recommendations.length > 5) {
-    console.log(`  ... 还有 ${recommendations.length - 5} 条建议`);
+    logger.info(`  ... 还有 ${recommendations.length - 5} 条建议`);
   }
 }
 

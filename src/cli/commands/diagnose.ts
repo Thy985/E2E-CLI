@@ -131,7 +131,7 @@ export async function diagnoseCommand(options: any) {
     if (!isCI) {
       formatter.succeedSpinner(`诊断完成，发现 ${allIssues.length} 个问题`);
     } else {
-      console.log(`诊断完成，发现 ${allIssues.length} 个问题`);
+      logger.info(`诊断完成，发现 ${allIssues.length} 个问题`);
     }
 
     // Generate report
@@ -170,7 +170,7 @@ export async function diagnoseCommand(options: any) {
       logger.error('诊断过程中发生错误:', error);
     } else {
       console.log('::error::诊断过程中发生错误');
-      console.error(error);
+      logger.error(String(error));
     }
     process.exit(3);
   }
@@ -233,7 +233,7 @@ async function outputReport(
   if (!options.quiet) {
     formatter.printSummary(report.summary);
     formatter.printIssues(report.issues);
-    console.log();
+    console.log('\n');
     console.log(`⏱️  耗时: ${report.duration}ms`);
   }
 

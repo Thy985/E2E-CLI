@@ -73,14 +73,14 @@ export async function execAsync(
     child.stdout?.on('data', (chunk: Buffer) => handleChunk('stdout', chunk));
     child.stderr?.on('data', (chunk: Buffer) => handleChunk('stderr', chunk));
 
-    child.on('error', (error) => {
+    child.on('error', (error: Error) => {
       clearTimeout(timer);
       if (!killedByTimeout) {
         reject(error);
       }
     });
 
-    child.on('close', (code) => {
+    child.on('close', (code: number | null) => {
       clearTimeout(timer);
       if (killedByTimeout || killedByBuffer) return;
       if (killedByBuffer) {

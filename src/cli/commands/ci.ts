@@ -48,7 +48,7 @@ export async function ciCommandOld(action: string, options: CICommandOptions) {
       break;
     
     case 'detect':
-      await detectCI(options, formatter);
+      await detectCI(options, formatter, logger);
       break;
     
     case 'run':
@@ -65,7 +65,7 @@ export async function ciCommandOld(action: string, options: CICommandOptions) {
 async function initCI(
   options: CICommandOptions,
   formatter: ReturnType<typeof createFormatter>,
-  _logger: ReturnType<typeof createLogger>
+  logger: ReturnType<typeof createLogger>
 ) {
   const projectPath = options.path || process.cwd();
 
@@ -98,20 +98,20 @@ async function initCI(
     formatter.success(`CI 配置已生成: ${filePath}`);
     
     // Print next steps
-    console.log('');
-    console.log('下一步:');
-    console.log(`1. 检查生成的配置文件: ${filePath}`);
-    console.log('2. 根据需要调整配置');
-    console.log('3. 提交到版本控制');
-    console.log('');
-    console.log('测试 CI 配置:');
+    logger.info('');
+    logger.info('下一步:');
+    logger.info(`1. 检查生成的配置文件: ${filePath}`);
+    logger.info('2. 根据需要调整配置');
+    logger.info('3. 提交到版本控制');
+    logger.info('');
+    logger.info('测试 CI 配置:');
     
     if (config.platform === 'github') {
-      console.log('  - Push 到分支触发');
-      console.log('  - 或在 Actions 页面手动触发');
+      logger.info('  - Push 到分支触发');
+      logger.info('  - 或在 Actions 页面手动触发');
     } else if (config.platform === 'gitlab') {
-      console.log('  - Push 到分支触发');
-      console.log('  - 或在 CI/CD > Pipelines 手动触发');
+      logger.info('  - Push 到分支触发');
+      logger.info('  - 或在 CI/CD > Pipelines 手动触发');
     }
     
   } catch (error: any) {
@@ -122,7 +122,8 @@ async function initCI(
 
 async function detectCI(
   options: CICommandOptions,
-  formatter: ReturnType<typeof createFormatter>
+  formatter: ReturnType<typeof createFormatter>,
+  logger: ReturnType<typeof createLogger>
 ) {
   const projectPath = options.path || process.cwd();
   
@@ -133,25 +134,25 @@ async function detectCI(
     
     // Show existing config
     const { filename } = generateCIConfig({ ...DEFAULT_CI_CONFIG, platform });
-    console.log('');
-    console.log(`配置文件: ${filename}`);
+    logger.info('');
+    logger.info(`配置文件: ${filename}`);
   } else {
     formatter.info('未检测到 CI 配置');
-    console.log('');
-    console.log('支持的 CI 平台:');
-    console.log('  - github    (GitHub Actions)');
-    console.log('  - gitlab    (GitLab CI)');
-    console.log('  - jenkins   (Jenkins)');
-    console.log('  - circleci  (CircleCI)');
-    console.log('');
-    console.log('运行 qa-agent ci init 生成配置');
+    logger.info('');
+    logger.info('支持的 CI 平台:');
+    logger.info('  - github    (GitHub Actions)');
+    logger.info('  - gitlab    (GitLab CI)');
+    logger.info('  - jenkins   (Jenkins)');
+    logger.info('  - circleci  (CircleCI)');
+    logger.info('');
+    logger.info('运行 qa-agent ci init 生成配置');
   }
 }
 
 async function runCI(
   options: CICommandOptions,
   _formatter: ReturnType<typeof createFormatter>,
-  _logger: ReturnType<typeof createLogger>
+  logger: ReturnType<typeof createLogger>
 ) {
   // Import diagnose and audit commands
   const { diagnoseCommand } = await import('./diagnose');
@@ -162,20 +163,20 @@ async function runCI(
   const failOn = options.failOn || 'critical';
   const output = options.output || 'json';
 
-  console.log('════════════════════════════════════════════════════════════');
-  console.log('  QA-Agent CI Mode');
-  console.log('════════════════════════════════════════════════════════════');
-  console.log('');
-  console.log(`项目: ${projectPath}`);
-  console.log(`维度: ${skills}`);
-  console.log(`失败级别: ${failOn}`);
-  console.log('');
+  logger.info('════════════════════════════════════════════════════════════');
+  logger.info('  QA-Agent CI Mode');
+  logger.info('════════════════════════════════════════════════════════════');
+  logger.info('');
+  logger.info(`项目: ${projectPath}`);
+  logger.info(`维度: ${skills}`);
+  logger.info(`失败级别: ${failOn}`);
+  logger.info('');
 
   let exitCode = 0;
 
   try {
     // Run diagnose
-    console.log('▶ 运行诊断...');
+    logger.info('▶ 运行诊断...');
     await diagnoseCommand({
       path: projectPath,
       skills,
@@ -186,13 +187,13 @@ async function runCI(
       ci: true,
     });
   } catch (error: any) {
-    console.log(`✗ 诊断失败: ${error.message}`);
+    logger.error(`✗ 诊断失败: ${error.message}`);
     exitCode = 2;
   }
 
   try {
     // Run audit
-    console.log('▶ 运行审计...');
+    logger.info('▶ 运行审计...');
     await auditCommand({
       path: projectPath,
       output,
@@ -201,7 +202,7 @@ async function runCI(
       ci: true,
     });
   } catch (error: any) {
-    console.log(`✗ 审计失败: ${error.message}`);
+    logger.error(`✗ 审计失败: ${error.message}`);
     if (exitCode === 0) exitCode = 1;
   }
 
@@ -211,28 +212,28 @@ async function runCI(
     const content = await fs.readFile(reportPath, 'utf-8');
     const report = JSON.parse(content);
     
-    console.log('');
-    console.log('────────────────────────────────────────────────────────────');
-    console.log('  质量报告');
-    console.log('────────────────────────────────────────────────────────────');
-    console.log(`  得分: ${report.summary?.score || 0}/100`);
-    console.log(`  等级: ${report.summary?.grade || 'F'}`);
-    console.log(`  问题: ${report.summary?.totalIssues || 0}`);
-    console.log(`  严重: ${report.summary?.critical || 0}`);
-    console.log(`  警告: ${report.summary?.warning || 0}`);
-    console.log('');
+    logger.info('');
+    logger.info('────────────────────────────────────────────────────────────');
+    logger.info('  质量报告');
+    logger.info('────────────────────────────────────────────────────────────');
+    logger.info(`  得分: ${report.summary?.score || 0}/100`);
+    logger.info(`  等级: ${report.summary?.grade || 'F'}`);
+    logger.info(`  问题: ${report.summary?.totalIssues || 0}`);
+    logger.info(`  严重: ${report.summary?.critical || 0}`);
+    logger.info(`  警告: ${report.summary?.warning || 0}`);
+    logger.info('');
     
     if (report.summary?.critical > 0) {
-      console.log('✗ 发现严重问题，质量门禁未通过');
+      logger.error('✗ 发现严重问题，质量门禁未通过');
       exitCode = 2;
     } else if (failOn === 'warning' && report.summary?.warning > 0) {
-      console.log('⚠ 发现警告，质量门禁未通过');
+      logger.warn('⚠ 发现警告，质量门禁未通过');
       exitCode = 1;
     } else {
-      console.log('✓ 质量门禁通过');
+      logger.info('✓ 质量门禁通过');
     }
   } catch {
-    console.log('⚠ 无法读取报告');
+    logger.warn('⚠ 无法读取报告');
   }
 
   process.exit(exitCode);

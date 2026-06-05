@@ -61,7 +61,7 @@ export class DesignTokenExtractor {
   }
 
   private async extractFromCSS(projectPath: string): Promise<Partial<DesignTokens>> {
-    const tokens: Partial<DesignTokens> = { colors: {}, spacing: {}, borderRadius: {}, shadows: {} };
+    const tokens: Partial<DesignTokens> = { colors: {}, typography: {}, spacing: {}, borderRadius: {}, shadows: {}, breakpoints: {} };
     
     // 查找 CSS 变量文件
     const cssFiles = await this.findFiles(projectPath, ['**/*.css', '**/*.scss', '**/*.less']);
@@ -86,13 +86,224 @@ export class DesignTokenExtractor {
           tokens.shadows![name] = value.trim();
         }
       }
+
+      // 提取排版信息：font-size、font-family、line-height 等
+      this.extractTypographyFromCSS(content, tokens);
+
+      // 提取断点信息
+      this.extractBreakpointsFromCSS(content, tokens);
+
+      // 提取内联样式
+      this.extractInlineStyles(content, tokens);
     }
 
     return tokens;
   }
 
+  /**
+   * 从 CSS 中提取排版信息
+   */
+  private extractTypographyFromCSS(content: string, tokens: Partial<DesignTokens>): void {
+    // 匹配 font-size 声明
+    const fontSizeRegex = /font-size:\s*([^;]+);/g;
+    let match;
+    while ((match = fontSizeRegex.exec(content)) !== null) {
+      const value = match[1].trim();
+      // 只提取有意义的字体大小值（排除 calc、var 等动态值）
+      if (/^[\d.]+(px|rem|em|pt)$/.test(value)) {
+        const key = `font-size-${value.replace(/[^\w]/g, '')}`;
+        if (!tokens.typography) {
+          tokens.typography = {};
+        }
+        tokens.typography[key] = tokens.typography[key] || {
+          fontSize: value,
+          fontWeight: 400,
+          lineHeight: '1.5',
+        };
+      }
+    }
+
+    // 匹配 font-family 声明
+    const fontFamilyRegex = /font-family:\s*([^;]+);/g;
+    while ((match = fontFamilyRegex.exec(content)) !== null) {
+      const value = match[1].trim();
+      // 提取常见的字体族名称
+      const cleaned = value.replace(/['"]/g, '').split(',')[0].trim();
+      if (cleaned && !tokens!.typography!['font-family']) {
+        if (!tokens.typography) {
+          tokens.typography = {};
+        }
+        tokens.typography['font-family'] = {
+          fontSize: '16px',
+          fontWeight: 400,
+          lineHeight: '1.5',
+          fontFamily: cleaned,
+        };
+      }
+    }
+
+    // 匹配 font-weight 声明
+    const fontWeightRegex = /font-weight:\s*([^;]+);/g;
+    while ((match = fontWeightRegex.exec(content)) !== null) {
+      const value = match[1].trim();
+      if (/^[\d]+$/.test(value)) {
+        const key = `font-weight-${value}`;
+        if (!tokens.typography) {
+          tokens.typography = {};
+        }
+        if (!tokens.typography[key]) {
+          tokens.typography[key] = {
+            fontSize: '16px',
+            fontWeight: parseInt(value, 10),
+            lineHeight: '1.5',
+          };
+        }
+      }
+    }
+
+    // 提取排版变量（如 --text-xs, --text-sm 等）
+    const textVarRegex = /--text-([\w-]+):\s*([^;]+);/g;
+    while ((match = textVarRegex.exec(content)) !== null) {
+      const [, name, value] = match;
+      // 解析类似 "0.75rem/1rem" 或 "0.75rem 400 Inter" 的格式
+      const parts = value.split(/[\/\s]+/).filter(Boolean);
+      if (parts.length > 0) {
+        if (!tokens.typography) {
+          tokens.typography = {};
+        }
+        tokens.typography[`text-${name}`] = {
+          fontSize: parts[0],
+          fontWeight: parts[1] && /^\d+$/.test(parts[1]) ? parseInt(parts[1], 10) : 400,
+          lineHeight: parts[parts.length - 1] && /[\d.]+(px|rem|em|%)/.test(parts[parts.length - 1]) ? parts[parts.length - 1] : '1.5',
+        };
+      }
+    }
+  }
+
+  /**
+   * 从 CSS 中提取断点信息
+   */
+  private extractBreakpointsFromCSS(content: string, tokens: Partial<DesignTokens>): void {
+    // 匹配 @media 查询中的常见断点值
+    const mediaRegex = /@media\s*\([^)]*min-width:\s*([\d.]+)(px|em|rem)/g;
+    let match;
+    const foundBreakpoints = new Set<string>();
+    
+    while ((match = mediaRegex.exec(content)) !== null) {
+      const value = match[1] + match[2];
+      if (!foundBreakpoints.has(value)) {
+        foundBreakpoints.add(value);
+      }
+    }
+
+    // 按值排序并命名
+    const sortedValues = Array.from(foundBreakpoints).sort((a, b) => {
+      const numA = parseFloat(a);
+      const numB = parseFloat(b);
+      return numA - numB;
+    });
+
+    const standardNames = ['sm', 'md', 'lg', 'xl', '2xl', '3xl', '4xl'];
+    for (let i = 0; i < sortedValues.length; i++) {
+      const value = sortedValues[i];
+      const numValue = parseFloat(value);
+      
+      // 尝试匹配标准断点名称
+      let name = standardNames[i] || `bp-${numValue}`;
+      if (numValue === 640) name = 'sm';
+      else if (numValue === 768) name = 'md';
+      else if (numValue === 1024) name = 'lg';
+      else if (numValue === 1280) name = 'xl';
+      else if (numValue === 1536) name = '2xl';
+
+      if (!tokens.breakpoints) {
+        tokens.breakpoints = {};
+      }
+      tokens.breakpoints[name] = value;
+    }
+  }
+
+  /**
+   * 从 CSS 中提取内联样式
+   */
+  private extractInlineStyles(content: string, tokens: Partial<DesignTokens>): void {
+    // 匹配 style="..." 属性中的样式
+    const styleAttrRegex = /style\s*=\s*["']([^"']*)["']/g;
+    let match;
+    while ((match = styleAttrRegex.exec(content)) !== null) {
+      const styleContent = match[1];
+      this.parseStyleDeclarations(styleContent, tokens);
+    }
+
+    // 匹配模板字符串中的内联样式（JSX/TSX）
+    const jsxStyleRegex = /style\s*=\s*\{[^}]*\{([^}]*)\}/g;
+    while ((match = jsxStyleRegex.exec(content)) !== null) {
+      const styleContent = match[1];
+      // 转换 JS 对象语法为 CSS 语法
+      const cssStyle = styleContent.replace(/([A-Z])/g, '-$1').toLowerCase();
+      this.parseStyleDeclarations(cssStyle, tokens);
+    }
+  }
+
+  /**
+   * 解析样式声明
+   */
+  private parseStyleDeclarations(styleContent: string, tokens: Partial<DesignTokens>): void {
+    const declarations = styleContent.split(';');
+    for (const decl of declarations) {
+      const [prop, ...rest] = decl.split(':');
+      if (!prop || rest.length === 0) continue;
+      
+      const name = prop.trim();
+      const value = rest.join(':').trim();
+
+      if (!value || value.startsWith('var(')) continue;
+
+      if (this.isColor(name, value)) {
+        if (!tokens.colors) {
+          tokens.colors = {};
+        }
+        tokens.colors[`inline-${name}`] = value;
+      } else if (name === 'font-size') {
+        if (!tokens.typography) {
+          tokens.typography = {};
+        }
+        tokens.typography[`inline-font-size`] = {
+          fontSize: value,
+          fontWeight: 400,
+          lineHeight: '1.5',
+        };
+      } else if (name === 'font-family') {
+        if (!tokens.typography) {
+          tokens.typography = {};
+        }
+        tokens.typography['inline-font-family'] = {
+          fontSize: '16px',
+          fontWeight: 400,
+          lineHeight: '1.5',
+          fontFamily: value,
+        };
+      } else if (name === 'padding' || name === 'margin' || name === 'gap') {
+        if (!tokens.spacing) {
+          tokens.spacing = {};
+        }
+        tokens.spacing[`inline-${name}`] = value;
+      } else if (name === 'border-radius') {
+        if (!tokens.borderRadius) {
+          tokens.borderRadius = {};
+        }
+        tokens.borderRadius[`inline-border-radius`] = value;
+      } else if (name === 'box-shadow') {
+        if (!tokens.shadows) {
+          tokens.shadows = {};
+        }
+        tokens.shadows[`inline-box-shadow`] = value;
+      }
+    }
+  }
+
   private async extractFromTailwind(projectPath: string): Promise<Partial<DesignTokens>> {
-    const tokens: Partial<DesignTokens> = { colors: {}, spacing: {}, borderRadius: {} };
+    const tokens: Partial<DesignTokens> = { colors: {}, spacing: {}, borderRadius: {}, typography: {}, breakpoints: {}, shadows: {} };
     
     const tailwindConfigPath = path.join(projectPath, 'tailwind.config.js');
     const tailwindConfigTsPath = path.join(projectPath, 'tailwind.config.ts');
@@ -117,6 +328,41 @@ export class DesignTokenExtractor {
       if (theme?.extend?.borderRadius) {
         Object.assign(tokens.borderRadius!, theme.extend.borderRadius);
       }
+      if (theme?.extend?.screens) {
+        Object.assign(tokens.breakpoints!, theme.extend.screens);
+      }
+      if (theme?.extend?.boxShadow) {
+        Object.assign(tokens.shadows!, theme.extend.boxShadow);
+      }
+      if (theme?.extend?.fontFamily) {
+        for (const [name, family] of Object.entries(theme.extend.fontFamily)) {
+          if (!tokens.typography) {
+            tokens.typography = {};
+          }
+          const fontFamilyValue = Array.isArray(family) ? family.join(', ') : String(family);
+          tokens.typography[`font-${name}`] = {
+            fontSize: '16px',
+            fontWeight: 400,
+            lineHeight: '1.5',
+            fontFamily: fontFamilyValue,
+          };
+        }
+      }
+
+      // 也提取基础主题（非 extend）
+      if (theme?.colors) {
+        for (const [name, value] of Object.entries(theme.colors)) {
+          if (typeof value === 'string' && !tokens.colors![name]) {
+            tokens.colors![name] = value;
+          }
+        }
+      }
+      if (theme?.screens) {
+        Object.assign(tokens.breakpoints!, theme.screens);
+      }
+      if (theme?.boxShadow) {
+        Object.assign(tokens.shadows!, theme.boxShadow);
+      }
     } catch (error) {
       // 忽略导入错误
     }
@@ -125,7 +371,7 @@ export class DesignTokenExtractor {
   }
 
   private async extractFromThemeFiles(projectPath: string): Promise<Partial<DesignTokens>> {
-    const tokens: Partial<DesignTokens> = {};
+    const tokens: Partial<DesignTokens> = { colors: {}, typography: {}, spacing: {}, borderRadius: {}, shadows: {}, breakpoints: {} };
     
     // 常见的主题文件路径
     const themePaths = [
@@ -140,9 +386,32 @@ export class DesignTokenExtractor {
     for (const themePath of themePaths) {
       const fullPath = path.join(projectPath, themePath);
       if (fs.existsSync(fullPath)) {
-        // 这里可以添加更复杂的主题文件解析逻辑
-        // 目前简单返回空对象
-        break;
+        try {
+          const content = await fs.promises.readFile(fullPath, 'utf-8');
+          
+          // 从主题文件中提取颜色
+          const colorRegex = /['"]?color['"]?\s*[:=]\s*['"]([^'"]+)['"]/g;
+          let match;
+          while ((match = colorRegex.exec(content)) !== null) {
+            tokens.colors![`theme-${Object.keys(tokens.colors!).length}`] = match[1];
+          }
+
+          // 从主题文件中提取间距
+          const spacingRegex = /['"]?spacing['"]?\s*[:=]\s*['"]([^'"]+)['"]/g;
+          while ((match = spacingRegex.exec(content)) !== null) {
+            tokens.spacing![`theme-${Object.keys(tokens.spacing!).length}`] = match[1];
+          }
+
+          // 从主题文件中提取断点
+          const breakpointRegex = /['"]?(sm|md|lg|xl|2xl|breakpoint)['"]?\s*[:=]\s*['"]?([\d.]+)(px|rem|em)['"]?/g;
+          while ((match = breakpointRegex.exec(content)) !== null) {
+            tokens.breakpoints![match[1]] = match[2] + match[3];
+          }
+
+          break;
+        } catch {
+          // 忽略读取错误
+        }
       }
     }
 

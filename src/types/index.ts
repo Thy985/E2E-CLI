@@ -232,7 +232,7 @@ export interface ShellResult {
 // ============================================
 
 export interface ModelClient {
-  chat(messages: ModelMessage[]): Promise<string>;
+  chat(messages: ModelMessage[]): Promise<ModelResponse>;
   embed?(text: string): Promise<number[]>;
 }
 

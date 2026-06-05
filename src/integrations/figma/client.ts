@@ -71,6 +71,67 @@ export class FigmaClient {
   }
 
   /**
+   * 获取 Figma 文件的图片导出 URL
+   */
+  async getImages(fileKey: string, nodeIds: string[], format: 'png' | 'svg' | 'pdf' = 'png', scale: number = 2): Promise<Record<string, string>> {
+    const ids = nodeIds.join(',');
+    const url = `${this.baseUrl}/images/${fileKey}?ids=${ids}&format=${format}&scale=${scale}`;
+
+    const response = await fetch(url, {
+      headers: {
+        'X-Figma-Token': this.accessToken,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Figma API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json() as { images?: Record<string, string> };
+    return data.images || {};
+  }
+
+  /**
+   * 获取 Figma 文件的指定节点数据
+   */
+  async getFileNodes(fileKey: string, nodeIds: string[]): Promise<any> {
+    const ids = nodeIds.join(',');
+    const url = `${this.baseUrl}/files/${fileKey}/nodes?ids=${ids}`;
+
+    const response = await fetch(url, {
+      headers: {
+        'X-Figma-Token': this.accessToken,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Figma API error: ${response.status} ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
+  /**
+   * 获取 Figma 文件的评论
+   */
+  async getComments(fileKey: string): Promise<any[]> {
+    const url = `${this.baseUrl}/files/${fileKey}/comments`;
+
+    const response = await fetch(url, {
+      headers: {
+        'X-Figma-Token': this.accessToken,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Figma API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json() as { comments?: any[] };
+    return data.comments || [];
+  }
+
+  /**
    * 提取设计令牌
    */
   async extractDesignTokens(fileKey: string): Promise<DesignTokens> {

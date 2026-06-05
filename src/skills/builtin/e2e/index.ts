@@ -324,10 +324,11 @@ export class E2ESkill extends BaseSkill {
 
 请只输出测试代码，不要其他解释。`;
 
-    const code = await model.chat([
+    const response = await model.chat([
       { role: 'system', content: '你是一个专业的测试工程师，擅长编写 Playwright E2E 测试。' },
       { role: 'user', content: prompt },
     ]);
+    const code = response.content;
 
     // Extract selectors from generated code
     const selectors = this.extractSelectors(code);

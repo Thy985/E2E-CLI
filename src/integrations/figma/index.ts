@@ -17,6 +17,8 @@ export type {
 
 export type {
   SyncOptions,
+  DesignChange,
+  SyncedComponent,
 } from './sync';
 
 export type {

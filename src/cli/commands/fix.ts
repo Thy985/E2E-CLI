@@ -83,7 +83,7 @@ async function runBatchFix(options: any, config: any, logger: any) {
   );
 
   // 输出结果
-  console.log('\n' + result.report);
+  logger.info('\n' + result.report);
 
   // 保存报告
   if (!options.dryRun) {
