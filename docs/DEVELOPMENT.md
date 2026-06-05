@@ -14,37 +14,109 @@ qa-agent/
 │   └── DEVELOPMENT.md       # 本文件
 ├── src/
 │   ├── cli/                  # CLI 入口
-│   │   ├── index.ts         # CLI主入口
-│   │   └── commands/        # 命令实现
-│   │       ├── diagnose.ts
-│   │       ├── ux-audit.ts  # UI/UX审查 ⭐
-│   │       ├── design.ts    # 设计规范管理 ⭐
-│   │       └── fix.ts
-│   ├── scheduler/            # 任务调度
-│   │   ├── intent-parser.ts
-│   │   ├── task-planner.ts
-│   │   └── executor.ts
-│   ├── skills/               # Skills插件
-│   │   ├── registry.ts      # Skill注册表
-│   │   ├── loader.ts        # Skill加载器
-│   │   ├── base-skill.ts    # Skill基类
-│   │   └── builtin/         # 内置Skills
-│   │       ├── e2e/         # E2E测试
-│   │       ├── uiux/        # UI/UX审查 ⭐
-│   │       ├── a11y/        # 可访问性
-│   │       ├── perf/        # 性能诊断
-│   │       └── security/    # 安全扫描
+│   │   ├── index.ts         # CLI 主入口
+│   │   ├── commands/        # 命令实现
+│   │   │   ├── audit.ts
+│   │   │   ├── best-practices.ts
+│   │   │   ├── ci.ts
+│   │   │   ├── dependency.ts
+│   │   │   ├── design.ts
+│   │   │   ├── diagnose.ts
+│   │   │   ├── fix.ts
+│   │   │   ├── init.ts
+│   │   │   ├── seo.ts
+│   │   │   ├── skill.ts
+│   │   │   └── ux-audit.ts
+│   │   └── output/          # 输出渲染
+│   │       ├── formatter.ts
+│   │       └── report-renderer.ts
+│   ├── ci/                   # CI 集成
+│   │   └── index.ts
+│   ├── config/               # 配置管理
+│   │   └── index.ts
 │   ├── engines/              # 核心引擎
-│   │   ├── diagnosis/       # 诊断引擎
+│   │   ├── ai-fix/          # AI 修复引擎
+│   │   │   └── index.ts
+│   │   ├── audit/           # 审计引擎
+│   │   │   ├── checkers/
+│   │   │   │   ├── code-quality.ts
+│   │   │   │   ├── config.ts
+│   │   │   │   ├── dependency.ts
+│   │   │   │   ├── documentation.ts
+│   │   │   │   ├── security.ts
+│   │   │   │   └── test.ts
+│   │   │   └── index.ts
 │   │   ├── fix/             # 修复引擎
-│   │   ├── verify/          # 验证引擎
-│   │   └── sandbox/         # 沙箱系统 ⭐
-│   ├── models/               # LLM服务
+│   │   │   ├── batch.ts
+│   │   │   ├── debug.ts
+│   │   │   ├── enhanced.ts
+│   │   │   ├── errors.ts
+│   │   │   ├── index.ts
+│   │   │   ├── rollback.ts
+│   │   │   └── simple-fix.ts
+│   │   ├── report/          # 报告引擎
+│   │   │   └── index.ts
+│   │   ├── sandbox/         # 沙箱系统
+│   │   │   └── index.ts
+│   │   └── verify/          # 验证引擎
+│   │       └── index.ts
+│   ├── integrations/         # 外部集成
+│   │   ├── figma/           # Figma 集成
+│   │   │   ├── client.ts
+│   │   │   ├── compare.ts
+│   │   │   ├── index.ts
+│   │   │   └── sync.ts
+│   │   └── index.ts
+│   ├── models/               # LLM 模型客户端
+│   │   └── index.ts
+│   ├── skills/               # Skills 插件系统
+│   │   ├── builtin/         # 内置 Skills
+│   │   │   ├── a11y/        # 可访问性
+│   │   │   ├── api/         # API 审查
+│   │   │   ├── best-practices/  # 最佳实践
+│   │   │   ├── complexity/  # 复杂度分析
+│   │   │   ├── dependency/  # 依赖审计
+│   │   │   ├── e2e/         # E2E 测试
+│   │   │   ├── performance/ # 性能诊断
+│   │   │   ├── security/    # 安全扫描
+│   │   │   ├── seo/         # SEO 审查
+│   │   │   ├── ui-ux/       # UI/UX 审查 (新版)
+│   │   │   └── uiux/        # UI/UX 审查 (旧版)
+│   │   ├── base-skill.ts    # Skill 基类
+│   │   ├── index.ts
+│   │   ├── registry.ts      # Skill 注册表
+│   │   └── skill-manager.ts # Skill 管理器
+│   ├── storage/              # 存储抽象
+│   │   └── index.ts
 │   ├── tools/                # 工具集
-│   └── types/                # 类型定义
+│   │   └── index.ts
+│   ├── types/                # 类型定义
+│   │   ├── index.ts
+│   │   └── pixelmatch.d.ts
+│   └── utils/                # 工具函数
+│       ├── file-ops.ts
+│       ├── ignore.ts
+│       ├── image.ts
+│       ├── index.ts
+│       ├── logger.ts
+│       └── shell.ts
 ├── tests/
-├── examples/
-└── package.json
+│   ├── fixtures/
+│   ├── integration/         # 集成测试
+│   │   ├── fix-engine.integration.test.ts
+│   │   ├── sandbox.integration.test.ts
+│   │   └── skill-diagnose.integration.test.ts
+│   └── unit/                # 单元测试
+│       ├── a11y.test.ts
+│       ├── config.test.ts
+│       ├── e2e.test.ts
+│       ├── logger.test.ts
+│       ├── model.test.ts
+│       ├── report.test.ts
+│       ├── security.test.ts
+│       └── skill-registry.test.ts
+├── package.json
+└── tsconfig.json
 ```
 
 ---
@@ -53,10 +125,11 @@ qa-agent/
 
 ### 2.1 环境要求
 
-- Node.js >= 18.0.0
-- pnpm >= 8.0.0（推荐）
+- Node.js >= 18
+- Bun >= 1.0（推荐，项目主包管理器）
 - Git
-- Docker（用于沙箱测试）
+
+> 注意：沙箱使用本地临时目录，不需要 Docker。
 
 ### 2.2 快速开始
 
@@ -66,37 +139,34 @@ git clone https://github.com/your-org/qa-agent.git
 cd qa-agent
 
 # 安装依赖
-pnpm install
-
-# 安装 Playwright
-pnpm exec playwright install
+bun install
 
 # 配置环境变量
 cp .env.example .env
 # 编辑 .env 添加你的 LLM API Key
 
 # 开发模式
-pnpm dev
+bun run dev
+
+# 类型检查
+bun run typecheck
 
 # 运行测试
-pnpm test
+bun test
 
 # 构建
-pnpm build
+bun run build
 ```
 
 ### 2.3 环境变量
 
 ```bash
-# LLM配置
-OPENAI_API_KEY=sk-xxx
-ANTHROPIC_API_KEY=sk-xxx
+# LLM 配置（通用模型配置）
+MODEL_API_KEY=sk-xxx          # 你的模型 API Key
+MODEL_PROVIDER=openai         # 模型提供商：openai, anthropic, 等
+MODEL_BASE_URL=https://api.openai.com/v1  # 自定义端点（可选）
 
-# 可选：自定义模型端点
-LLM_BASE_URL=https://api.openai.com/v1
-LLM_MODEL=gpt-4
-
-# Figma集成（UI/UX功能）
+# Figma 集成
 FIGMA_ACCESS_TOKEN=figd_xxx
 ```
 
@@ -108,112 +178,119 @@ FIGMA_ACCESS_TOKEN=figd_xxx
 
 ```typescript
 // src/skills/builtin/my-skill/index.ts
-import { defineSkill } from '../../base-skill';
+import { Skill, SkillContext, Diagnosis, Issue } from '../../types';
+import { BaseSkill } from '../../base-skill';
+import { SkillTrigger, SkillCapability } from '../../../types';
 
-export default defineSkill({
-  name: 'my-skill',
-  version: '1.0.0',
-  description: '我的自定义Skill',
-  
-  // 诊断：发现问题
-  async diagnose(context) {
-    const issues = [];
-    
+export class MySkill extends BaseSkill {
+  name = 'my-skill';
+  version = '1.0.0';
+  description = '描述';
+
+  triggers: SkillTrigger[] = [
+    { type: 'command', pattern: 'my-skill', priority: 100 },
+    { type: 'keyword', pattern: /my-keyword/i, priority: 80 },
+  ];
+
+  capabilities: SkillCapability[] = [
+    { name: 'my-check', description: '检查项', autoFixable: true, riskLevel: 'low' },
+  ];
+
+  async diagnose(context: SkillContext): Promise<Diagnosis[]> {
+    const issues: Diagnosis[] = [];
+
     // 分析代码/页面
     // ...
-    
+
     return issues;
-  },
-  
-  // 修复：生成修复方案
-  async fix(issue) {
-    return {
-      type: 'code-change',
-      file: issue.file,
-      changes: [
-        {
-          search: /old-pattern/,
-          replace: 'new-pattern'
-        }
-      ]
-    };
-  },
-  
-  // 验证：确认修复有效
-  async verify(fix) {
-    // 运行测试或检查
-    return { success: true };
   }
-});
+
+  async fix(diagnosis: Diagnosis, context: SkillContext) {
+    // 生成修复方案
+    return {
+      id: 'fix-1',
+      diagnosisId: diagnosis.id,
+      description: '修复描述',
+      changes: [],
+      riskLevel: 'low',
+      autoApplicable: true,
+    };
+  }
+}
+
+export default MySkill;
 ```
 
 ### 3.2 UI/UX Skill 开发要点 ⭐
 
 ```typescript
 // src/skills/builtin/uiux/index.ts
-export default defineSkill({
-  name: 'uiux-audit',
-  
-  async diagnose(context) {
-    const issues = [];
-    
+export class UIUXSkill extends BaseSkill {
+  name = 'ui-ux';
+  version = '1.0.0';
+  description = 'UI/UX视觉规范审查与修复';
+
+  async diagnose(context: SkillContext): Promise<Diagnosis[]> {
+    const issues: Diagnosis[] = [];
+
     // 1. 提取设计令牌
-    const designTokens = await extractDesignTokens(context);
-    
-    // 2. 分析CSS
-    const cssIssues = await analyzeCSS(context, designTokens);
-    issues.push(...cssIssues);
-    
-    // 3. 检查布局
-    const layoutIssues = await checkLayout(context);
+    const designTokens = await this.designTokenExtractor.extract(project.path, config);
+
+    // 2. 视觉规范检查
+    const visualIssues = await this.visualChecker.check(project.path, designTokens, config);
+    issues.push(...visualIssues);
+
+    // 3. 布局对齐检查
+    const layoutIssues = await this.layoutChecker.check(project.path, designTokens, config);
     issues.push(...layoutIssues);
-    
-    // 4. 检查交互状态
-    const interactionIssues = await checkInteractions(context);
+
+    // 4. 交互状态检查
+    const interactionIssues = await this.interactionChecker.check(project.path, config);
     issues.push(...interactionIssues);
-    
-    // 5. AI视觉分析（可选）
-    if (context.options.aiVision) {
-      const visionIssues = await analyzeWithAI(context);
-      issues.push(...visionIssues);
-    }
-    
+
     return issues;
-  },
-  
-  async fix(issue) {
-    switch (issue.type) {
-      case 'color-mismatch':
-        return fixColor(issue);
-      case 'spacing-inconsistent':
-        return fixSpacing(issue);
-      case 'missing-hover-state':
-        return generateHoverState(issue);
+  }
+
+  async fix(diagnosis: Diagnosis, context: SkillContext): Promise<Fix> {
+    // 根据问题类型选择修复策略
+    switch (diagnosis.metadata?.category) {
+      case 'visual':
+        return await this.cssFixGenerator.generateVisualFix(diagnosis, project.path);
+      case 'interaction':
+        return await this.cssFixGenerator.generateInteractionFix(diagnosis, project.path);
       // ...
     }
   }
-});
+}
+
+export default UIUXSkill;
 ```
 
 ### 3.3 添加 CLI 命令
 
 ```typescript
-// src/cli/commands/ux-audit.ts
+// src/cli/commands/my-command.ts
 import { Command } from 'commander';
+import { createLogger } from '../../utils/logger';
+import { outputResult } from '../output/report-renderer';
 
-export const uxAuditCommand = new Command('ux-audit')
-  .description('UI/UX审查')
-  .option('-u, --url <url>', '目标URL')
-  .option('-f, --focus <dimensions>', '审查维度', 'visual,layout,interaction')
-  .option('--strict', '严格模式')
-  .option('--fix', '自动修复')
-  .option('--preview', '沙箱预览')
-  .option('--dry-run', '仅预览不应用')
-  .action(async (options) => {
-    const scheduler = await createScheduler();
-    const result = await scheduler.execute('ux-audit', options);
-    console.log(result);
-  });
+export function registerMyCommand(program: Command) {
+  program
+    .command('my-command')
+    .description('我的命令描述')
+    .option('-p, --path <path>', '目标路径', '.')
+    .option('-o, --output <format>', '输出格式', 'compact')
+    .action(async (options) => {
+      const logger = createLogger(options);
+      logger.info('正在执行...');
+
+      // 执行逻辑
+      const result = { /* ... */ };
+
+      // 输出结果
+      outputResult(result, options);
+    });
+}
 ```
 
 ---
@@ -222,35 +299,36 @@ export const uxAuditCommand = new Command('ux-audit')
 
 ### 4.1 测试结构
 
-```bash
+```
 tests/
-├── unit/              # 单元测试
-│   ├── skills/
-│   ├── engines/
-│   └── utils/
-├── integration/       # 集成测试
-│   └── cli/
-└── e2e/              # 端到端测试
-    └── fixtures/
+├── fixtures/             # 测试夹具
+│   └── sample-project/   # 示例项目
+├── integration/          # 集成测试（53 个）
+│   ├── fix-engine.integration.test.ts
+│   ├── sandbox.integration.test.ts
+│   └── skill-diagnose.integration.test.ts
+└── unit/                 # 单元测试（129 个）
+    ├── a11y.test.ts
+    ├── config.test.ts
+    ├── e2e.test.ts
+    ├── logger.test.ts
+    ├── model.test.ts
+    ├── report.test.ts
+    ├── security.test.ts
+    └── skill-registry.test.ts
 ```
 
 ### 4.2 运行测试
 
 ```bash
-# 全部测试
-pnpm test
+# 全部测试（129 单元测试 + 53 集成测试 = 182 测试）
+bun test
 
-# 单元测试
-pnpm test:unit
+# 运行特定测试文件
+bun test tests/unit/skill-registry.test.ts
 
-# 集成测试
-pnpm test:integration
-
-# 带覆盖率
-pnpm test:coverage
-
-# 监听模式
-pnpm test:watch
+# 运行集成测试
+bun test tests/integration/
 ```
 
 ### 4.3 编写测试
@@ -345,16 +423,16 @@ Closes #123
 
 ```bash
 # 1. 更新版本
-pnpm version patch|minor|major
+bun run version patch  # 或 minor/major
 
 # 2. 构建
-pnpm build
+bun run build
 
 # 3. 测试
-pnpm test
+bun test
 
 # 4. 发布
-pnpm publish
+npm publish
 
 # 5. 打标签
 git push --follow-tags
@@ -387,14 +465,17 @@ git push --follow-tags
 ### Q: 如何调试 Skill?
 
 ```bash
+# 使用 bun run 直接运行
+bun run src/cli/index.ts diagnose --skill=ui-ux
+
 # 使用 VS Code 调试
 # .vscode/launch.json
 {
   "type": "node",
   "request": "launch",
   "name": "Debug Skill",
-  "runtimeExecutable": "pnpm",
-  "runtimeArgs": ["tsx", "src/cli/index.ts", "diagnose", "--skill=uiux"],
+  "runtimeExecutable": "bun",
+  "runtimeArgs": ["run", "src/cli/index.ts", "diagnose", "--skill=ui-ux"],
   "env": { "DEBUG": "true" }
 }
 ```
@@ -402,25 +483,21 @@ git push --follow-tags
 ### Q: 如何添加新的 LLM 提供商?
 
 ```typescript
-// src/models/providers/my-provider.ts
-export class MyProvider implements LLMProvider {
-  async chat(messages: Message[]): Promise<string> {
-    // 实现调用逻辑
-  }
-}
-
-// 在 router.ts 中注册
+// src/models/index.ts
+// 项目使用统一的 ModelClient 接口，通过 MODEL_PROVIDER 和 MODEL_API_KEY
+// 环境变量配置。支持 openai、anthropic 等提供商。
+// 在 ModelClient 中根据 provider 选择对应的 SDK 客户端即可。
 ```
 
 ### Q: 沙箱如何工作?
 
-沙箱使用 Docker 或 Node.js VM 创建隔离环境：
+沙箱使用本地临时目录创建隔离环境：
 1. 复制项目到临时目录
 2. 应用代码变更
 3. 启动开发服务器
 4. 运行测试/截图
-5. 销毁环境
+5. 清理临时目录
 
 ---
 
-*文档版本: v1.0 | 最后更新: 2026-04-27*
+*文档版本: v2.0 | 最后更新: 2026-06-05*

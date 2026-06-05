@@ -9,7 +9,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                          用户层                                  │
-│    CLI │ Desktop App │ IDE Plugin │ CI/CD Integration         │
+│    CLI │ CI/CD Integration                                     │
 ├─────────────────────────────────────────────────────────────────┤
 │                        CLI 入口层                                │
 │    Command Parser │ Router │ Help │ Version │ Config           │
@@ -20,23 +20,35 @@
 │  │  Parser  │ │  Planner │ │          │ │ Aggregator│          │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘          │
 ├─────────────────────────────────────────────────────────────────┤
+│                       AI Harness 层                              │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
+│  │ Golden   │ │  Eval    │ │  Verify  │ │ Monitor  │          │
+│  │  Set     │ │  Engine  │ │  Engine  │ │          │          │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘          │
+├─────────────────────────────────────────────────────────────────┤
 │                       Skills 插件层                              │
 │  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐       │
 │  │  E2E   │ │ UI/UX  │ │  A11y  │ │  Perf  │ │Security│       │
-│  │  Test  │ │ Audit⭐ │ │ Check  │ │ Audit  │ │  Scan  │       │
-│  └────────┘ └────────┘ └────────┘ └────────┘ └────────┘       │
+│  │  Test  │ │ Audit  │ │ Check  │ │ Audit  │ │  Scan  │       │
+│  └────────┘ └────────┘ └────────┘ └──────────┘ └──────────┘   │
 │  ┌─────────────────────────────────────────────────────────┐   │
 │  │              Skill Registry & Loader                     │   │
 │  └─────────────────────────────────────────────────────────┘   │
 ├─────────────────────────────────────────────────────────────────┤
 │                        核心引擎层                                │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
-│  │Diagnosis │ │   Fix    │ │  Verify  │ │  Report  │          │
-│  │  Engine  │ │  Engine  │ │  Engine  │ │  Engine  │          │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────┘          │
+│  ┌──────────┐ ┌───────────┐ ┌──────────┐ ┌──────────┐        │
+│  │   Fix    │ │ BatchFix  │ │  AIFix   │ │  Audit   │        │
+│  │  Engine  │ │  Engine   │ │  Engine  │ │  Engine  │        │
+│  └──────────┘ └───────────┘ └──────────┘ └──────────┘        │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐        │
+│  │ Sandbox  │ │  Verify  │ │  Report  │ │  (扩展)  │        │
+│  │  Manager │ │  Engine  │ │  Engine  │ │          │        │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘        │
 ├─────────────────────────────────────────────────────────────────┤
 │                        基础设施层                                │
-│  LLM Client │ Sandbox │ Browser │ File System │ Git │ CI      │
+│  Model Client (OpenAI/Claude/DeepSeek/SiliconFlow/Groq/MiniMax) │
+│  Sandbox (puppeteer-core + pixelmatch)                           │
+│  File System │ Git │ Shell                                      │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -52,15 +64,19 @@ qa-agent <command> [options]
 
 // 核心命令
 - diagnose    全面诊断
-- ux-audit    UI/UX审查 ⭐
-- design      设计规范管理 ⭐
-- fix         自动修复
+- fix         交互式/批量修复
 - audit       项目审计
-- watch       监控模式
-- skill       Skills管理
+- ux-audit    UI/UX专项审查
+- seo         SEO诊断
+- best-practices  最佳实践检查
+- dependency     依赖健康检查
+- skill          Skills管理
+- ci             CI/CD配置生成
 ```
 
 ### 2.2 任务调度层
+
+> **实现状态**: 部分实现。意图匹配系统（SkillRegistry.findByIntent）已存在，但 CLI 命令直接使用 Skill 调用，未经过调度器路由。调度器的完整 pipeline（Intent → Plan → Execute → Aggregate）尚未在 CLI 中串通。
 
 ```typescript
 interface TaskScheduler {
@@ -98,7 +114,25 @@ interface Skill {
 }
 ```
 
-**UI/UX Audit Skill 架构** ⭐
+**已实现的 Skills**
+
+| Skill | 状态 | 实现方式 | 说明 |
+|-------|------|---------|------|
+| a11y | ✅ | Regex | 无障碍检查 (WCAG) |
+| e2e | ✅ (partial) | Regex | E2E 测试 (无真实 Playwright 集成) |
+| performance | ✅ | Regex | 性能审计 |
+| security | ✅ | Regex | 安全扫描 |
+| seo | ✅ | Regex | SEO 诊断 |
+| dependency | ✅ | Regex | 依赖健康检查 |
+| best-practices | ✅ | Regex | 最佳实践检查 |
+| ui-ux | ✅ | Regex | UI/UX 审查 |
+| uiux | ✅ | Regex | Design Token 提取 |
+| complexity | ✅ | Regex | 代码复杂度分析 |
+| api | ✅ | Regex | API 路由扫描与端点检查 |
+
+> 注：所有 Skills 当前均使用正则表达式分析，尚未接入 AST 解析。
+
+**UI/UX Audit Skill 架构**
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -132,25 +166,9 @@ interface Skill {
 
 ## 三、核心引擎详解
 
-### 3.1 诊断引擎
+### 3.1 FixEngine
 
-```typescript
-interface DiagnosisEngine {
-  // 问题分类
-  classify(issue: RawIssue): IssueCategory;
-  
-  // 根因分析
-  analyzeRootCause(issue: Issue): RootCause;
-  
-  // 影响评估
-  assessImpact(issue: Issue): ImpactLevel;
-  
-  // 优先级排序
-  prioritize(issues: Issue[]): PrioritizedIssues;
-}
-```
-
-### 3.2 修复引擎
+真实的文件修改引擎，支持原子回滚与风险评估。
 
 ```typescript
 interface FixEngine {
@@ -171,29 +189,55 @@ interface FixEngine {
 }
 ```
 
-### 3.3 沙箱系统 ⭐
+**关键特性**:
+- 原子性操作：修改失败自动回滚
+- 风险评估：根据影响范围标记 low/medium/high
+- 回滚机制：每次修复自动创建快照
 
-```typescript
-interface Sandbox {
-  // 创建隔离环境
-  create(): SandboxInstance;
-  
-  // 应用变更
-  applyChanges(changes: CodeChange[]): void;
-  
-  // 启动预览
-  startPreview(): PreviewURL;
-  
-  // 运行测试
-  runTests(tests: Test[]): TestResult;
-  
-  // 截图对比
-  captureScreenshot(): Screenshot;
-  
-  // 销毁环境
-  destroy(): void;
-}
-```
+### 3.2 BatchFixEngine
+
+批量修复引擎，跨多个 Skills 并行处理问题。
+
+- 接收多维度诊断结果
+- 按风险等级排序修复优先级
+- 批量应用修复并生成汇总报告
+
+### 3.3 AIFixEngine
+
+LLM 驱动的修复引擎，通过 Model Client 调用大模型生成修复方案。
+
+- 支持多种模型：OpenAI / Claude / DeepSeek / SiliconFlow / Groq / MiniMax
+- 上下文感知：自动注入相关文件内容与诊断信息
+- 修复建议可审查，不自动应用高风险变更
+
+### 3.4 SandboxManager
+
+真实的沙箱系统，支持截图与视觉差异对比。
+
+- **截图**: 使用 `puppeteer-core` 捕获页面截图
+- **视觉差异**: 使用 `pixelmatch` 进行像素级对比
+- **图片处理**: 内置 zlib PNG 编解码
+
+### 3.5 AuditEngine
+
+合规性审计引擎，内置多个合规检查器。
+
+- **WCAG**: 无障碍合规检查
+- **GDPR**: 数据隐私合规
+- **SOC2**: 安全控制审计
+- **OWASP**: Web 安全漏洞扫描
+
+### 3.6 VerifyEngine
+
+验证引擎（占位实现）。用于验证修复后的效果，目前为框架预留，尚未实现完整的验证逻辑。
+
+### 3.7 ReportEngine
+
+报告生成引擎，支持多种输出格式。
+
+- HTML / JSON / Markdown / Compact 格式
+- 问题分级与统计
+- 可导出为文件
 
 ---
 
@@ -206,7 +250,7 @@ interface Sandbox {
               ↓
          选择Skills
          - E2E Test
-         - UI/UX Audit ⭐
+         - UI/UX Audit
          - A11y Check
          - Perf Audit
          - Security Scan
@@ -215,13 +259,13 @@ interface Sandbox {
 ### 4.2 修复流程
 
 ```
-发现问题 → 根因分析 → 生成修复方案 → 风险评估 → 沙箱预览 ⭐ → 用户确认 → 应用修复 → 回归验证
+发现问题 → 根因分析 → 生成修复方案 → 风险评估 → 沙箱预览 → 用户确认 → 应用修复 → 回归验证
                 ↓
            低风险：自动修复
            高风险：人工确认
 ```
 
-### 4.3 UI/UX审查流程 ⭐
+### 4.3 UI/UX审查流程
 
 ```
 输入URL/文件
@@ -253,15 +297,14 @@ interface Sandbox {
 
 | 层级 | 技术选型 |
 |------|---------|
-| CLI框架 | Commander.js + Ink (React CLI) |
-| 任务调度 | RxJS + Async iterators |
-| 浏览器自动化 | Playwright |
-| AI/LLM | OpenAI API / Claude API / 本地模型 |
-| 沙箱 | Docker / Node.js VM |
-| 视觉对比 | Pixelmatch / Resemble.js |
-| 设计工具 | Figma API |
-| 测试框架 | Vitest / Playwright Test |
-| 构建工具 | tsup / unbuild |
+| CLI框架 | Commander.js |
+| Runtime | Bun |
+| LLM | OpenAI / Claude / DeepSeek / SiliconFlow / Groq / MiniMax (via createModelClient) |
+| Screenshot | puppeteer-core |
+| Visual Diff | pixelmatch |
+| Image Processing | zlib (built-in PNG encode/decode) |
+| Test | bun:test |
+| Build | tsc |
 
 ---
 
@@ -318,6 +361,10 @@ llm:
   model: gpt-4
 ```
 
+### 6.3 AI Harness
+
+AI Harness 层提供 Golden Set 管理、评估引擎、验证引擎和监控能力，用于 AI 驱动的自动化质量保障闭环。详见 [AI_HARNESS.md](AI_HARNESS.md)。
+
 ---
 
 ## 七、安全考虑
@@ -330,4 +377,4 @@ llm:
 
 ---
 
-*文档版本: v1.0 | 最后更新: 2026-04-27*
+*文档版本: v2.0 | 最后更新: 2026-06-05*

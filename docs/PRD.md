@@ -230,48 +230,61 @@ qa-agent skill install @qa-agent/skill-security
 
 ## 四、开发路线图
 
-### Phase 1: 基础能力 (4-6周)
-- [ ] CLI框架搭建
-- [ ] E2E测试Skill MVP
-- [ ] 基础诊断引擎
-- [ ] 报告生成
+### Phase 1: 基础能力 ✅ 已完成
+- [x] CLI 框架搭建（9 个命令）
+- [x] 11 个诊断 Skills（a11y, e2e, performance, security, seo, dependency, best-practices, ui-ux, uiux, complexity, api）
+- [x] 基础诊断引擎（基于正则）
+- [x] 报告生成（text/JSON/HTML）
+- [x] 修复引擎（原子回滚、风险评估）
+- [x] 沙箱系统（screenshot + visual diff）
+- [x] Figma 集成（设计令牌同步、截图对比）
+- [x] CI/CD 配置生成（GitHub Actions, GitLab CI, Jenkins）
 
-### Phase 2: UI/UX审查 MVP (4-6周)
-- [ ] 设计令牌提取
-- [ ] 视觉规范检查（颜色、间距、圆角）
-- [ ] 基础CSS修复生成
-- [ ] 沙箱预览框架
+### Phase 2: AI Harness 工程 🔧 进行中
+- [ ] Golden Set 基准数据集（a11y/security/performance 各 10+ 用例）
+- [ ] 评估引擎（precision/recall/F1 计算）
+- [ ] `qa-agent eval` CLI 命令
+- [ ] 验证引擎：
+  - [x] Level 0: 语法验证（基础）
+  - [ ] Level 1: 编译验证（tsc/eslint 集成）
+  - [ ] Level 2: 测试验证（运行已有测试）
+  - [ ] Level 3: AST diff 验证
+- [ ] CI 集成 AI Harness 评估（GitHub Actions）
+- [ ] 监控面板（趋势图、按 skill 分解）
 
-### Phase 3: 布局与交互 (4-6周)
-- [ ] 布局对齐检查
-- [ ] 响应式问题检测
-- [ ] 交互状态检查
-- [ ] 修复验证
+### Phase 3: 诊断精度提升
+- [ ] AST 解析替代正则（Babel/ESLint/TsQuery 集成）
+- [ ] React 组件级检测（JSX 解析、props 分析）
+- [ ] Vue 组件级检测
+- [ ] 框架感知诊断（Next.js/Nuxt 路由分析）
 
-### Phase 4: AI增强 (4-6周)
-- [ ] 多模态视觉分析
-- [ ] 智能修复验证
-- [ ] Figma集成
-- [ ] 设计规范同步
+### Phase 4: 智能优化
+- [ ] Prompt 自动调优（基于评估结果优化）
+- [ ] 模型选择推荐（不同 skill 用不同模型）
+- [ ] A/B 测试框架（对比 prompt/模型效果）
+- [ ] 用户反馈回流（accept/reject 信号收集）
 
-### Phase 5: 生态完善 (4-6周)
-- [ ] CI/CD集成
-- [ ] Desktop App
-- [ ] IDE Plugin
+### Phase 5: 产品化
+- [ ] Web Dashboard（可视化报告、交互式修复）
+- [ ] 配置文件支持（config.yml）
+- [ ] Watch 监控模式
+- [ ] 真正的 CI/CD Action（不仅是 YAML 生成）
 - [ ] 文档与示例
+- [ ] 性能基准（大项目扫描优化）
 
 ---
 
 ## 五、成功指标
 
-| 指标 | 目标 |
-|------|------|
-| 测试生成准确率 | > 90% |
-| UI/UX问题检出率 | > 85% |
-| 低风险问题自动修复率 | > 80% |
-| 修复后回归通过率 | > 95% |
-| 用户满意度 | > 4.5/5 |
+| 指标 | 目标 | 当前状态 |
+|------|------|---------|
+| 诊断精确率 (Precision) | > 90% | 未量化（正则检测，估计 60-70%） |
+| 诊断召回率 (Recall) | > 85% | 未量化 |
+| 低风险问题自动修复率 | > 80% | 基础替换/插入可用，AST 修复缺失 |
+| 修复后回归通过率 | > 95% | 无回归验证框架 |
+| AI Harness 评估通过率 | ≥ 85% | N/A（框架不存在） |
+| Golden Set 覆盖率 | ≥ 50 用例 | 0 用例 |
 
 ---
 
-*文档版本: v1.0 | 最后更新: 2026-04-27*
+*文档版本: v2.0 | 最后更新: 2026-06-05*
