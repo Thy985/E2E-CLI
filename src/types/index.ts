@@ -275,10 +275,10 @@ export interface Storage {
 // ============================================
 
 export interface Logger {
-  debug(message: string, data?: any): void;
-  info(message: string, data?: any): void;
-  warn(message: string, data?: any): void;
-  error(message: string, data?: any): void;
+  debug(message: string, data?: unknown): void;
+  info(message: string, data?: unknown): void;
+  warn(message: string, data?: unknown): void;
+  error(message: string, data?: unknown): void;
 }
 
 // ============================================
@@ -309,13 +309,13 @@ export interface Config {
   };
   ignore?: string[];
   // Allow additional skill-specific config
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface SkillConfigEntry {
   name: string;
   enabled: boolean;
-  config?: Record<string, any>;
+  config?: Record<string, unknown>;
 }
 
 export type OutputFormat = 'html' | 'json' | 'markdown' | 'compact';

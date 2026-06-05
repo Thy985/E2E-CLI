@@ -8,7 +8,19 @@
  */
 
 export { generateId, hash } from './id';
-export { formatDuration, formatSize, escapeHTML } from './format';
+export {
+  formatDuration,
+  formatSize,
+  escapeHTML,
+  gradeEmoji,
+  healthEmoji,
+  gradeColor,
+  scoreColor,
+  priorityEmoji,
+  MAX_RECOMMENDATIONS_DISPLAY,
+  SCORE_HEALTHY,
+  SCORE_WARNING,
+} from './format';
 export { sleep, retry, debounce, throttle } from './async';
 export { groupBy } from './array';
 export { calculateScore, getGrade, SEVERITY_WEIGHTS } from './scoring';

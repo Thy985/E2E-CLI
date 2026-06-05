@@ -26,6 +26,10 @@ export interface QAConfig {
     apiKey?: string;
     baseUrl?: string;
   };
+  uiux?: {
+    figmaToken?: string;
+    figmaFileKey?: string;
+  };
   output?: {
     format?: 'html' | 'json' | 'markdown' | 'compact';
     path?: string;

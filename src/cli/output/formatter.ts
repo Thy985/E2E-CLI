@@ -71,7 +71,7 @@ export class OutputFormatter {
     console.log(chalk.red('✖'), message);
   }
 
-  debug(message: string, data?: any): void {
+  debug(message: string, data?: unknown): void {
     if (this.quiet) return;
     console.log(chalk.gray('🔍'), message, data || '');
   }
@@ -99,11 +99,6 @@ export class OutputFormatter {
   keyValue(key: string, value: string | number): void {
     if (this.quiet) return;
     console.log(`  ${chalk.gray(key)}: ${value}`);
-  }
-
-  table(data: Record<string, any>[], columns: string[]): void {
-    if (this.quiet) return;
-    console.table(data, columns);
   }
 
   // ============================================
@@ -203,14 +198,6 @@ export class OutputFormatter {
     const filled = Math.round((percent / 100) * width);
     const empty = width - filled;
     return chalk.green('█'.repeat(filled)) + chalk.gray('░'.repeat(empty));
-  }
-
-  // ============================================
-  // JSON Output
-  // ============================================
-
-  printJSON(data: any): void {
-    console.log(JSON.stringify(data, null, 2));
   }
 
   // ============================================

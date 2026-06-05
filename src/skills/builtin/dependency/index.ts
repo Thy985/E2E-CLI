@@ -209,7 +209,7 @@ export class DependencySkill extends BaseSkill {
     return issues;
   }
 
-  private checkVersionRanges(packageJson: any, file: string): Diagnosis[] {
+  private checkVersionRanges(packageJson: PackageJsonShape, file: string): Diagnosis[] {
     const issues: Diagnosis[] = [];
     const dependencies = {
       ...packageJson.dependencies,

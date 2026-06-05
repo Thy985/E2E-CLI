@@ -96,7 +96,7 @@ async function initCI(
   try {
     const filePath = await writeCIConfig(projectPath, config);
     formatter.success(`CI 配置已生成: ${filePath}`);
-    
+
     // Print next steps
     console.log('');
     console.log('下一步:');
@@ -105,7 +105,7 @@ async function initCI(
     console.log('3. 提交到版本控制');
     console.log('');
     console.log('测试 CI 配置:');
-    
+
     if (config.platform === 'github') {
       console.log('  - Push 到分支触发');
       console.log('  - 或在 Actions 页面手动触发');
@@ -113,9 +113,9 @@ async function initCI(
       console.log('  - Push 到分支触发');
       console.log('  - 或在 CI/CD > Pipelines 手动触发');
     }
-    
-  } catch (error: any) {
-    formatter.error(`生成失败: ${error.message}`);
+
+  } catch (error) {
+    formatter.error(`生成失败: ${errorMessage(error)}`);
     process.exit(1);
   }
 }
@@ -191,10 +191,9 @@ async function runCI(
       outputFile: 'qa-report.json',
       failOn: failOnLevel,
       quiet: true,
-      ci: true,
     });
-  } catch (error: any) {
-    console.log(`✗ 诊断失败: ${error.message}`);
+  } catch (error) {
+    console.log(`✗ 诊断失败: ${errorMessage(error)}`);
     exitCode = 2;
   }
 
@@ -207,8 +206,8 @@ async function runCI(
       outputFile: 'qa-audit.json',
       quiet: true,
     });
-  } catch (error: any) {
-    console.log(`✗ 审计失败: ${error.message}`);
+  } catch (error) {
+    console.log(`✗ 审计失败: ${errorMessage(error)}`);
     if (exitCode === 0) exitCode = 1;
   }
 
@@ -243,4 +242,19 @@ async function runCI(
   }
 
   process.exit(exitCode);
+}
+
+/**
+ * 把 catch (error) 的 unknown 渲染成可读字符串。
+ * 旧版用 `error: any` + `error.message` —— 在 error 是 string / null 时崩。
+ * 统一走 instanceof 守卫；非 Error 类型（少见但合法）走 String() 退化。
+ */
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
 }

@@ -187,91 +187,83 @@ export class PerformanceSkill extends BaseSkill {
   }
 
   /**
+   * 5 个 fix* 方法共用的样板：定位目标行 + 构造 FileChange。
+   * 抽到一处避免 5 份 copy-paste。
+   */
+  private getTargetLine(content: string, diagnosis: Diagnosis): { line: number; target: string } {
+    const line = diagnosis.location.line || 1;
+    const target = content.split('\n')[line - 1] ?? '';
+    return { line, target };
+  }
+
+  private buildFileChange(
+    diagnosis: Diagnosis,
+    fixedLine: string,
+    targetLine: string
+  ): FileChange[] {
+    return [{
+      file: diagnosis.location.file,
+      type: 'replace',
+      position: { line: diagnosis.location.line || 1, column: 1 },
+      content: fixedLine,
+      oldContent: targetLine,
+    }];
+  }
+
+  /**
    * Fix lodash full import to specific import
    */
   private fixLargeBundle(content: string, diagnosis: Diagnosis): FileChange[] {
-    const line = diagnosis.location.line || 1;
-    const lines = content.split('\n');
-    const targetLine = lines[line - 1];
+    const { target } = this.getTargetLine(content, diagnosis);
 
     // Match import statement
-    const importMatch = targetLine.match(/import\s+(\w+)\s+from\s+['"]lodash['"]/);
+    const importMatch = target.match(/import\s+(\w+)\s+from\s+['"]lodash['"]/);
     if (!importMatch) {
       throw new Error('Could not find lodash import to fix');
     }
 
-    const varName = importMatch[1];
     // Replace with specific import pattern (user needs to specify which functions)
-    const fixedLine = targetLine.replace(
+    const fixedLine = target.replace(
       /import\s+\w+\s+from\s+['"]lodash['"]/,
-      `// TODO: Replace with specific imports, e.g.:\n// import { specificFunction } from 'lodash-es';
-// or\n// import specificFunction from 'lodash/specificFunction';`
+      `// TODO: Replace with specific imports, e.g.:\n// import { specificFunction } from 'lodash-es';\n// or\n// import specificFunction from 'lodash/specificFunction';`
     );
 
-    return [{
-      file: diagnosis.location.file,
-      type: 'replace',
-      position: { line, column: 1 },
-      content: fixedLine,
-      oldContent: targetLine,
-    }];
+    return this.buildFileChange(diagnosis, fixedLine, target);
   }
 
   /**
    * Fix synchronous script loading by adding async/defer
    */
   private fixSyncScript(content: string, diagnosis: Diagnosis): FileChange[] {
-    const line = diagnosis.location.line || 1;
-    const lines = content.split('\n');
-    const targetLine = lines[line - 1];
-
-    // Add defer attribute to script tag
-    const fixedLine = targetLine.replace(
+    const { target } = this.getTargetLine(content, diagnosis);
+    const fixedLine = target.replace(
       /<script\s+src=/,
       '<script defer src='
     );
-
-    return [{
-      file: diagnosis.location.file,
-      type: 'replace',
-      position: { line, column: 1 },
-      content: fixedLine,
-      oldContent: targetLine,
-    }];
+    return this.buildFileChange(diagnosis, fixedLine, target);
   }
 
   /**
    * Remove or comment out console statements
    */
   private fixConsoleLog(content: string, diagnosis: Diagnosis): FileChange[] {
-    const line = diagnosis.location.line || 1;
-    const lines = content.split('\n');
-    const targetLine = lines[line - 1];
-
-    // Comment out the console statement
-    const fixedLine = targetLine.replace(
+    const { target } = this.getTargetLine(content, diagnosis);
+    const fixedLine = target.replace(
       /(console\.(log|debug|info|warn)\s*\()/,
       '// $1'
     );
-
-    return [{
-      file: diagnosis.location.file,
-      type: 'replace',
-      position: { line, column: 1 },
-      content: fixedLine,
-      oldContent: targetLine,
-    }];
+    return this.buildFileChange(diagnosis, fixedLine, target);
   }
 
   /**
    * Fix duplicate dependencies in package.json
    */
   private fixDuplicateDeps(content: string, diagnosis: Diagnosis): FileChange[] {
-    const duplicates = diagnosis.metadata?.duplicates as string[] || [];
-    
+    const duplicates = (diagnosis.metadata?.duplicates as string[] | undefined) ?? [];
+
     // Parse package.json
     const pkg = JSON.parse(content);
-    
+
     // Remove duplicates from devDependencies
     if (pkg.devDependencies) {
       for (const dep of duplicates) {

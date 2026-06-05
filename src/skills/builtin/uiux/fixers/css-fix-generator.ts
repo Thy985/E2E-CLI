@@ -1,57 +1,96 @@
 /**
- * CSS ä¿®å¤çæå? * 
- * èªå¨çæ CSS/æ ·å¼ä¿®å¤ä»£ç 
+ * CSS 修复生成器
+ *
+ * 自动生成 CSS/样式修复代码
  */
 
-import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import { Diagnosis, Fix } from '../../../../types';
+
+const STATE_FIX_HANDLERS = {
+  'missing-hover-state': (element: string, suggestion: string) =>
+    `\n  &:hover {\n    ${suggestion}\n  }`,
+  'missing-focus-state': (element: string, suggestion: string) =>
+    `\n  &:focus {\n    ${suggestion}\n  }`,
+  'missing-active-state': (element: string, suggestion: string) =>
+    `\n  &:active {\n    ${suggestion}\n  }`,
+  'missing-disabled-state': (element: string, suggestion: string) =>
+    `\n  &:disabled {\n    ${suggestion}\n  }`,
+} as const satisfies Record<string, (element: string, suggestion: string) => string>;
+
+type InteractionFixType = keyof typeof STATE_FIX_HANDLERS;
+
+const VISUAL_FIX_DESCRIPTIONS = {
+  'color-mismatch': (current: string, suggestion: string) =>
+    `将硬编码颜色 ${current} 替换为设计令牌 ${suggestion}`,
+  'spacing-inconsistent': (current: string, suggestion: string) =>
+    `将间距 ${current} 调整为规范值 ${suggestion}`,
+  'border-radius-mismatch': (current: string, suggestion: string) =>
+    `将圆角 ${current} 调整为规范值 ${suggestion}`,
+} as const;
+
+type VisualFixType = keyof typeof VISUAL_FIX_DESCRIPTIONS;
 
 export class CSSFixGenerator {
   async generateVisualFix(diagnosis: Diagnosis, projectPath: string): Promise<Fix> {
-    const { type, current, suggestion } = diagnosis.metadata || {};
+    const metadata = diagnosis.metadata || {};
+    const type = metadata.type as string | undefined;
     const file = diagnosis.location.file;
     const fullPath = `${projectPath}/${file}`;
+    const current = String(metadata.current ?? '');
+    const suggestion = String(metadata.suggestion ?? '');
 
-    switch (type) {
-      case 'color-mismatch':
-        return this.generateColorFix(fullPath, current, suggestion, diagnosis);
-      
-      case 'spacing-inconsistent':
-        return this.generateSpacingFix(fullPath, current, suggestion, diagnosis);
-      
-      case 'border-radius-mismatch':
-        return this.generateRadiusFix(fullPath, current, suggestion, diagnosis);
-      
-      default:
-        throw new Error(`ä¸æ¯æçä¿®å¤ç±»å: ${type}`);
+    if (!type || !(type in VISUAL_FIX_DESCRIPTIONS)) {
+      throw new Error(`不支持的修复类型: ${type ?? '(missing)'}`);
     }
+
+    return this.buildVisualFix(
+      fullPath,
+      type as VisualFixType,
+      current,
+      suggestion,
+      diagnosis
+    );
   }
 
   async generateInteractionFix(diagnosis: Diagnosis, projectPath: string): Promise<Fix> {
-    const { type, element, suggestion } = diagnosis.metadata || {};
+    const metadata = diagnosis.metadata || {};
+    const type = metadata.type as InteractionFixType | undefined;
     const file = diagnosis.location.file;
     const fullPath = `${projectPath}/${file}`;
+    const element = String(metadata.element ?? '');
+    const suggestion = String(metadata.suggestion ?? '');
 
-    switch (type) {
-      case 'missing-hover-state':
-        return this.generateHoverStateFix(fullPath, element, suggestion, diagnosis);
-      
-      case 'missing-focus-state':
-        return this.generateFocusStateFix(fullPath, element, suggestion, diagnosis);
-      
-      case 'missing-active-state':
-        return this.generateActiveStateFix(fullPath, element, suggestion, diagnosis);
-      
-      case 'missing-disabled-state':
-        return this.generateDisabledStateFix(fullPath, element, suggestion, diagnosis);
-      
-      default:
-        throw new Error(`ä¸æ¯æçä¿®å¤ç±»å: ${type}`);
+    if (!type || !(type in STATE_FIX_HANDLERS)) {
+      throw new Error(`不支持的修复类型: ${type ?? '(missing)'}`);
     }
+
+    // 找 CSS 块结束行（首个独立的 `}`），4 个 stateFix 共享同一查找逻辑
+    const startLine = diagnosis.location.line || 0;
+    const content = await fsp.readFile(fullPath, 'utf-8');
+    const lines = content.split('\n');
+    const insertLine = findClosingBraceLine(lines, startLine);
+
+    return {
+      id: `fix-${diagnosis.id}`,
+      diagnosisId: diagnosis.id,
+      autoApplicable: true,
+      description: `为 ${element} 添加 ${type.replace('missing-', '').replace('-state', '')} 状态`,
+      riskLevel: 'low',
+      changes: [
+        {
+          file: fullPath,
+          type: 'insert',
+          content: STATE_FIX_HANDLERS[type](element, suggestion),
+          position: { line: insertLine },
+        },
+      ],
+    };
   }
 
-  private generateColorFix(
+  private buildVisualFix(
     filePath: string,
+    type: VisualFixType,
     current: string,
     suggestion: string,
     diagnosis: Diagnosis
@@ -60,7 +99,7 @@ export class CSSFixGenerator {
       id: `fix-${diagnosis.id}`,
       diagnosisId: diagnosis.id,
       autoApplicable: true,
-      description: `å°ç¡¬ç¼ç é¢è² ${current} æ¿æ¢ä¸ºè®¾è®¡ä»¤ç?${suggestion}`,
+      description: VISUAL_FIX_DESCRIPTIONS[type](current, suggestion),
       riskLevel: 'low',
       changes: [
         {
@@ -73,190 +112,17 @@ export class CSSFixGenerator {
       ],
     };
   }
+}
 
-  private generateSpacingFix(
-    filePath: string,
-    current: string,
-    suggestion: string,
-    diagnosis: Diagnosis
-  ): Fix {
-    return {
-      id: `fix-${diagnosis.id}`,
-      diagnosisId: diagnosis.id,
-      autoApplicable: true,
-      description: `å°é´è·?${current} è°æ´ä¸ºè§èå?${suggestion}`,
-      riskLevel: 'low',
-      changes: [
-        {
-          file: filePath,
-          type: 'replace',
-          oldContent: current,
-          content: suggestion,
-          position: { line: diagnosis.location.line || 0 },
-        },
-      ],
-    };
-  }
-
-  private generateRadiusFix(
-    filePath: string,
-    current: string,
-    suggestion: string,
-    diagnosis: Diagnosis
-  ): Fix {
-    return {
-      id: `fix-${diagnosis.id}`,
-      diagnosisId: diagnosis.id,
-      autoApplicable: true,
-      description: `å°åè§?${current} è°æ´ä¸ºè§èå?${suggestion}`,
-      riskLevel: 'low',
-      changes: [
-        {
-          file: filePath,
-          type: 'replace',
-          oldContent: current,
-          content: suggestion,
-          position: { line: diagnosis.location.line || 0 },
-        },
-      ],
-    };
-  }
-
-  private generateHoverStateFix(
-    filePath: string,
-    element: string,
-    suggestion: string,
-    diagnosis: Diagnosis
-  ): Fix {
-    // è¯»åæä»¶åå®¹ä»¥æ¾å°åéçæå¥ä½ç½®
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const lines = content.split('\n');
-    
-    // æ¾å°åç´ éæ©å¨çç»æä½ç½®
-    let insertLine = diagnosis.location.line || 0;
-    for (let i = (diagnosis.location.line || 0); i < lines.length; i++) {
-      if (lines[i].trim() === '}' || lines[i].includes('}')) {
-        insertLine = i;
-        break;
-      }
+/**
+ * 找 CSS/SCSS/Less 块的结束行：从 startLine 开始向下扫描，返回首个
+ * 独立 `}` 行的 0-based 索引。如果没找到就返回 startLine。
+ */
+function findClosingBraceLine(lines: string[], startLine: number): number {
+  for (let i = startLine; i < lines.length; i++) {
+    if (lines[i].trim() === '}' || lines[i].includes('}')) {
+      return i;
     }
-
-    return {
-      id: `fix-${diagnosis.id}`,
-      diagnosisId: diagnosis.id,
-      autoApplicable: true,
-      description: `ä¸?${element} æ·»å  hover ç¶æ`,
-      riskLevel: 'low',
-      changes: [
-        {
-          file: filePath,
-          type: 'insert',
-          content: `\n  &:hover {\n    ${suggestion}\n  }`,
-          position: { line: insertLine },
-        },
-      ],
-    };
   }
-
-  private generateFocusStateFix(
-    filePath: string,
-    element: string,
-    suggestion: string,
-    diagnosis: Diagnosis
-  ): Fix {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const lines = content.split('\n');
-    
-    let insertLine = diagnosis.location.line || 0;
-    for (let i = (diagnosis.location.line || 0); i < lines.length; i++) {
-      if (lines[i].trim() === '}' || lines[i].includes('}')) {
-        insertLine = i;
-        break;
-      }
-    }
-
-    return {
-      id: `fix-${diagnosis.id}`,
-      diagnosisId: diagnosis.id,
-      autoApplicable: true,
-      description: `ä¸?${element} æ·»å  focus ç¶æ`,
-      riskLevel: 'low',
-      changes: [
-        {
-          file: filePath,
-          type: 'insert',
-          content: `\n  &:focus {\n    ${suggestion}\n  }`,
-          position: { line: insertLine },
-        },
-      ],
-    };
-  }
-
-  private generateActiveStateFix(
-    filePath: string,
-    element: string,
-    suggestion: string,
-    diagnosis: Diagnosis
-  ): Fix {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const lines = content.split('\n');
-    
-    let insertLine = diagnosis.location.line || 0;
-    for (let i = (diagnosis.location.line || 0); i < lines.length; i++) {
-      if (lines[i].trim() === '}' || lines[i].includes('}')) {
-        insertLine = i;
-        break;
-      }
-    }
-
-    return {
-      id: `fix-${diagnosis.id}`,
-      diagnosisId: diagnosis.id,
-      autoApplicable: true,
-      description: `ä¸?${element} æ·»å  active ç¶æ`,
-      riskLevel: 'low',
-      changes: [
-        {
-          file: filePath,
-          type: 'insert',
-          content: `\n  &:active {\n    ${suggestion}\n  }`,
-          position: { line: insertLine },
-        },
-      ],
-    };
-  }
-
-  private generateDisabledStateFix(
-    filePath: string,
-    element: string,
-    suggestion: string,
-    diagnosis: Diagnosis
-  ): Fix {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const lines = content.split('\n');
-    
-    let insertLine = diagnosis.location.line || 0;
-    for (let i = (diagnosis.location.line || 0); i < lines.length; i++) {
-      if (lines[i].trim() === '}' || lines[i].includes('}')) {
-        insertLine = i;
-        break;
-      }
-    }
-
-    return {
-      id: `fix-${diagnosis.id}`,
-      diagnosisId: diagnosis.id,
-      autoApplicable: true,
-      description: `ä¸?${element} æ·»å  disabled ç¶æ`,
-      riskLevel: 'low',
-      changes: [
-        {
-          file: filePath,
-          type: 'insert',
-          content: `\n  &:disabled {\n    ${suggestion}\n  }`,
-          position: { line: insertLine },
-        },
-      ],
-    };
-  }
+  return startLine;
 }

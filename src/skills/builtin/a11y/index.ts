@@ -287,7 +287,7 @@ export class A11ySkill extends BaseSkill {
     const filePath = diagnosis.location.file;
     const content = await context.tools.fs.readFile(filePath);
 
-    let changes: any[] = [];
+    let changes: FileChange[] = [];
 
     switch (ruleId) {
       case 'img-alt':

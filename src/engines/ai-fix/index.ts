@@ -1,16 +1,91 @@
 /**
  * AI Fix Engine
- * 
+ *
  * 使用 LLM 生成智能修复代码
  * 突破规则引擎的66%限制
  */
 
-import { Diagnosis, Fix, SkillContext } from '../../types';
+import { Diagnosis, Fix, FileChange, SkillContext } from '../../types';
 
 export interface AIFixOptions {
   model: string;
   temperature: number;
   maxTokens: number;
+}
+
+/**
+ * LLM 输出的 JSON 形状（不是我们内部的 FileChange）。
+ * 内部 FileChange 把 search/replace 折成 oldContent/content；这里只接受 LLM 的原始字段。
+ */
+interface LLMSuggestedChange {
+  file: string;
+  type: 'insert' | 'delete' | 'replace';
+  line?: number;
+  content?: string;
+  replace?: string;
+  search?: string;
+}
+
+interface LLMFixPayload {
+  description?: string;
+  riskLevel?: 'low' | 'medium' | 'high';
+  changes?: LLMSuggestedChange[];
+}
+
+interface LLMValidationPayload {
+  valid?: boolean;
+  confidence?: number;
+  issues?: string[];
+}
+
+/**
+ * 提取 LLM 响应中的 JSON 块。优先 ```json fence，否则匹配最外层平衡 brace。
+ * 旧版用 /\{[\s\S]*\}/ 会取到第一个 `{...}` 片段，对 LLM 在解释里夹带 `{}` 的输出是错误的。
+ */
+function extractFirstJSONObject(text: string): string | null {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenced) return fenced[1].trim();
+
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  let start = -1;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (ch === '\\' && inString) {
+      escape = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (ch === '{') {
+      if (start === -1) start = i;
+      depth++;
+    } else if (ch === '}') {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        return text.slice(start, i + 1);
+      }
+    }
+  }
+  return null;
+}
+
+function mapSuggestedChange(change: LLMSuggestedChange): FileChange {
+  return {
+    file: change.file,
+    type: change.type,
+    position: typeof change.line === 'number' ? { line: change.line } : undefined,
+    content: change.content ?? change.replace,
+    oldContent: change.search,
+  };
 }
 
 export class AIFixEngine {
@@ -37,13 +112,13 @@ export class AIFixEngine {
     try {
       // 构建 prompt
       const prompt = this.buildPrompt(diagnosis, context);
-      
+
       // 调用 LLM
       const response = await this.callLLM(prompt);
-      
+
       // 解析响应
       const fix = this.parseResponse(response, diagnosis);
-      
+
       return fix;
     } catch (error) {
       context.logger.error('AI Fix Engine failed:', error);
@@ -80,7 +155,7 @@ export class AIFixEngine {
   ): Promise<{ valid: boolean; confidence: number; issues: string[] }> {
     const prompt = this.buildValidationPrompt(fix, originalIssue);
     const response = await this.callLLM(prompt);
-    
+
     return this.parseValidationResponse(response);
   }
 
@@ -116,7 +191,7 @@ Generate a fix in the following JSON format:
 }
 
 Important:
-1. Only output valid JSON
+1. Only output valid JSON (wrap in \`\`\`json ... \`\`\` if possible)
 2. Ensure the fix is syntactically correct
 3. Consider edge cases
 4. Maintain code style consistency
@@ -170,55 +245,52 @@ Output in JSON format:
       throw new Error(`LLM API error: ${response.status}`);
     }
 
-    const data = await response.json() as { choices: Array<{ message: { content: string } }> };
+    const data = (await response.json()) as { choices: Array<{ message: { content: string } }> };
     return data.choices[0].message.content;
   }
 
   private parseResponse(response: string, diagnosis: Diagnosis): Fix | null {
-    try {
-      // 提取 JSON
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        return null;
-      }
+    const jsonStr = extractFirstJSONObject(response);
+    if (!jsonStr) return null;
 
-      const parsed = JSON.parse(jsonMatch[0]);
-      
-      return {
-        id: `ai-fix-${diagnosis.id}`,
-        diagnosisId: diagnosis.id,
-        description: parsed.description,
-        riskLevel: parsed.riskLevel || 'medium',
-        autoApplicable: true,
-        changes: parsed.changes.map((change: any) => ({
-          file: change.file,
-          type: change.type,
-          position: { line: change.line },
-          content: change.content || change.replace,
-          original: change.search,
-        })),
-      };
-    } catch (error) {
+    let parsed: LLMFixPayload;
+    try {
+      parsed = JSON.parse(jsonStr) as LLMFixPayload;
+    } catch {
       return null;
     }
+    if (!parsed.changes || !Array.isArray(parsed.changes)) {
+      return null;
+    }
+
+    return {
+      id: `ai-fix-${diagnosis.id}`,
+      diagnosisId: diagnosis.id,
+      description: parsed.description ?? 'AI suggested fix',
+      riskLevel: parsed.riskLevel ?? 'medium',
+      autoApplicable: true,
+      changes: parsed.changes.map(mapSuggestedChange),
+    };
   }
 
   private parseValidationResponse(response: string): { valid: boolean; confidence: number; issues: string[] } {
-    try {
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        return { valid: false, confidence: 0, issues: ['Failed to parse validation'] };
-      }
+    const jsonStr = extractFirstJSONObject(response);
+    if (!jsonStr) {
+      return { valid: false, confidence: 0, issues: ['Failed to parse validation'] };
+    }
 
-      const parsed = JSON.parse(jsonMatch[0]);
-      return {
-        valid: parsed.valid,
-        confidence: parsed.confidence,
-        issues: parsed.issues || [],
-      };
-    } catch (error) {
+    let parsed: LLMValidationPayload;
+    try {
+      parsed = JSON.parse(jsonStr) as LLMValidationPayload;
+    } catch {
       return { valid: false, confidence: 0, issues: ['Parse error'] };
     }
+
+    return {
+      valid: parsed.valid ?? false,
+      confidence: parsed.confidence ?? 0,
+      issues: parsed.issues ?? [],
+    };
   }
 }
 

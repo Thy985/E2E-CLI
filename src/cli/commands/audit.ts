@@ -4,16 +4,44 @@
  */
 
 import { createLogger } from '../../utils/logger';
-import { createFormatter } from '../output/formatter';
+import { createFormatter, OutputFormatter } from '../output/formatter';
 import { createAuditEngine } from '../../engines/audit';
-import { AuditOptions, AuditReport, AuditCategory } from '../../types';
-import { escapeHTML } from '../../utils/format';
+import { AuditOptions, AuditReport, AuditCategory, AuditRecommendation } from '../../types';
+import {
+  escapeHTML,
+  gradeEmoji,
+  healthEmoji,
+  gradeColor,
+  scoreColor,
+  priorityEmoji,
+  MAX_RECOMMENDATIONS_DISPLAY,
+} from '../../utils/format';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
 type AuditCommandOptions = AuditOptions & {
   verbose?: boolean;
   quiet?: boolean;
+};
+
+type ReportFormat = NonNullable<AuditOptions['output']>;
+
+/**
+ * 4 种输出格式的 renderer —— 用 Map 替代 switch，避免 `case 'html': default: 共用一段`
+ * 这种隐式 fall-through。新加 format 时编译期会被 exhaustive check 拒绝。
+ */
+const REPORT_RENDERERS: Record<ReportFormat, (r: AuditReport) => string> = {
+  json: (r) => JSON.stringify(r, null, 2),
+  markdown: formatMarkdown,
+  compact: formatCompact,
+  html: formatHTML,
+};
+
+const REPORT_EXTENSIONS: Record<ReportFormat, string> = {
+  json: 'json',
+  markdown: 'md',
+  compact: 'txt',
+  html: 'html',
 };
 
 export async function auditCommand(options: AuditCommandOptions) {
@@ -33,13 +61,7 @@ export async function auditCommand(options: AuditCommandOptions) {
 
     // Parse compliance options (commander hands us a string when the
     // CLI flag is invoked once, or a string[] when repeated).
-    let compliance: string[] | undefined;
-    const raw = options.compliance as unknown;
-    if (typeof raw === 'string') {
-      compliance = raw.split(',').map((s) => s.trim());
-    } else if (Array.isArray(raw)) {
-      compliance = (raw as unknown[]).map((s) => String(s).trim());
-    }
+    const compliance = parseCompliance(options.compliance);
 
     // Run audit
     const report = await engine.audit(projectPath, {
@@ -71,135 +93,105 @@ export async function auditCommand(options: AuditCommandOptions) {
   }
 }
 
+/**
+ * 把 commander 传进来的 compliance 字段规整成 string[] | undefined。
+ * commander 在 flag 重复时给 string[]，单次时给 string，缺失时给 undefined / true。
+ * 旧版用 `as unknown` + `as unknown[]` 强转；这里走 type guard 收口。
+ */
+function parseCompliance(raw: unknown): string[] | undefined {
+  if (typeof raw === 'string') {
+    return raw.split(',').map((s) => s.trim()).filter(Boolean);
+  }
+  if (Array.isArray(raw)) {
+    return raw
+      .filter((s): s is string => typeof s === 'string')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+  return undefined;
+}
+
 function displayAuditReport(
   report: AuditReport,
-  formatter: ReturnType<typeof createFormatter>,
+  formatter: OutputFormatter,
   options: AuditOptions
 ): void {
   if (options.quiet) return;
 
-  console.log('');
-  console.log('═'.repeat(60));
-  console.log('  项目健康度审计报告');
-  console.log('═'.repeat(60));
-  console.log('');
+  formatter.header('项目健康度审计报告');
+  formatter.keyValue('项目', report.project.name);
+  formatter.keyValue('类型', report.project.type || '未知');
+  formatter.keyValue('框架', report.project.framework || '未知');
+  formatter.keyValue('时间', new Date(report.timestamp).toLocaleString('zh-CN'));
+  formatter.keyValue('耗时', `${report.duration}ms`);
 
-  // Project info
-  console.log(`项目: ${report.project.name}`);
-  console.log(`类型: ${report.project.type || '未知'}`);
-  console.log(`框架: ${report.project.framework || '未知'}`);
-  console.log(`时间: ${new Date(report.timestamp).toLocaleString('zh-CN')}`);
-  console.log(`耗时: ${report.duration}ms`);
-  console.log('');
+  displayOverallScore(report.summary);
+  displayCategoryScores(report.categories);
 
-  // Overall score
-  displayOverallScore(report.summary, formatter);
-  console.log('');
-
-  // Category scores
-  displayCategoryScores(report.categories, formatter);
-  console.log('');
-
-  // Detailed checks
   if (options.verbose) {
-    displayDetailedChecks(report.categories, formatter);
-    console.log('');
+    displayDetailedChecks(report.categories);
   }
 
-  // Compliance
   if (report.compliance) {
-    displayCompliance(report.compliance, formatter);
-    console.log('');
+    displayCompliance(report.compliance);
   } else if (options.compliance) {
-    console.log('─'.repeat(60));
-    console.log('  合规性检查');
-    console.log('─'.repeat(60));
-    console.log('');
+    formatter.section('合规性检查');
     console.log(`  ⚠️  未对 ${options.compliance} 执行实际合规扫描`);
     console.log('  说明: 当前 audit 引擎未集成 axe-core 等合规工具');
     console.log('  建议: 改用 a11y skill 获取可访问性诊断');
-    console.log('');
   }
 
-  // Trends
   if (report.trends) {
-    displayTrends(report.trends, formatter);
-    console.log('');
+    displayTrends(report.trends);
   }
 
-  // Recommendations
-  displayRecommendations(report.recommendations, formatter);
+  displayRecommendations(report.recommendations);
 }
 
-function displayOverallScore(
-  summary: AuditReport['summary'],
-  formatter: ReturnType<typeof createFormatter>
-): void {
-  const gradeEmoji: Record<string, string> = {
-    A: '🏆',
-    B: '✅',
-    C: '⚠️',
-    D: '🔶',
-    F: '❌',
-  };
-
-  const statusEmoji: Record<string, string> = {
-    healthy: '💚',
-    warning: '💛',
-    critical: '❤️',
-  };
-
+function printSectionHeader(title: string): void {
   console.log('─'.repeat(60));
-  console.log('  综合健康度');
+  console.log(`  ${title}`);
   console.log('─'.repeat(60));
   console.log('');
-  console.log(`  得分: ${summary.overallScore}/100 ${gradeEmoji[summary.overallGrade]}`);
+}
+
+function displayOverallScore(summary: AuditReport['summary']): void {
+  printSectionHeader('综合健康度');
+  console.log(`  得分: ${summary.overallScore}/100 ${gradeEmoji(summary.overallGrade)}`);
   console.log(`  等级: ${summary.overallGrade}`);
-  console.log(`  状态: ${statusEmoji[summary.healthStatus]} ${summary.healthStatus}`);
+  console.log(`  状态: ${healthEmoji(summary.healthStatus)} ${summary.healthStatus}`);
   console.log('');
   console.log(`  问题总数: ${summary.totalIssues}`);
   console.log(`  严重问题: ${summary.criticalIssues}`);
 }
 
-function displayCategoryScores(
-  categories: AuditCategory[],
-  formatter: ReturnType<typeof createFormatter>
-): void {
-  console.log('─'.repeat(60));
-  console.log('  分类得分');
-  console.log('─'.repeat(60));
-  console.log('');
+function displayCategoryScores(categories: readonly AuditCategory[]): void {
+  printSectionHeader('分类得分');
 
   for (const category of categories) {
-    const statusIcon = category.status === 'pass' ? '✅' : 
+    const statusIcon = category.status === 'pass' ? '✅' :
                        category.status === 'warning' ? '⚠️' : '❌';
     const bar = createScoreBar(category.score);
-    
+
     console.log(`  ${statusIcon} ${category.displayName.padEnd(8)} ${bar} ${category.score}/100`);
-    
+
     if (category.description) {
       console.log(`     ${category.description}`);
     }
   }
 }
 
-function displayDetailedChecks(
-  categories: AuditCategory[],
-  formatter: ReturnType<typeof createFormatter>
-): void {
-  console.log('─'.repeat(60));
-  console.log('  详细检查');
-  console.log('─'.repeat(60));
-  console.log('');
+function displayDetailedChecks(categories: readonly AuditCategory[]): void {
+  printSectionHeader('详细检查');
 
   for (const category of categories) {
     console.log(`  ${category.displayName}:`);
-    
+
     for (const check of category.checks) {
-      const statusIcon = check.status === 'pass' ? '✓' : 
-                         check.status === 'warning' ? '!' : 
+      const statusIcon = check.status === 'pass' ? '✓' :
+                         check.status === 'warning' ? '!' :
                          check.status === 'fail' ? '✗' : '-';
-      
+
       console.log(`    ${statusIcon} ${check.name}: ${check.score}/${check.maxScore}`);
       if (check.details) {
         console.log(`      ${check.details}`);
@@ -209,18 +201,12 @@ function displayDetailedChecks(
   }
 }
 
-function displayCompliance(
-  compliance: NonNullable<AuditReport['compliance']>,
-  formatter: ReturnType<typeof createFormatter>
-): void {
-  console.log('─'.repeat(60));
-  console.log(`  合规性检查: ${compliance.standard}`);
-  console.log('─'.repeat(60));
-  console.log('');
+function displayCompliance(compliance: NonNullable<AuditReport['compliance']>): void {
+  printSectionHeader(`合规性检查: ${compliance.standard}`);
 
   const statusText = compliance.status === 'compliant' ? '✅ 合规' :
                      compliance.status === 'partial' ? '⚠️ 部分合规' : '❌ 不合规';
-  
+
   console.log(`  状态: ${statusText}`);
   console.log(`  得分: ${compliance.score}/100`);
   console.log('');
@@ -234,18 +220,12 @@ function displayCompliance(
   }
 }
 
-function displayTrends(
-  trends: NonNullable<AuditReport['trends']>,
-  formatter: ReturnType<typeof createFormatter>
-): void {
-  console.log('─'.repeat(60));
-  console.log('  趋势分析');
-  console.log('─'.repeat(60));
-  console.log('');
+function displayTrends(trends: NonNullable<AuditReport['trends']>): void {
+  printSectionHeader('趋势分析');
 
   const trendEmoji = trends.trend === 'improving' ? '📈' :
                      trends.trend === 'declining' ? '📉' : '➡️';
-  
+
   console.log(`  趋势: ${trendEmoji} ${trends.trend}`);
   console.log(`  变化: ${trends.change > 0 ? '+' : ''}${trends.change} 分`);
   console.log(`  上次: ${trends.previousScore}/100`);
@@ -261,93 +241,66 @@ function displayTrends(
   }
 }
 
-function displayRecommendations(
-  recommendations: AuditReport['recommendations'],
-  formatter: ReturnType<typeof createFormatter>
-): void {
+function displayRecommendations(recommendations: readonly AuditRecommendation[]): void {
   if (recommendations.length === 0) return;
 
-  console.log('─'.repeat(60));
-  console.log('  改进建议');
-  console.log('─'.repeat(60));
-  console.log('');
+  printSectionHeader('改进建议');
 
-  const priorityEmoji: Record<string, string> = {
-    high: '🔴',
-    medium: '🟡',
-    low: '🔵',
-  };
-
-  for (let i = 0; i < Math.min(recommendations.length, 5); i++) {
+  for (let i = 0; i < Math.min(recommendations.length, MAX_RECOMMENDATIONS_DISPLAY); i++) {
     const rec = recommendations[i];
-    console.log(`  ${priorityEmoji[rec.priority]} [${rec.category}] ${rec.title}`);
+    console.log(`  ${priorityEmoji(rec.priority)} [${rec.category}] ${rec.title}`);
     console.log(`     ${rec.description}`);
     console.log(`     影响: ${rec.impact}`);
     console.log('');
   }
 
-  if (recommendations.length > 5) {
-    console.log(`  ... 还有 ${recommendations.length - 5} 条建议`);
+  if (recommendations.length > MAX_RECOMMENDATIONS_DISPLAY) {
+    console.log(`  ... 还有 ${recommendations.length - MAX_RECOMMENDATIONS_DISPLAY} 条建议`);
   }
 }
 
 function createScoreBar(score: number, width: number = 20): string {
   const filled = Math.round((score / 100) * width);
   const empty = width - filled;
-  
+
   const filledChar = score >= 80 ? '█' : score >= 60 ? '▓' : '░';
-  
+
   return filledChar.repeat(filled) + '░'.repeat(empty);
 }
 
 async function saveReport(
   report: AuditReport,
   options: AuditOptions,
-  formatter: ReturnType<typeof createFormatter>
+  formatter: OutputFormatter
 ): Promise<void> {
   const projectPath = options.path || process.cwd();
-  
-  let content: string;
-  let extension: string;
 
-  switch (options.output) {
-    case 'json':
-      content = JSON.stringify(report, null, 2);
-      extension = 'json';
-      break;
-    case 'markdown':
-      content = formatMarkdown(report);
-      extension = 'md';
-      break;
-    case 'compact':
-      content = formatCompact(report);
-      extension = 'txt';
-      break;
-    case 'html':
-    default:
-      content = formatHTML(report);
-      extension = 'html';
-  }
+  // Map dispatch：format 决定 renderer 和文件扩展名，没有隐式 fall-through。
+  // 非法 format 会编译期被 Record<ReportFormat, ...> 拒绝。
+  const format = options.output ?? 'html';
+  const content = REPORT_RENDERERS[format](report);
+  const extension = REPORT_EXTENSIONS[format];
 
   if (options.outputFile) {
     await fs.writeFile(options.outputFile, content, 'utf-8');
     if (!options.quiet) {
       formatter.success(`报告已保存: ${options.outputFile}`);
     }
-  } else {
-    // Save to default location
-    const reportDir = path.join(projectPath, '.qa-agent', 'reports');
-    await fs.mkdir(reportDir, { recursive: true });
-    
-    const reportPath = path.join(reportDir, `audit-${Date.now()}.${extension}`);
-    await fs.writeFile(reportPath, content, 'utf-8');
-    
-    const latestPath = path.join(reportDir, `audit-latest.${extension}`);
-    await fs.writeFile(latestPath, content, 'utf-8');
-    
-    if (!options.quiet) {
-      formatter.success(`报告已保存: ${latestPath}`);
-    }
+    return;
+  }
+
+  // Save to default location
+  const reportDir = path.join(projectPath, '.qa-agent', 'reports');
+  await fs.mkdir(reportDir, { recursive: true });
+
+  const reportPath = path.join(reportDir, `audit-${Date.now()}.${extension}`);
+  await fs.writeFile(reportPath, content, 'utf-8');
+
+  const latestPath = path.join(reportDir, `audit-latest.${extension}`);
+  await fs.writeFile(latestPath, content, 'utf-8');
+
+  if (!options.quiet) {
+    formatter.success(`报告已保存: ${latestPath}`);
   }
 }
 
@@ -368,52 +321,44 @@ export function formatCompact(report: AuditReport): string {
 
 export function formatMarkdown(report: AuditReport): string {
   const lines: string[] = [];
-  
+
   lines.push('# 项目健康度审计报告');
   lines.push('');
   lines.push(`**项目**: ${report.project.name}`);
   lines.push(`**时间**: ${report.timestamp}`);
   lines.push(`**耗时**: ${report.duration}ms`);
   lines.push('');
-  
+
   lines.push('## 概览');
   lines.push('');
   lines.push(`- **得分**: ${report.summary.overallScore}/100 (${report.summary.overallGrade})`);
   lines.push(`- **状态**: ${report.summary.healthStatus}`);
   lines.push(`- **问题**: ${report.summary.totalIssues} (严重: ${report.summary.criticalIssues})`);
   lines.push('');
-  
+
   lines.push('## 分类得分');
   lines.push('');
   lines.push('| 分类 | 得分 | 状态 |');
   lines.push('|------|------|------|');
-  
+
   for (const category of report.categories) {
     lines.push(`| ${category.displayName} | ${category.score}/100 | ${category.status} |`);
   }
-  
+
   if (report.recommendations.length > 0) {
     lines.push('');
     lines.push('## 改进建议');
     lines.push('');
-    
-    for (const rec of report.recommendations.slice(0, 5)) {
+
+    for (const rec of report.recommendations.slice(0, MAX_RECOMMENDATIONS_DISPLAY)) {
       lines.push(`- **[${rec.priority}]** ${rec.title}: ${rec.description}`);
     }
   }
-  
+
   return lines.join('\n');
 }
 
 export function formatHTML(report: AuditReport): string {
-  const gradeColors: Record<string, string> = {
-    A: '#22c55e',
-    B: '#84cc16',
-    C: '#eab308',
-    D: '#f97316',
-    F: '#ef4444',
-  };
-
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -428,10 +373,10 @@ export function formatHTML(report: AuditReport): string {
     .header h1 { font-size: 2rem; margin-bottom: 0.5rem; }
     .header p { color: #64748b; }
     .score-card { background: white; border-radius: 1rem; padding: 2rem; margin-bottom: 2rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); text-align: center; }
-    .score-value { font-size: 4rem; font-weight: bold; color: ${gradeColors[report.summary.overallGrade]}; }
+    .score-value { font-size: 4rem; font-weight: bold; color: ${gradeColor(report.summary.overallGrade)}; }
     .score-grade { font-size: 1.5rem; color: #64748b; }
     .score-bar { height: 8px; background: #e2e8f0; border-radius: 4px; margin: 1rem 0; overflow: hidden; }
-    .score-bar-fill { height: 100%; background: ${gradeColors[report.summary.overallGrade]}; border-radius: 4px; width: ${report.summary.overallScore}%; }
+    .score-bar-fill { height: 100%; background: ${gradeColor(report.summary.overallGrade)}; border-radius: 4px; width: ${report.summary.overallScore}%; }
     .categories { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
     .category { background: white; border-radius: 0.5rem; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
     .category-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
@@ -456,7 +401,7 @@ export function formatHTML(report: AuditReport): string {
       <h1>项目健康度审计报告</h1>
       <p>${escapeHTML(report.project.name)} · ${escapeHTML(new Date(report.timestamp).toLocaleString('zh-CN'))}</p>
     </div>
-    
+
     <div class="score-card">
       <div class="score-value">${report.summary.overallScore}</div>
       <div class="score-grade">等级 ${escapeHTML(report.summary.overallGrade)}</div>
@@ -469,7 +414,7 @@ export function formatHTML(report: AuditReport): string {
         <span>严重: ${report.summary.criticalIssues}</span>
       </div>
     </div>
-    
+
     <div class="categories">
       ${report.categories.map(cat => `
         <div class="category">
@@ -478,16 +423,16 @@ export function formatHTML(report: AuditReport): string {
             <span class="category-score">${cat.score}/100</span>
           </div>
           <div class="category-bar">
-            <div class="category-bar-fill" style="width: ${cat.score}%; background: ${cat.score >= 80 ? '#22c55e' : cat.score >= 60 ? '#eab308' : '#ef4444'}"></div>
+            <div class="category-bar-fill" style="width: ${cat.score}%; background: ${scoreColor(cat.score)}"></div>
           </div>
         </div>
       `).join('')}
     </div>
-    
+
     ${report.recommendations.length > 0 ? `
       <div class="recommendations">
         <h2>改进建议</h2>
-        ${report.recommendations.slice(0, 5).map(rec => `
+        ${report.recommendations.slice(0, MAX_RECOMMENDATIONS_DISPLAY).map(rec => `
           <div class="recommendation ${escapeHTML(rec.priority)}">
             <div class="recommendation-title">[${escapeHTML(rec.category)}] ${escapeHTML(rec.title)}</div>
             <div class="recommendation-desc">${escapeHTML(rec.description)}</div>

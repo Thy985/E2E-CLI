@@ -116,15 +116,44 @@ function createShellTool(basePath: string = process.cwd()): ShellTool {
           timeout: options.timeout || 60000,
         });
         return { stdout, stderr, exitCode: 0 };
-      } catch (error: any) {
+      } catch (error) {
         return {
-          stdout: error.stdout || '',
-          stderr: error.stderr || error.message,
-          exitCode: error.code || 1,
+          stdout: errorStdout(error),
+          stderr: errorStderr(error),
+          exitCode: errorCode(error),
         };
       }
     },
   };
+}
+
+/**
+ * spawn() / execAsync() throws a heterogeneous error shape that has optional
+ * stdout/stderr/code fields. Extracted helpers so the catch block is readable
+ * and we don't have to type-narrow the error class.
+ */
+function errorStdout(error: unknown): string {
+  if (typeof error === 'object' && error !== null && 'stdout' in error) {
+    return String((error as { stdout: unknown }).stdout ?? '');
+  }
+  return '';
+}
+
+function errorStderr(error: unknown): string {
+  if (typeof error === 'object' && error !== null) {
+    if ('stderr' in error && (error as { stderr: unknown }).stderr) {
+      return String((error as { stderr: unknown }).stderr);
+    }
+    if (error instanceof Error) return error.message;
+  }
+  return String(error ?? '');
+}
+
+function errorCode(error: unknown): number {
+  if (typeof error === 'object' && error !== null && 'code' in error) {
+    return Number((error as { code: unknown }).code) || 1;
+  }
+  return 1;
 }
 
 /**

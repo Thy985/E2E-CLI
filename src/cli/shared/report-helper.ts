@@ -13,7 +13,7 @@
  */
 
 import * as fsp from 'fs/promises';
-import { SkillContext, Diagnosis, DiagnosisReport, ProjectInfo } from '../../types';
+import { SkillContext, Diagnosis, DiagnosisReport, OutputFormat, ProjectInfo } from '../../types';
 import { QAConfig } from '../../config';
 import { groupBy } from '../../utils/array';
 import { escapeHTML } from '../../utils/format';
@@ -21,7 +21,7 @@ import { createLogger } from '../../utils/logger';
 
 export interface CommandOptions {
   path?: string;
-  output?: 'text' | 'json' | 'html';
+  output?: OutputFormat;
   outputFile?: string;
 }
 
@@ -228,45 +228,83 @@ export function generateHTMLReport(
 }
 
 /**
- * 把结果写到 stdout / 文件，封装 text/json/html 三种格式。
+ * 把结果写到 stdout / 文件，封装 text/json/html/markdown/compact 五种格式。
+ * 老版本只认 text/json/html，markdown/compact 走 text 退化路径。新版走
+ * OutputFormat 全集，未知 format 时打印 error 而不是静默按 text 渲染。
  */
 export async function writeOutput(
   title: string,
   issues: readonly Diagnosis[],
   summary: IssueSummary,
-  options: { format?: 'text' | 'json' | 'html'; outputFile?: string }
+  options: { format?: OutputFormat; outputFile?: string }
 ): Promise<void> {
-  const format = options.format ?? 'text';
-  if (format === 'json') {
-    const json = JSON.stringify({ issues, summary }, null, 2);
-    if (options.outputFile) {
-      await fsp.writeFile(options.outputFile, json, 'utf-8');
-    } else {
-      console.log(json);
+  const format = options.format ?? 'html';
+  switch (format) {
+    case 'json': {
+      const json = JSON.stringify({ issues, summary }, null, 2);
+      return writeOrPrint(json, options.outputFile);
     }
-    return;
+    case 'html': {
+      const html = generateHTMLReport(title, issues, summary);
+      return writeOrPrint(html, options.outputFile);
+    }
+    case 'markdown': {
+      const md = generateMarkdownReport(title, summary, issues);
+      return writeOrPrint(md, options.outputFile);
+    }
+    case 'compact': {
+      const text = formatCompactReport(title, summary, issues);
+      return writeOrPrint(text, options.outputFile);
+    }
+    default: {
+      const _exhaustive: never = format;
+      throw new Error(`Unsupported output format: ${String(_exhaustive)}`);
+    }
   }
+}
 
-  if (format === 'html') {
-    const html = generateHTMLReport(title, issues, summary);
-    if (options.outputFile) {
-      await fsp.writeFile(options.outputFile, html, 'utf-8');
-    } else {
-      console.log(html);
-    }
-    return;
+async function writeOrPrint(content: string, outputFile: string | undefined): Promise<void> {
+  if (outputFile) {
+    await fsp.writeFile(outputFile, content, 'utf-8');
+  } else {
+    console.log(content);
   }
+}
 
-  if (options.outputFile) {
-    // text 也允许写到文件：用一份 human-readable 形式
-    const lines: string[] = [`${title}`, `Total: ${summary.total}, Critical: ${summary.critical}, Warning: ${summary.warning}, Info: ${summary.info}`];
-    for (const i of issues) {
-      lines.push(`- [${i.severity}] ${i.title} (${i.location?.file ?? 'n/a'})`);
-    }
-    await fsp.writeFile(options.outputFile, lines.join('\n') + '\n', 'utf-8');
-    return;
+function generateMarkdownReport(
+  title: string,
+  summary: IssueSummary,
+  issues: readonly Diagnosis[]
+): string {
+  const lines: string[] = [`# ${title}`, ''];
+  lines.push(`**Total**: ${summary.total} | **Critical**: ${summary.critical} | **Warning**: ${summary.warning} | **Info**: ${summary.info}`);
+  lines.push('');
+  for (const i of issues) {
+    const loc = i.location?.file
+      ? `\`${i.location.file}${i.location.line ? `:${i.location.line}` : ''}\``
+      : '`n/a`';
+    lines.push(`- ${getSeverityIcon(i.severity)} **${i.title}** (${loc})`);
+    if (i.description) lines.push(`  - ${i.description}`);
   }
-  printTextReport(title, issues, summary);
+  return lines.join('\n');
+}
+
+function formatCompactReport(
+  title: string,
+  summary: IssueSummary,
+  issues: readonly Diagnosis[]
+): string {
+  const lines: string[] = [
+    title,
+    `Total=${summary.total} Critical=${summary.critical} Warning=${summary.warning} Info=${summary.info}`,
+    '',
+  ];
+  for (const i of issues) {
+    const loc = i.location?.file ?? 'n/a';
+    const line = i.location?.line ?? '';
+    lines.push(`[${i.severity}] ${i.title} (${loc}:${line})`);
+  }
+  return lines.join('\n');
 }
 
 export function exitWithIssueCount(issues: readonly Diagnosis[]): never {

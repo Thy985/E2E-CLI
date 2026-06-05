@@ -35,8 +35,8 @@ export class JSONStorage {
     try {
       const content = await fs.readFile(this.filePath, 'utf-8');
       this.cache = JSON.parse(content);
-    } catch (err: any) {
-      if (err && err.code === 'ENOENT') {
+    } catch (err) {
+      if (isErrnoException(err) && err.code === 'ENOENT') {
         this.cache = {};
         return;
       }
@@ -91,6 +91,15 @@ export class JSONStorage {
     await fs.writeFile(tmp, JSON.stringify(this.cache, null, 2), 'utf-8');
     await fs.rename(tmp, this.filePath);
   }
+}
+
+/**
+ * Node's fs operations throw `Error` subclasses that carry a string `code`
+ * (e.g. `'ENOENT'`). The shape isn't in the standard `Error` interface, so
+ * catch blocks need this type guard.
+ */
+function isErrnoException(err: unknown): err is NodeJS.ErrnoException {
+  return err instanceof Error && 'code' in err;
 }
 
 /**
