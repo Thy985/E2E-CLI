@@ -17,9 +17,9 @@ const UI_UX_RULES = [
   {
     id: 'missing-label',
     patterns: [
-      /<input[^>]*(?!aria-label|id\s*=)[^>]*>/gi,
-      /<textarea[^>]*(?!aria-label|id\s*=)[^>]*>/gi,
-      /<select[^>]*(?!aria-label|id\s*=)[^>]*>/gi,
+      /<input(?![^>]*aria-label)(?![^>]*aria-labelledby)(?![^>]*(?:id)\s*=)[^>]*>/gi,
+      /<textarea(?![^>]*aria-label)(?![^>]*aria-labelledby)(?![^>]*(?:id)\s*=)[^>]*>/gi,
+      /<select(?![^>]*aria-label)(?![^>]*aria-labelledby)(?![^>]*(?:id)\s*=)[^>]*>/gi,
     ],
     severity: 'warning' as Severity,
     title: '表单元素缺少标签',

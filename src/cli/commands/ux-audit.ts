@@ -98,8 +98,52 @@ export const uxAuditCommand = new Command('ux-audit')
         }
       }
 
-      // 返回码：有问题返回1，用于CI/CD
-      process.exit(issues.length > 0 ? 1 : 0);
+      // 如果有 --fix 选项，执行自动修复
+      let fixAppliedCount = 0;
+      if (options.fix && !options.preview) {
+        const fixEngine = new FixEngine({
+          autoApproveLowRisk: true,
+          sandboxEnabled: false,
+          previewBeforeApply: false,
+          verifyAfterFix: true,
+        });
+
+        for (const issue of issues) {
+          if (uiuxSkill.canAutoFix(issue)) {
+            try {
+              const fix = await uiuxSkill.fix(issue, context);
+              const result = await fixEngine.applyFix(fix, options.path);
+              if (result.success) {
+                fixAppliedCount++;
+                logger.info(`✅ Fixed: ${issue.title}`);
+              }
+            } catch (error) {
+              logger.error(`Failed to fix ${issue.title}:`, error);
+            }
+          }
+        }
+      }
+
+      // 返回码逻辑：
+      // --strict 模式：任何 issues 都返回 1
+      // --fix 且修复成功：即使有 info 级别问题也返回 0
+      // 默认：只有 critical/warning 才返回 1
+      let exitCode = 0;
+      if (options.strict) {
+        exitCode = issues.length > 0 ? 1 : 0;
+      } else if (options.fix && fixAppliedCount > 0) {
+        // --fix was used and fixes were applied; exit 0 even with info issues
+        const remainingCriticalOrWarning = issues.filter(
+          (i: any) => i.severity === 'critical' || i.severity === 'warning'
+        ).length;
+        exitCode = remainingCriticalOrWarning > 0 ? 1 : 0;
+      } else {
+        const criticalOrWarning = issues.filter(
+          (i: any) => i.severity === 'critical' || i.severity === 'warning'
+        ).length;
+        exitCode = criticalOrWarning > 0 ? 1 : 0;
+      }
+      process.exit(exitCode);
 
     } catch (error) {
       logger.error('❌ Audit failed:', error);

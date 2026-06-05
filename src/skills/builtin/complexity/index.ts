@@ -113,6 +113,7 @@ export class ComplexitySkill extends BaseSkill {
   triggers = [
     { type: 'command' as const, pattern: 'complexity' },
     { type: 'keyword' as const, pattern: /复杂度|complexity|cyclomatic|cognitive/i },
+    { type: 'file' as const, pattern: /\.(ts|tsx|js|jsx)$/i },
   ];
 
   capabilities = [
