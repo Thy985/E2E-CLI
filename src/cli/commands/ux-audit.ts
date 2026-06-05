@@ -10,6 +10,7 @@ import { createLogger } from '../../utils/logger';
 import { UIUXSkill } from '../../skills/builtin/uiux';
 import { createSkillRegistry } from '../../skills/registry';
 import { FixEngine } from '../../engines/fix';
+import * as fs from 'fs/promises';
 
 export const uxAuditCommand = new Command('ux-audit')
   .description('UI/UX视觉规范审查')
@@ -113,68 +114,68 @@ async function outputResult(result: any, options: any, logger: any) {
     case 'json':
       const jsonOutput = JSON.stringify(result, null, 2);
       if (options.outputFile) {
-        await Bun.write(options.outputFile, jsonOutput);
+        await fs.writeFile(options.outputFile, jsonOutput, 'utf-8');
         logger.info(`报告已保存到: ${options.outputFile}`);
       } else {
-        console.log(jsonOutput);
+        logger.info(jsonOutput);
       }
       break;
 
     case 'html':
       const htmlReport = generateHTMLReport(result);
       if (options.outputFile) {
-        await Bun.write(options.outputFile, htmlReport);
+        await fs.writeFile(options.outputFile, htmlReport, 'utf-8');
         logger.info(`HTML报告已保存到: ${options.outputFile}`);
       } else {
-        console.log(htmlReport);
+        logger.info(htmlReport);
       }
       break;
 
     case 'text':
     default:
-      printTextReport(result);
+      printTextReport(result, logger);
       break;
   }
 }
 
-function printTextReport(result: any) {
+function printTextReport(result: any, logger: any) {
   const { issues, summary } = result;
 
-  console.log('\n═══════════════════════════════════════════════════════════');
-  console.log('                    UI/UX Audit Report');
-  console.log('═══════════════════════════════════════════════════════════\n');
+  logger.info('\n═══════════════════════════════════════════════════════════');
+  logger.info('                    UI/UX Audit Report');
+  logger.info('═══════════════════════════════════════════════════════════\n');
 
   // 统计信息
-  console.log(`📊 Total: ${summary.total} issues`);
-  console.log(`   🔴 Critical: ${summary.critical}`);
-  console.log(`   🟡 Warning:  ${summary.warning}`);
-  console.log(`   🔵 Info:     ${summary.info}\n`);
+  logger.info(`📊 Total: ${summary.total} issues`);
+  logger.info(`   🔴 Critical: ${summary.critical}`);
+  logger.info(`   🟡 Warning:  ${summary.warning}`);
+  logger.info(`   🔵 Info:     ${summary.info}\n`);
 
   // 按类别分组
   const byCategory = groupBy(issues, (i: any) => i.metadata?.category || 'other');
 
   for (const [category, categoryIssues] of Object.entries(byCategory)) {
     const categoryName = getCategoryName(category);
-    console.log(`\n${categoryName} (${(categoryIssues as any[]).length})`);
-    console.log('─'.repeat(50));
+    logger.info(`\n${categoryName} (${(categoryIssues as any[]).length})`);
+    logger.info('─'.repeat(50));
 
     (categoryIssues as any[]).forEach((issue: any) => {
       const severity = getSeverityIcon(issue.severity);
-      console.log(`\n  ${severity} ${issue.title}`);
-      console.log(`     File: ${issue.location.file}:${issue.location.line}`);
-      console.log(`     Description: ${issue.description}`);
+      logger.info(`\n  ${severity} ${issue.title}`);
+      logger.info(`     File: ${issue.location.file}:${issue.location.line}`);
+      logger.info(`     Description: ${issue.description}`);
       
       if (issue.evidence?.code) {
-        console.log(`     Code: ${issue.evidence.code}`);
+        logger.info(`     Code: ${issue.evidence.code}`);
       }
       
       if (issue.metadata?.suggestion) {
-        console.log(`     Suggestion: ${issue.metadata.suggestion}`);
+        logger.info(`     Suggestion: ${issue.metadata.suggestion}`);
       }
     });
   }
 
-  console.log('\n═══════════════════════════════════════════════════════════\n');
+  logger.info('\n═══════════════════════════════════════════════════════════\n');
 }
 
 function generateHTMLReport(result: any): string {

@@ -8,6 +8,7 @@ import { Command } from 'commander';
 import { createLogger } from '../../utils/logger';
 import { DependencySkill } from '../../skills/builtin/dependency';
 import { loadConfig } from '../../config';
+import * as fs from 'fs/promises';
 
 export const dependencyCommand = new Command('dependency')
   .description('Check dependency health')
@@ -46,18 +47,26 @@ export const dependencyCommand = new Command('dependency')
 
       // 输出结果
       if (options.output === 'json') {
-        console.log(JSON.stringify(result, null, 2));
+        logger.info(JSON.stringify(result, null, 2));
+        if (options.outputFile) {
+          await fs.writeFile(options.outputFile, JSON.stringify(result, null, 2), 'utf-8');
+          logger.info(`\n✅ Report saved to: ${options.outputFile}`);
+        }
       } else if (options.output === 'html') {
         const html = generateHTMLReport(result);
         if (options.outputFile) {
-          const fs = await import('fs');
-          fs.writeFileSync(options.outputFile, html, 'utf-8');
+          await fs.writeFile(options.outputFile, html, 'utf-8');
           logger.info(`\n✅ Report saved to: ${options.outputFile}`);
         } else {
-          console.log(html);
+          logger.info(html);
         }
       } else {
-        printTextReport(result);
+        printTextReport(result, logger);
+        if (options.outputFile) {
+          const text = generateTextReport(result);
+          await fs.writeFile(options.outputFile, text, 'utf-8');
+          logger.info(`\n✅ Report saved to: ${options.outputFile}`);
+        }
       }
 
       process.exit(issues.length > 0 ? 1 : 0);
@@ -68,44 +77,85 @@ export const dependencyCommand = new Command('dependency')
     }
   });
 
-function printTextReport(result: any) {
+function printTextReport(result: any, logger: any) {
   const { issues, summary } = result;
 
-  console.log('\n═══════════════════════════════════════════════════════════');
-  console.log('              Dependency Health Report');
-  console.log('═══════════════════════════════════════════════════════════\n');
+  logger.info('\n═══════════════════════════════════════════════════════════');
+  logger.info('              Dependency Health Report');
+  logger.info('═══════════════════════════════════════════════════════════\n');
 
-  console.log(`📊 Total: ${summary.total} issues`);
-  console.log(`   🔴 Critical: ${summary.critical}`);
-  console.log(`   🟡 Warning:  ${summary.warning}`);
-  console.log(`   🔵 Info:     ${summary.info}\n`);
+  logger.info(`📊 Total: ${summary.total} issues`);
+  logger.info(`   🔴 Critical: ${summary.critical}`);
+  logger.info(`   🟡 Warning:  ${summary.warning}`);
+  logger.info(`   🔵 Info:     ${summary.info}\n`);
 
   // 按类别分组
   const byCategory = groupBy(issues, (i: any) => i.metadata?.category || 'other');
 
   for (const [category, categoryIssues] of Object.entries(byCategory)) {
     const categoryName = getCategoryName(category);
-    console.log(`\n${categoryName} (${(categoryIssues as any[]).length})`);
-    console.log('─'.repeat(50));
+    logger.info(`\n${categoryName} (${(categoryIssues as any[]).length})`);
+    logger.info('─'.repeat(50));
 
     (categoryIssues as any[]).forEach((issue: any) => {
       const severity = getSeverityIcon(issue.severity);
-      console.log(`\n  ${severity} ${issue.title}`);
-      console.log(`     Description: ${issue.description}`);
+      logger.info(`\n  ${severity} ${issue.title}`);
+      logger.info(`     Description: ${issue.description}`);
       
       if (issue.metadata?.package) {
-        console.log(`     Package: ${issue.metadata.package}`);
+        logger.info(`     Package: ${issue.metadata.package}`);
       }
       if (issue.metadata?.current && issue.metadata?.latest) {
-        console.log(`     Current: ${issue.metadata.current} → Latest: ${issue.metadata.latest}`);
+        logger.info(`     Current: ${issue.metadata.current} → Latest: ${issue.metadata.latest}`);
       }
       if (issue.metadata?.suggestion) {
-        console.log(`     Suggestion: ${issue.metadata.suggestion}`);
+        logger.info(`     Suggestion: ${issue.metadata.suggestion}`);
       }
     });
   }
 
-  console.log('\n═══════════════════════════════════════════════════════════\n');
+  logger.info('\n═══════════════════════════════════════════════════════════\n');
+}
+
+function generateTextReport(result: any): string {
+  const { issues, summary } = result;
+  const lines: string[] = [];
+
+  lines.push('\n═══════════════════════════════════════════════════════════');
+  lines.push('              Dependency Health Report');
+  lines.push('═══════════════════════════════════════════════════════════\n');
+
+  lines.push(`📊 Total: ${summary.total} issues`);
+  lines.push(`   🔴 Critical: ${summary.critical}`);
+  lines.push(`   🟡 Warning:  ${summary.warning}`);
+  lines.push(`   🔵 Info:     ${summary.info}\n`);
+
+  const byCategory = groupBy(issues, (i: any) => i.metadata?.category || 'other');
+
+  for (const [category, categoryIssues] of Object.entries(byCategory)) {
+    const categoryName = getCategoryName(category);
+    lines.push(`\n${categoryName} (${(categoryIssues as any[]).length})`);
+    lines.push('─'.repeat(50));
+
+    (categoryIssues as any[]).forEach((issue: any) => {
+      const severity = getSeverityIcon(issue.severity);
+      lines.push(`\n  ${severity} ${issue.title}`);
+      lines.push(`     Description: ${issue.description}`);
+      
+      if (issue.metadata?.package) {
+        lines.push(`     Package: ${issue.metadata.package}`);
+      }
+      if (issue.metadata?.current && issue.metadata?.latest) {
+        lines.push(`     Current: ${issue.metadata.current} → Latest: ${issue.metadata.latest}`);
+      }
+      if (issue.metadata?.suggestion) {
+        lines.push(`     Suggestion: ${issue.metadata.suggestion}`);
+      }
+    });
+  }
+
+  lines.push('\n═══════════════════════════════════════════════════════════\n');
+  return lines.join('\n');
 }
 
 function generateHTMLReport(result: any): string {

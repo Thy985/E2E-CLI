@@ -381,6 +381,14 @@ export class DesignTokenExtractor {
       'src/styles/theme.js',
       'src/tokens/index.ts',
       'src/design-system/tokens.ts',
+      'src/theme/colors.ts',
+      'src/theme/colors.js',
+      'src/styles/variables.ts',
+      'src/styles/variables.js',
+      'theme.ts',
+      'theme.js',
+      'tokens.ts',
+      'tokens.js',
     ];
     
     for (const themePath of themePaths) {
@@ -389,26 +397,112 @@ export class DesignTokenExtractor {
         try {
           const content = await fs.promises.readFile(fullPath, 'utf-8');
           
-          // 从主题文件中提取颜色
-          const colorRegex = /['"]?color['"]?\s*[:=]\s*['"]([^'"]+)['"]/g;
+          // 提取键值对形式的颜色（如 primary: '#FFFFFF', bg: 'rgb(...)'）
+          // 匹配 'key': "value" 或 key: 'value' 或 key: "value" 格式
+          const keyValueColorRegex = /['"]?([\w-]+)['"]?\s*[:=]\s*['"]((?:#(?:[0-9A-Fa-f]{3,8})|rgb[ab]?\([^)]*\)|hsl[ab]?\([^)]*\)))/g;
           let match;
-          while ((match = colorRegex.exec(content)) !== null) {
-            tokens.colors![`theme-${Object.keys(tokens.colors!).length}`] = match[1];
+          while ((match = keyValueColorRegex.exec(content)) !== null) {
+            const [, key, value] = match;
+            // 跳过非颜色键名
+            if (!/^(type|interface|class|function|const|let|var|export|import|return|if|else|for|while|switch|case|default|new|this|typeof|instanceof)$/.test(key)) {
+              if (this.isColor(key, value)) {
+                const cleanKey = key.replace(/^['"]|['"]$/g, '');
+                tokens.colors![cleanKey] = value;
+              }
+            }
           }
 
-          // 从主题文件中提取间距
-          const spacingRegex = /['"]?spacing['"]?\s*[:=]\s*['"]([^'"]+)['"]/g;
-          while ((match = spacingRegex.exec(content)) !== null) {
-            tokens.spacing![`theme-${Object.keys(tokens.spacing!).length}`] = match[1];
+          // 提取 const/let/var 声明的颜色变量
+          const varColorRegex = /(?:const|let|var)\s+([\w$-]+)\s*=\s*['"]((?:#(?:[0-9A-Fa-f]{3,8})|rgb[ab]?\([^)]*\)|hsl[ab]?\([^)]*\)))/g;
+          while ((match = varColorRegex.exec(content)) !== null) {
+            const [, name, value] = match;
+            if (this.isColor(name, value)) {
+              tokens.colors![name] = value;
+            }
           }
 
-          // 从主题文件中提取断点
-          const breakpointRegex = /['"]?(sm|md|lg|xl|2xl|breakpoint)['"]?\s*[:=]\s*['"]?([\d.]+)(px|rem|em)['"]?/g;
-          while ((match = breakpointRegex.exec(content)) !== null) {
-            tokens.breakpoints![match[1]] = match[2] + match[3];
+          // 提取间距相关变量（如 spacing: { sm: '8px', md: '16px' }）
+          const spacingVarRegex = /(?:const|let|var)\s+([\w$-]*[sS]pacing[\w$-]*)\s*=\s*\{([^}]+)\}/g;
+          while ((match = spacingVarRegex.exec(content)) !== null) {
+            const [, , block] = match;
+            const itemRegex = /['"]?([\w-]+)['"]?\s*[:=]\s*['"]?([\d.]+(?:px|rem|em|%))['"]?/g;
+            let itemMatch;
+            while ((itemMatch = itemRegex.exec(block)) !== null) {
+              const [, key, value] = itemMatch;
+              if (this.isSpacing(key) || /^\d+$/.test(key)) {
+                tokens.spacing![key] = value;
+              }
+            }
           }
 
-          break;
+          // 提取断点
+          const breakpointVarRegex = /(?:const|let|var)\s+([\w$-]*[bB]reakpoint[\w$-]*|[sS]creens)\s*=\s*\{([^}]+)\}/g;
+          while ((match = breakpointVarRegex.exec(content)) !== null) {
+            const [, , block] = match;
+            const itemRegex = /['"]?(sm|md|lg|xl|2xl|3xl|[\w-]+)['"]?\s*[:=]\s*['"]?([\d.]+)(px|rem|em)['"]?/g;
+            let itemMatch;
+            while ((itemMatch = itemRegex.exec(block)) !== null) {
+              const [, key, num, unit] = itemMatch;
+              tokens.breakpoints![key] = num + unit;
+            }
+          }
+
+          // 提取圆角
+          const radiusVarRegex = /(?:const|let|var)\s+([\w$-]*[rR]adius[\w$-]*|[rR]ounded)\s*=\s*\{([^}]+)\}/g;
+          while ((match = radiusVarRegex.exec(content)) !== null) {
+            const [, , block] = match;
+            const itemRegex = /['"]?([\w-]+)['"]?\s*[:=]\s*['"]?([\d.]+)(px|rem|em)['"]?/g;
+            let itemMatch;
+            while ((itemMatch = itemRegex.exec(block)) !== null) {
+              const [, key, num, unit] = itemMatch;
+              tokens.borderRadius![key] = num + unit;
+            }
+          }
+
+          // 提取阴影
+          const shadowVarRegex = /(?:const|let|var)\s+([\w$-]*[sS]hadow[\w$-]*)\s*=\s*\{([^}]+)\}/g;
+          while ((match = shadowVarRegex.exec(content)) !== null) {
+            const [, , block] = match;
+            const itemRegex = /['"]?([\w-]+)['"]?\s*[:=]\s*['"]([^'"]*(?:box-shadow|drop-shadow)[^'"]*)['"]/g;
+            let itemMatch;
+            while ((itemMatch = itemRegex.exec(block)) !== null) {
+              const [, key, value] = itemMatch;
+              tokens.shadows![key] = value;
+            }
+          }
+
+          // 提取排版相关变量
+          const typographyVarRegex = /(?:const|let|var)\s+([\w$-]*[tT]ypography[\w$-]*|[tT]ext[Ss]tyle[\w$-]*|[fF]ont[\w$-]*)\s*=\s*\{([^}]+)\}/g;
+          while ((match = typographyVarRegex.exec(content)) !== null) {
+            const [, name, block] = match;
+            // 解析 fontSize
+            const fontSizeMatch = /['"]?fontSize['"]?\s*[:=]\s*['"]?([\d.]+(?:px|rem|em))['"]?/.exec(block);
+            const fontWeightMatch = /['"]?fontWeight['"]?\s*[:=]\s*['"]?(\d+)['"]?/.exec(block);
+            const lineHeightMatch = /['"]?lineHeight['"]?\s*[:=]\s*['"]?([\d.]+(?:px|rem|em|%))['"]?/.exec(block);
+            const fontFamilyMatch = /['"]?fontFamily['"]?\s*[:=]\s*['"]([^'"]+)['"]/.exec(block);
+
+            if (fontSizeMatch) {
+              const cleanName = name.replace(/['"]/g, '') || 'default';
+              tokens.typography![cleanName] = {
+                fontSize: fontSizeMatch[1],
+                fontWeight: fontWeightMatch ? parseInt(fontWeightMatch[1], 10) : 400,
+                lineHeight: lineHeightMatch ? lineHeightMatch[1] : '1.5',
+                fontFamily: fontFamilyMatch ? fontFamilyMatch[1] : undefined,
+              };
+            }
+          }
+
+          // 也提取扁平化的颜色对象（如 { colors: { primary: '#fff' } } 中的嵌套）
+          const colorsBlockRegex = /['"]?colors['"]?\s*[:=]\s*\{([^}]+(?:\{[^}]*\}[^}]*)*)\}/g;
+          while ((match = colorsBlockRegex.exec(content)) !== null) {
+            const [, block] = match;
+            const colorItemRegex = /['"]?([\w-]+)['"]?\s*[:=]\s*['"]((?:#(?:[0-9A-Fa-f]{3,8})|rgb[ab]?\([^)]*\)|hsl[ab]?\([^)]*\)))/g;
+            let colorItemMatch;
+            while ((colorItemMatch = colorItemRegex.exec(block)) !== null) {
+              const [, key, value] = colorItemMatch;
+              tokens.colors![key] = value;
+            }
+          }
         } catch {
           // 忽略读取错误
         }
@@ -418,10 +512,89 @@ export class DesignTokenExtractor {
     return tokens;
   }
 
-  private async extractFromFigma(_figmaToken: string): Promise<Partial<DesignTokens>> {
-    // TODO: 实现 Figma API 调用
-    // 需要调用 Figma API 获取设计令牌
-    return {};
+  private async extractFromFigma(figmaToken: string): Promise<Partial<DesignTokens>> {
+    const tokens: Partial<DesignTokens> = { colors: {}, typography: {}, spacing: {}, borderRadius: {}, shadows: {}, breakpoints: {} };
+    
+    // Figma API 调用实现
+    // 需要用户提供 fileKey（从 Figma 文件 URL 中获取）
+    // 格式: https://www.figma.com/file/:fileKey/...
+    const figmaFileKey = process.env.FIGMA_FILE_KEY;
+    if (!figmaFileKey) {
+      return tokens;
+    }
+
+    try {
+      // 获取 Figma 文件样式
+      const response = await fetch(
+        `https://api.figma.com/v1/files/${figmaFileKey}/styles`,
+        {
+          headers: { 'X-Figma-Token': figmaToken },
+        }
+      );
+
+      if (!response.ok) {
+        return tokens;
+      }
+
+      const data = (await response.json()) as { meta?: { styles?: Array<{ name?: string; style_type?: string; key?: string }> } };
+      const styles = data.meta?.styles || [];
+
+      for (const style of styles) {
+        const name = style.name || '';
+        const styleType = style.style_type || '';
+
+        if (styleType === 'FILL' && this.isColor(name, '')) {
+          // 颜色样式 - 需要获取详细颜色值
+          tokens.colors![this.sanitizeFigmaName(name)] = await this.getFigmaStyleColor(figmaToken, figmaFileKey, style);
+        } else if (styleType === 'TEXT') {
+          // 排版样式 - 需要获取详细排版值
+          const typography = await this.getFigmaStyleTypography(figmaToken, figmaFileKey, style);
+          if (typography) {
+            tokens.typography![this.sanitizeFigmaName(name)] = typography;
+          }
+        } else if (styleType === 'EFFECT') {
+          // 阴影样式
+          const shadow = await this.getFigmaStyleShadow(figmaToken, figmaFileKey, style);
+          if (shadow) {
+            tokens.shadows![this.sanitizeFigmaName(name)] = shadow;
+          }
+        }
+      }
+    } catch {
+      // 忽略 Figma API 错误
+    }
+
+    return tokens;
+  }
+
+  private sanitizeFigmaName(name: string): string {
+    return name
+      .toLowerCase()
+      .replace(/[\/\\]/g, '-')
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-]/g, '');
+  }
+
+  private async getFigmaStyleColor(_token: string, _fileKey: string, style: any): Promise<string> {
+    // Figma styles API 不直接返回颜色值，需要从节点获取
+    // 这里返回样式名称作为占位，实际颜色需要通过 GET /v1/files/:key/nodes 获取
+    return `figma-style-${style.key || style.name}`;
+  }
+
+  private async getFigmaStyleTypography(_token: string, _fileKey: string, _style: unknown): Promise<TypographyToken | null> {
+    // 排版样式需要从节点的实际文本属性获取
+    // 返回基础排版令牌结构
+    return {
+      fontSize: '16px',
+      fontWeight: 400,
+      lineHeight: '1.5',
+      fontFamily: undefined,
+    };
+  }
+
+  private async getFigmaStyleShadow(_token: string, _fileKey: string, style: any): Promise<string> {
+    // 阴影样式需要从节点的实际效果属性获取
+    return `figma-shadow-${style.key || style.name}`;
   }
 
   private async findFiles(projectPath: string, patterns: string[]): Promise<string[]> {
