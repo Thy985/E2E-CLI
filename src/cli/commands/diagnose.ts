@@ -2,13 +2,13 @@
  * Diagnose Command
  */
 
-import { DiagnoseOptions, Diagnosis, ProjectInfo, SkillContext } from '../../types';
+import { DiagnoseOptions, Diagnosis, DiagnosisReport, OutputFormat, ProjectInfo, SkillContext } from '../../types';
 import { createLogger } from '../../utils/logger';
 import { createFormatter } from '../output/formatter';
 import { createSkillRegistry } from '../../skills/registry';
 import { getAllBuiltinSkills } from '../../skills/builtin';
 import { createReportGenerator } from '../../engines/report';
-import { createModelClient } from '../../models';
+import { createModelClient, ModelProvider } from '../../models';
 import { createTools } from '../../tools';
 import { createStorage } from '../../storage';
 import { loadConfig, QAConfig, shouldIgnore } from '../../config';
@@ -16,7 +16,20 @@ import { detectProjectInfo } from '../../utils/project-detector';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
-export async function diagnoseCommand(options: any) {
+interface DiagnoseCommandOptions {
+  skills?: string;
+  path?: string;
+  url?: string;
+  output?: OutputFormat;
+  outputFile?: string;
+  failOn?: 'critical' | 'warning' | 'info';
+  quiet?: boolean;
+  verbose?: boolean;
+  ci?: boolean;
+}
+
+export async function diagnoseCommand(rawOptions: DiagnoseCommandOptions) {
+  const options = rawOptions as DiagnoseCommandOptions;
   const startTime = Date.now();
   
   // Initialize logger
@@ -95,7 +108,9 @@ export async function diagnoseCommand(options: any) {
       logger: logger.child('Skill'),
       tools: createTools(diagnoseOptions.path!),
       model: createModelClient({
-        provider: config.model?.provider as any,
+        // QAConfig 允许任意字符串，createModelClient 内部会通过 detectProvider 兜底。
+        // 这里仅做类型收窄；非法值在 model 实际 chat 时报错。
+        provider: config.model?.provider as ModelProvider | undefined,
         model: config.model?.model,
         apiKey: config.model?.apiKey,
         baseUrl: config.model?.baseUrl,
@@ -172,7 +187,7 @@ async function getProjectInfo(projectPath: string, config?: QAConfig): Promise<P
 }
 
 async function outputReport(
-  report: any,
+  report: DiagnosisReport,
   options: DiagnoseOptions,
   formatter: ReturnType<typeof createFormatter>,
   reportGenerator: ReturnType<typeof createReportGenerator>

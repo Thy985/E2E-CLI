@@ -19,6 +19,20 @@ import {
 } from '../../../types';
 import { DependencyFixGenerator } from './fixers/dependency-fix-generator';
 
+/**
+ * Standard package.json fields this skill actually reads.
+ * Narrower than the real `package.json` type — any extra fields are
+ * ignored, missing fields produce empty objects in the helpers.
+ */
+interface PackageJsonShape {
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
+  scripts?: Record<string, string>;
+  [key: string]: unknown;
+}
+
 export class DependencySkill extends BaseSkill {
   name = 'dependency';
   version = '1.0.0';
@@ -99,7 +113,7 @@ export class DependencySkill extends BaseSkill {
     return autoFixableTypes.includes(diagnosis.metadata?.type);
   }
 
-  private async checkOutdated(packageJson: any, file: string): Promise<Diagnosis[]> {
+  private async checkOutdated(packageJson: PackageJsonShape, file: string): Promise<Diagnosis[]> {
     const issues: Diagnosis[] = [];
     const dependencies = {
       ...packageJson.dependencies,
@@ -166,7 +180,7 @@ export class DependencySkill extends BaseSkill {
     return issues;
   }
 
-  private checkDuplicates(packageJson: any, file: string): Diagnosis[] {
+  private checkDuplicates(packageJson: PackageJsonShape, file: string): Diagnosis[] {
     const issues: Diagnosis[] = [];
     const deps = packageJson.dependencies || {};
     const devDeps = packageJson.devDependencies || {};
@@ -266,7 +280,7 @@ export class DependencySkill extends BaseSkill {
     return issues;
   }
 
-  private checkPeerDependencies(packageJson: any, file: string): Diagnosis[] {
+  private checkPeerDependencies(packageJson: PackageJsonShape, file: string): Diagnosis[] {
     const issues: Diagnosis[] = [];
     const peerDeps = packageJson.peerDependencies || {};
     const deps = packageJson.dependencies || {};
@@ -295,7 +309,7 @@ export class DependencySkill extends BaseSkill {
     return issues;
   }
 
-  private checkDependencyPlacement(packageJson: any, file: string): Diagnosis[] {
+  private checkDependencyPlacement(packageJson: PackageJsonShape, file: string): Diagnosis[] {
     const issues: Diagnosis[] = [];
     const deps = packageJson.dependencies || {};
     const devDeps = packageJson.devDependencies || {};

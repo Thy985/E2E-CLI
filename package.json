@@ -31,8 +31,8 @@
     "build:mac": "bun build src/cli/index.ts --compile --target=bun-darwin-x64 --outfile dist/qa-agent",
     "test": "bun test",
     "test:coverage": "bun test --coverage",
-    "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit",
+    "check": "bun run typecheck && bun test",
     "clean": "rm -rf dist",
     "link": "bun link"
   },

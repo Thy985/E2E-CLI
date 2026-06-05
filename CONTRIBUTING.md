@@ -75,8 +75,8 @@ bun run test:coverage
 # Type checking
 bun run typecheck
 
-# Linting
-bun run lint
+# Combined check (typecheck + tests)
+bun run check
 
 # Build
 bun run build

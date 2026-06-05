@@ -8,6 +8,7 @@ import {
   SkillContext,
   Diagnosis,
   Fix,
+  FileChange,
   Severity,
   DiagnosisType,
 } from '../../../types';
@@ -312,7 +313,7 @@ export class A11ySkill extends BaseSkill {
     };
   }
 
-  private fixImgAlt(content: string, diagnosis: Diagnosis): any[] {
+  private fixImgAlt(content: string, diagnosis: Diagnosis): FileChange[] {
     // Find the img tag and add alt attribute
     const matchedCode = diagnosis.metadata?.matchedCode;
     if (!matchedCode) return [];
@@ -327,7 +328,7 @@ export class A11ySkill extends BaseSkill {
     }];
   }
 
-  private fixButtonName(content: string, diagnosis: Diagnosis): any[] {
+  private fixButtonName(content: string, diagnosis: Diagnosis): FileChange[] {
     const matchedCode = diagnosis.metadata?.matchedCode;
     if (!matchedCode) return [];
 
@@ -344,7 +345,7 @@ export class A11ySkill extends BaseSkill {
     }];
   }
 
-  private fixInputLabel(content: string, diagnosis: Diagnosis): any[] {
+  private fixInputLabel(content: string, diagnosis: Diagnosis): FileChange[] {
     const matchedCode = diagnosis.metadata?.matchedCode;
     if (!matchedCode) return [];
 

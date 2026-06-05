@@ -174,8 +174,10 @@ async function runCI(
   // Validate output format at boundary (audit/diagnose demand a strict union)
   const auditOutput = (['html', 'json', 'markdown', 'compact'].includes(output) ? output : 'json') as
     'html' | 'json' | 'markdown' | 'compact';
-  const diagnoseOutput = (['text', 'json', 'html'].includes(output) ? output : 'json') as
-    'text' | 'json' | 'html';
+  const diagnoseOutput = (['html', 'json', 'markdown', 'compact'].includes(output) ? output : 'json') as
+    'html' | 'json' | 'markdown' | 'compact';
+  const failOnLevel = (['critical', 'warning', 'info'].includes(failOn) ? failOn : 'critical') as
+    'critical' | 'warning' | 'info';
 
   let exitCode = 0;
 
@@ -187,7 +189,7 @@ async function runCI(
       skills,
       output: diagnoseOutput,
       outputFile: 'qa-report.json',
-      failOn,
+      failOn: failOnLevel,
       quiet: true,
       ci: true,
     });
