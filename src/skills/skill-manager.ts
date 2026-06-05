@@ -140,29 +140,20 @@ export class SkillManager {
         return { success: false, message: 'Downloaded package not found' };
       }
 
-      // Extract the tarball - use npm's tar or built-in extraction
+      // Extract the tarball using the tar command (available on all platforms in Node 18+)
       logger.info(`Extracting ${tarballName}...`);
       try {
-        // Try npm's tar extraction first (works cross-platform)
-        await execAsync(`npm pack --dry-run "${tarballPath}"`, { cwd: tempDir, timeout: 30000 }).catch(() => {});
-        
-        // Use tar if available (Unix), otherwise manual extraction
-        const isWindows = process.platform === 'win32';
-        if (isWindows) {
-          // On Windows, use PowerShell to extract tar
-          await execAsync(`powershell -Command "Expand-Archive -Path '${tarballPath}' -DestinationPath '${tempDir}' -Force"`, { 
-            cwd: tempDir, 
-            timeout: 30000 
-          });
-        } else {
-          await execAsync(`tar -xzf "${tarballPath}" -C "${tempDir}"`, { 
-            cwd: tempDir, 
-            timeout: 30000 
-          });
+        await execAsync(`tar -xzf "${tarballPath}" -C "${tempDir}"`, { 
+          cwd: tempDir, 
+          timeout: 30000 
+        });
+      } catch (extractError: any) {
+        logger.warn(`Failed to extract tarball: ${extractError.message}`);
+        // Cleanup and return error since we can't proceed without extracted files
+        if (fs.existsSync(tempDir)) {
+          fs.rmSync(tempDir, { recursive: true, force: true });
         }
-      } catch {
-        // Fallback: manual tarball extraction
-        logger.info('Using manual extraction...');
+        return { success: false, message: `Failed to extract skill package: ${extractError.message}` };
       }
 
       // Find the extracted package directory

@@ -94,6 +94,8 @@ export class DependencySkill extends BaseSkill {
       'wrong-placement',
       'unsafe-version',
       'exact-version',
+      'git-url-deps',
+      'outdated-deps',
     ];
     return autoFixableTypes.includes(diagnosis.metadata?.type);
   }

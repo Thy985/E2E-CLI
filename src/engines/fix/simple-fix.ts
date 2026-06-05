@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Fix, FileChange } from '../../types';
 import { createLogger, Logger } from '../../utils/logger';
+import { replaceInFile, insertInFile } from '../../utils/file-ops';
 
 export interface SimpleFixResult {
   success: boolean;
@@ -109,13 +110,12 @@ export class SimpleFixEngine {
       }
 
       if (change.type === 'replace') {
-        const content = fs.readFileSync(filePath, 'utf-8');
-        
         if (!change.oldContent) {
           result.error = 'No search pattern provided';
           return result;
         }
 
+        const content = fs.readFileSync(filePath, 'utf-8');
         if (!content.includes(change.oldContent)) {
           result.error = `Search pattern not found in file`;
           this.logger.warn(`  ⚠️ Pattern not found!`);
@@ -123,17 +123,15 @@ export class SimpleFixEngine {
           return result;
         }
 
-        const newContent = content.replace(change.oldContent, change.content || '');
-        fs.writeFileSync(filePath, newContent, 'utf-8');
+        await replaceInFile(filePath, change.oldContent, change.content || '');
         result.success = true;
 
       } else if (change.type === 'insert') {
         const content = fs.readFileSync(filePath, 'utf-8');
         const lines = content.split('\n');
-        const insertLine = change.position?.line || lines.length;
-        
-        lines.splice(insertLine, 0, change.content || '');
-        fs.writeFileSync(filePath, lines.join('\n'), 'utf-8');
+        const insertLine = change.position?.line ?? lines.length;
+
+        await insertInFile(filePath, insertLine, change.content || '');
         result.success = true;
 
       } else {
