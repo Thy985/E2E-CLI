@@ -1,7 +1,5 @@
 /**
- * Fix Command
- * 
- * 修复命令 - 支持单问题修复和批量修复
+ * Fix Command — 修复命令（支持单问题修复和批量修复）
  */
 
 import { Command } from 'commander';
@@ -13,6 +11,7 @@ import { UIUXSkill } from '../../skills/builtin/uiux';
 import { BestPracticesSkill } from '../../skills/builtin/best-practices';
 import { SEOSkill } from '../../skills/builtin/seo';
 import { DependencySkill } from '../../skills/builtin/dependency';
+import { buildCommandContext } from '../shared/report-helper';
 
 export const fixCommand = new Command('fix')
   .description('Fix diagnosed issues')
@@ -65,14 +64,7 @@ async function runBatchFix(options: any, config: any, logger: any) {
   // 执行批量修复
   const result = await batchEngine.batchFix(
     allIssues,
-    {
-      project: { path: options.path, name: 'project', type: 'webapp' as const },
-      config,
-      logger,
-      tools: {} as any,
-      model: {} as any,
-      storage: {} as any,
-    },
+    buildCommandContext(options.path, config, logger),
     {
       autoApproveLowRisk: options.autoApprove.includes('low'),
       autoApproveMediumRisk: options.autoApprove.includes('medium'),
@@ -109,14 +101,7 @@ async function runSingleFix(options: any, config: any, logger: any) {
     process.exit(1);
   }
 
-  const context = {
-    project: { path: options.path, name: 'project', type: 'webapp' as const },
-    config,
-    logger,
-    tools: {} as any,
-    model: {} as any,
-    storage: {} as any,
-  };
+  const context = buildCommandContext(options.path, config, logger);
 
   // 根据 issue.skill 选择对应的 Skill 并调用其 fix()
   const skill = pickSkillFor(issue.skill);
@@ -202,14 +187,7 @@ async function runInteractiveFix(options: any, config: any, logger: any) {
 
 async function collectAllIssues(projectPath: string, config: any, logger: any): Promise<any[]> {
   const issues: any[] = [];
-  const context = {
-    project: { path: projectPath, name: 'project', type: 'webapp' as const },
-    config,
-    logger,
-    tools: {} as any,
-    model: {} as any,
-    storage: {} as any,
-  };
+  const context = buildCommandContext(projectPath, config, logger);
 
   // UI/UX
   try {

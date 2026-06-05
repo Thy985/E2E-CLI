@@ -7,10 +7,16 @@ import { createLogger } from '../../utils/logger';
 import { createFormatter } from '../output/formatter';
 import { createAuditEngine } from '../../engines/audit';
 import { AuditOptions, AuditReport, AuditCategory } from '../../types';
+import { escapeHTML } from '../../utils/format';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
-export async function auditCommand(options: any) {
+type AuditCommandOptions = AuditOptions & {
+  verbose?: boolean;
+  quiet?: boolean;
+};
+
+export async function auditCommand(options: AuditCommandOptions) {
   const logger = createLogger({
     level: options.verbose ? 'debug' : 'info',
     quiet: options.quiet,
@@ -25,10 +31,14 @@ export async function auditCommand(options: any) {
     // Create audit engine
     const engine = createAuditEngine(logger);
 
-    // Parse compliance options
+    // Parse compliance options (commander hands us a string when the
+    // CLI flag is invoked once, or a string[] when repeated).
     let compliance: string[] | undefined;
-    if (options.compliance && typeof options.compliance === 'string') {
-      compliance = options.compliance.split(',').map((s: string) => s.trim());
+    const raw = options.compliance as unknown;
+    if (typeof raw === 'string') {
+      compliance = raw.split(',').map((s) => s.trim());
+    } else if (Array.isArray(raw)) {
+      compliance = (raw as unknown[]).map((s) => String(s).trim());
     }
 
     // Run audit
@@ -341,22 +351,22 @@ async function saveReport(
   }
 }
 
-function formatCompact(report: AuditReport): string {
+export function formatCompact(report: AuditReport): string {
   const lines: string[] = [];
-  
+
   lines.push(`项目健康度: ${report.summary.overallScore}/100 (${report.summary.overallGrade})`);
   lines.push(`状态: ${report.summary.healthStatus}`);
   lines.push(`问题: ${report.summary.totalIssues} (严重: ${report.summary.criticalIssues})`);
   lines.push('');
-  
+
   for (const category of report.categories) {
     lines.push(`${category.displayName}: ${category.score}/100`);
   }
-  
+
   return lines.join('\n');
 }
 
-function formatMarkdown(report: AuditReport): string {
+export function formatMarkdown(report: AuditReport): string {
   const lines: string[] = [];
   
   lines.push('# 项目健康度审计报告');
@@ -395,7 +405,7 @@ function formatMarkdown(report: AuditReport): string {
   return lines.join('\n');
 }
 
-function formatHTML(report: AuditReport): string {
+export function formatHTML(report: AuditReport): string {
   const gradeColors: Record<string, string> = {
     A: '#22c55e',
     B: '#84cc16',
@@ -404,18 +414,12 @@ function formatHTML(report: AuditReport): string {
     F: '#ef4444',
   };
 
-  const statusColors: Record<string, string> = {
-    healthy: '#22c55e',
-    warning: '#eab308',
-    critical: '#ef4444',
-  };
-
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>项目健康度审计报告 - ${report.project.name}</title>
+  <title>项目健康度审计报告 - ${escapeHTML(report.project.name)}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f8fafc; color: #1e293b; line-height: 1.6; }
@@ -450,17 +454,17 @@ function formatHTML(report: AuditReport): string {
   <div class="container">
     <div class="header">
       <h1>项目健康度审计报告</h1>
-      <p>${report.project.name} · ${new Date(report.timestamp).toLocaleString('zh-CN')}</p>
+      <p>${escapeHTML(report.project.name)} · ${escapeHTML(new Date(report.timestamp).toLocaleString('zh-CN'))}</p>
     </div>
     
     <div class="score-card">
       <div class="score-value">${report.summary.overallScore}</div>
-      <div class="score-grade">等级 ${report.summary.overallGrade}</div>
+      <div class="score-grade">等级 ${escapeHTML(report.summary.overallGrade)}</div>
       <div class="score-bar">
         <div class="score-bar-fill"></div>
       </div>
       <div class="meta">
-        <span>状态: ${report.summary.healthStatus}</span>
+        <span>状态: ${escapeHTML(report.summary.healthStatus)}</span>
         <span>问题: ${report.summary.totalIssues}</span>
         <span>严重: ${report.summary.criticalIssues}</span>
       </div>
@@ -470,7 +474,7 @@ function formatHTML(report: AuditReport): string {
       ${report.categories.map(cat => `
         <div class="category">
           <div class="category-header">
-            <span class="category-name">${cat.displayName}</span>
+            <span class="category-name">${escapeHTML(cat.displayName)}</span>
             <span class="category-score">${cat.score}/100</span>
           </div>
           <div class="category-bar">
@@ -484,9 +488,9 @@ function formatHTML(report: AuditReport): string {
       <div class="recommendations">
         <h2>改进建议</h2>
         ${report.recommendations.slice(0, 5).map(rec => `
-          <div class="recommendation ${rec.priority}">
-            <div class="recommendation-title">[${rec.category}] ${rec.title}</div>
-            <div class="recommendation-desc">${rec.description}</div>
+          <div class="recommendation ${escapeHTML(rec.priority)}">
+            <div class="recommendation-title">[${escapeHTML(rec.category)}] ${escapeHTML(rec.title)}</div>
+            <div class="recommendation-desc">${escapeHTML(rec.description)}</div>
           </div>
         `).join('')}
       </div>

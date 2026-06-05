@@ -12,6 +12,7 @@ import {
 } from '../../types';
 import { calculateScore, getGrade } from '../../utils/scoring';
 import { groupBy } from '../../utils/array';
+import { escapeHTML } from '../../utils/format';
 
 export interface ReportOptions {
   format: 'html' | 'json' | 'markdown' | 'compact';
@@ -358,22 +359,6 @@ export class ReportGenerator {
 </body>
 </html>`;
   }
-}
-
-/**
- * HTML escape — protect against XSS in HTML reports.
- * User-controlled fields (project name, issue titles/descriptions, file paths)
- * get funneled through this before template interpolation.
- */
-function escapeHTML(value: string | number | undefined | null): string {
-  if (value === undefined || value === null) return '';
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-    .replace(/`/g, '&#96;');
 }
 
 /**

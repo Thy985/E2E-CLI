@@ -171,6 +171,12 @@ async function runCI(
   console.log(`失败级别: ${failOn}`);
   console.log('');
 
+  // Validate output format at boundary (audit/diagnose demand a strict union)
+  const auditOutput = (['html', 'json', 'markdown', 'compact'].includes(output) ? output : 'json') as
+    'html' | 'json' | 'markdown' | 'compact';
+  const diagnoseOutput = (['text', 'json', 'html'].includes(output) ? output : 'json') as
+    'text' | 'json' | 'html';
+
   let exitCode = 0;
 
   try {
@@ -179,7 +185,7 @@ async function runCI(
     await diagnoseCommand({
       path: projectPath,
       skills,
-      output,
+      output: diagnoseOutput,
       outputFile: 'qa-report.json',
       failOn,
       quiet: true,
@@ -195,10 +201,9 @@ async function runCI(
     console.log('▶ 运行审计...');
     await auditCommand({
       path: projectPath,
-      output,
+      output: auditOutput,
       outputFile: 'qa-audit.json',
       quiet: true,
-      ci: true,
     });
   } catch (error: any) {
     console.log(`✗ 审计失败: ${error.message}`);

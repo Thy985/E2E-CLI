@@ -18,3 +18,21 @@ export function formatSize(bytes: number): string {
   }
   return `${value.toFixed(1)}${units[i]}`;
 }
+
+/**
+ * HTML escape — protect against XSS when interpolating user-controlled
+ * strings into HTML / attribute values. The order matters: `&` must be
+ * replaced first, otherwise the `&` introduced by other replacements
+ * (e.g. `&lt;`) would be double-escaped to `&amp;lt;`.
+ */
+export function escapeHTML(value: string | number | undefined | null): string {
+  if (value === undefined || value === null) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/`/g, '&#96;');
+}
+
