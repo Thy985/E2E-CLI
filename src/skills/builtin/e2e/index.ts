@@ -8,7 +8,6 @@ import {
   SkillContext,
   Diagnosis,
   Fix,
-  Verification,
   DiagnosisType,
   Severity,
 } from '../../../types';
@@ -78,7 +77,7 @@ export class E2ESkill extends BaseSkill {
   }
 
   private async getTestFiles(
-    projectPath: string,
+    _projectPath: string,
     tools: SkillContext['tools']
   ): Promise<string[]> {
     const patterns = [
@@ -261,7 +260,7 @@ export class E2ESkill extends BaseSkill {
   }
 
   private async checkMissingTests(
-    projectPath: string,
+    _projectPath: string,
     tools: SkillContext['tools']
   ): Promise<Diagnosis[]> {
     const diagnoses: Diagnosis[] = [];

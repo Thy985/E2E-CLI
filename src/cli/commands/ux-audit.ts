@@ -38,9 +38,6 @@ export const uxAuditCommand = new Command('ux-audit')
       const uiuxSkill = new UIUXSkill();
       registry.register(uiuxSkill);
 
-      // 解析审查维度
-      const dimensions = options.focus.split(',').map((d: string) => d.trim());
-
       // 创建 Skill Context
       const context = {
         project: { path: options.path, name: 'test', type: 'webapp' as const },

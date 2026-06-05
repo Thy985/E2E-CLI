@@ -10,6 +10,7 @@ import {
   Fix,
   Severity,
   DiagnosisType,
+  FileChange,
 } from '../../../types';
 import { generateId } from '../../../utils';
 
@@ -128,7 +129,7 @@ export class A11ySkill extends BaseSkill {
   }
 
   private async getHtmlFiles(
-    projectPath: string,
+    _projectPath: string,
     tools: SkillContext['tools']
   ): Promise<string[]> {
     const patterns = [
@@ -145,7 +146,7 @@ export class A11ySkill extends BaseSkill {
   }
 
   private async getComponentFiles(
-    projectPath: string,
+    _projectPath: string,
     tools: SkillContext['tools']
   ): Promise<string[]> {
     const patterns = [
@@ -199,23 +200,33 @@ export class A11ySkill extends BaseSkill {
     const diagnoses: Diagnosis[] = [];
 
     // Check for common a11y issues in React components
+    // Use 's' flag and [\s\S]*? for multi-line JSX tag matching
     const patterns = [
       {
-        regex: /<img[^>]*>/g,
-        check: (match: string) => !match.includes('alt='),
+        regex: /<img(?![^>]*?\balt\s*=)[^>]*>/gis,
+        check: (_match: string) => true, // regex already filters non-alt images
         rule: WCAG_RULES[0], // img-alt
       },
       {
-        regex: /<input[^>]*>/g,
+        regex: /<input(?![^>]*?\btype\s*=\s*["']hidden["'])[^>]*>/gis,
         check: (match: string) => 
           !match.includes('id=') && 
-          !match.includes('aria-label=') &&
-          !match.includes('type="hidden"'),
+          !match.includes('aria-label='),
         rule: WCAG_RULES[1], // label
       },
       {
-        regex: /<button[^>]*>\s*<\/button>/g,
-        check: () => true,
+        // Multi-line button matching
+        regex: /<button([^>]*)>([\s\S]*?)<\/button>/gi,
+        check: (match: string) => {
+          // Re-extract attrs/body since we matched with groups
+          const tagMatch = match.match(/<button([^>]*)>([\s\S]*?)<\/button>/i);
+          if (!tagMatch) return true;
+          const attrs = tagMatch[1] || '';
+          const body = tagMatch[2] || '';
+          return !attrs.includes('aria-label=') &&
+            !attrs.includes('aria-labelledby=') &&
+            body.trim().length === 0;
+        },
         rule: WCAG_RULES[2], // button-name
       },
     ];
@@ -259,21 +270,61 @@ export class A11ySkill extends BaseSkill {
   private findRuleViolations(
     content: string,
     selector: string,
-    rule: typeof WCAG_RULES[0]
+    _rule: typeof WCAG_RULES[0]
   ): { line: number }[] {
-    // Simple pattern matching for demo
-    // In production, would use proper HTML parser
     const issues: { line: number }[] = [];
     
-    // Basic pattern matching
+    // Multi-line aware HTML parsing using regex with 's' flag
     if (selector.includes('img:not([alt])')) {
-      const regex = /<img(?![^>]*alt=)[^>]*>/gi;
-      const matches = content.matchAll(regex);
-      for (const match of matches) {
+      // Match <img> tags across multiple lines, negative lookahead for alt attribute
+      const regex = /<img(?![^>]*?\balt\s*=)[^>]*>/gis;
+      for (const match of content.matchAll(regex)) {
         issues.push({ line: this.getLineNumber(content, match.index!) });
       }
     }
-    
+
+    if (selector.includes('input:not([id])') || selector.includes('textarea:not([id])') || selector.includes('select:not([id])')) {
+      // Match input/textarea/select tags without id attribute (multi-line aware)
+      const regex = /<(?:input|textarea|select)(?![^>]*?\bid\s*=)(?![^>]*?\btype\s*=\s*["']hidden["'])[^>]*>/gis;
+      for (const match of content.matchAll(regex)) {
+        // Only flag elements that also lack aria-label
+        if (!match[0].includes('aria-label=')) {
+          issues.push({ line: this.getLineNumber(content, match.index!) });
+        }
+      }
+    }
+
+    if (selector.includes('button') && selector.includes('aria-label')) {
+      // Match button tags that have no text content and no aria-label/aria-labelledby
+      // Handle multi-line buttons
+      const regex = /<button([^>]*)>([\s\S]*?)<\/button>/gi;
+      for (const match of content.matchAll(regex)) {
+        const attrs = match[1] || '';
+        const body = match[2] || '';
+        const hasAccessibleName = attrs.includes('aria-label=') ||
+          attrs.includes('aria-labelledby=') ||
+          body.trim().length > 0;
+        if (!hasAccessibleName) {
+          issues.push({ line: this.getLineNumber(content, match.index!) });
+        }
+      }
+    }
+
+    if (selector.includes('a:empty') && selector.includes('aria-label')) {
+      // Match anchor tags with no text and no aria-label
+      const regex = /<a([^>]*)>([\s\S]*?)<\/a>/gi;
+      for (const match of content.matchAll(regex)) {
+        const attrs = match[1] || '';
+        const body = match[2] || '';
+        const hasAccessibleName = attrs.includes('aria-label=') ||
+          attrs.includes('aria-labelledby=') ||
+          body.trim().length > 0;
+        if (!hasAccessibleName) {
+          issues.push({ line: this.getLineNumber(content, match.index!) });
+        }
+      }
+    }
+
     return issues;
   }
 
@@ -286,7 +337,7 @@ export class A11ySkill extends BaseSkill {
     const filePath = diagnosis.location.file;
     const content = await context.tools.fs.readFile(filePath);
 
-    let changes: any[] = [];
+    let changes: FileChange[] = [];
 
     switch (ruleId) {
       case 'img-alt':
@@ -312,12 +363,39 @@ export class A11ySkill extends BaseSkill {
     };
   }
 
-  private fixImgAlt(content: string, diagnosis: Diagnosis): any[] {
-    // Find the img tag and add alt attribute
+  private fixImgAlt(content: string, diagnosis: Diagnosis): FileChange[] {
+    // Find the img tag and add alt attribute with context-aware description
     const matchedCode = diagnosis.metadata?.matchedCode;
     if (!matchedCode) return [];
 
-    const fixedCode = matchedCode.replace(/<img/, '<img alt="图片描述"');
+    // Generate context-aware alt text from src attribute
+    let altText = '图片描述';
+    const srcMatch = matchedCode.match(/src\s*=\s*["']([^"']*)["']/i);
+    if (srcMatch) {
+      const srcValue = srcMatch[1];
+      const filename = srcValue.split('/').pop() || '';
+      const nameWithoutExt = filename.replace(/\.[^.]+$/, '');
+      // Convert kebab-case, snake_case, camelCase to readable text
+      altText = nameWithoutExt
+        .replace(/[-_]/g, ' ')
+        .replace(/([a-z])([A-Z])/g, '$1 $2')
+        .replace(/\b\w/g, (c: string) => c.toUpperCase())
+        .trim();
+      if (!altText) altText = '图片描述';
+    }
+
+    // Also check surrounding lines for descriptive text
+    const line = diagnosis.location.line;
+    if (line) {
+      const lines = content.split('\n');
+      const contextLines = [lines[line - 2], lines[line - 1], lines[line]].filter(Boolean).join(' ');
+      const labelMatch = contextLines.match(/(?:label|caption|title|alt|description)\s*[:=]\s*["']([^"']+)["']/i);
+      if (labelMatch && labelMatch[1].length > 2) {
+        altText = labelMatch[1];
+      }
+    }
+
+    const fixedCode = matchedCode.replace(/<img/, `<img alt="${altText}"`);
     
     return [{
       file: diagnosis.location.file,
@@ -327,13 +405,35 @@ export class A11ySkill extends BaseSkill {
     }];
   }
 
-  private fixButtonName(content: string, diagnosis: Diagnosis): any[] {
+  private fixButtonName(content: string, diagnosis: Diagnosis): FileChange[] {
     const matchedCode = diagnosis.metadata?.matchedCode;
     if (!matchedCode) return [];
 
+    // Generate context-aware button label from surrounding content
+    let labelText = '按钮';
+    const line = diagnosis.location.line;
+    if (line) {
+      const lines = content.split('\n');
+      // Check previous line for variable names or labels
+      const contextLine = lines[line - 2] || '';
+      const varMatch = contextLine.match(/(?:label|title|text|name)\s*[=:]\s*["']([^"']+)["']/i);
+      if (varMatch && varMatch[1].length > 1) {
+        labelText = varMatch[1];
+      } else {
+        // Extract from component props or nearby text
+        const propMatch = contextLine.match(/\b(\w+Button|button\w+|submit|save|cancel|delete|confirm|close|open|add|edit|remove)\b/i);
+        if (propMatch) {
+          labelText = propMatch[1].replace(/([a-z])([A-Z])/g, '$1 $2')
+            .replace(/[_-]/g, ' ')
+            .toLowerCase()
+            .replace(/\b\w/g, (c) => c.toUpperCase());
+        }
+      }
+    }
+
     const fixedCode = matchedCode.replace(
       /<button([^>]*)>\s*<\/button>/,
-      '<button$1 aria-label="按钮">按钮</button>'
+      `<button$1 aria-label="${labelText}">${labelText}</button>`
     );
 
     return [{
@@ -344,12 +444,12 @@ export class A11ySkill extends BaseSkill {
     }];
   }
 
-  private fixInputLabel(content: string, diagnosis: Diagnosis): any[] {
+  private fixInputLabel(_content: string, diagnosis: Diagnosis): FileChange[] {
     const matchedCode = diagnosis.metadata?.matchedCode;
     if (!matchedCode) return [];
 
     // Generate a unique ID based on the input type
-    const inputTypeMatch = matchedCode.match(/type="([^"]*)"/);
+    const inputTypeMatch = matchedCode.match(/type\s*=\s*["']([^"']*)["']/i);
     const inputType = inputTypeMatch ? inputTypeMatch[1] : 'input';
     const generatedId = `${inputType}-field-${generateId().slice(0, 4)}`;
 

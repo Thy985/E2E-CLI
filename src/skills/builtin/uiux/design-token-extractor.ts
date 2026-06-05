@@ -149,7 +149,7 @@ export class DesignTokenExtractor {
     return tokens;
   }
 
-  private async extractFromFigma(figmaToken: string): Promise<Partial<DesignTokens>> {
+  private async extractFromFigma(_figmaToken: string): Promise<Partial<DesignTokens>> {
     // TODO: 实现 Figma API 调用
     // 需要调用 Figma API 获取设计令牌
     return {};

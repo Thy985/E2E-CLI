@@ -41,6 +41,14 @@ export class SEOFixGenerator {
   }
 
   private fixMissingDescription(filePath: string, diagnosis: Diagnosis): Fix {
+    // Generate description from page title if available
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const titleMatch = content.match(/<title>([^<]*)<\/title>/i);
+    let description = 'Page description here (150-160 characters)';
+    if (titleMatch && titleMatch[1]) {
+      description = `Learn more about ${titleMatch[1].trim()}. This page provides detailed information and resources.`;
+    }
+
     return {
       id: `fix-${diagnosis.id}`,
       diagnosisId: diagnosis.id,
@@ -51,7 +59,7 @@ export class SEOFixGenerator {
         {
           file: filePath,
           type: 'insert',
-          content: '  <meta name="description" content="Page description here (150-160 characters)">\n',
+          content: `  <meta name="description" content="${description}">\n`,
           position: { line: this.findHeadInsertLine(filePath) },
         },
       ],
@@ -59,6 +67,15 @@ export class SEOFixGenerator {
   }
 
   private fixMissingKeywords(filePath: string, diagnosis: Diagnosis): Fix {
+    // Generate keywords from page title and existing content
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const titleMatch = content.match(/<title>([^<]*)<\/title>/i);
+    let keywords = 'keyword1, keyword2, keyword3';
+    if (titleMatch && titleMatch[1]) {
+      const titleWords = titleMatch[1].trim().split(/\s+/).slice(0, 5);
+      keywords = titleWords.join(', ').toLowerCase();
+    }
+
     return {
       id: `fix-${diagnosis.id}`,
       diagnosisId: diagnosis.id,
@@ -69,7 +86,7 @@ export class SEOFixGenerator {
         {
           file: filePath,
           type: 'insert',
-          content: '  <meta name="keywords" content="keyword1, keyword2, keyword3">\n',
+          content: `  <meta name="keywords" content="${keywords}">\n`,
           position: { line: this.findHeadInsertLine(filePath) },
         },
       ],
@@ -78,7 +95,8 @@ export class SEOFixGenerator {
 
   private fixMissingOGTag(filePath: string, diagnosis: Diagnosis): Fix {
     const ogTag = diagnosis.title.match(/og:(\w+)/)?.[1] || 'title';
-    const content = this.getOGContent(ogTag);
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const ogContent = this.extractOGContent(ogTag, content);
 
     return {
       id: `fix-${diagnosis.id}`,
@@ -90,7 +108,7 @@ export class SEOFixGenerator {
         {
           file: filePath,
           type: 'insert',
-          content: `  <meta property="og:${ogTag}" content="${content}">\n`,
+          content: `  <meta property="og:${ogTag}" content="${ogContent}">\n`,
           position: { line: this.findHeadInsertLine(filePath) },
         },
       ],
@@ -98,6 +116,13 @@ export class SEOFixGenerator {
   }
 
   private fixMissingTwitterCard(filePath: string, diagnosis: Diagnosis): Fix {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const titleMatch = content.match(/<title>([^<]*)<\/title>/i);
+    const descMatch = content.match(/<meta[^>]*name\s*=\s*["']description["'][^>]*content\s*=\s*["']([^"']*)["\']/i);
+    
+    const title = titleMatch ? titleMatch[1].trim() : 'Page Title';
+    const desc = descMatch ? descMatch[1].trim() : 'Page description';
+
     return {
       id: `fix-${diagnosis.id}`,
       diagnosisId: diagnosis.id,
@@ -108,7 +133,7 @@ export class SEOFixGenerator {
         {
           file: filePath,
           type: 'insert',
-          content: `  <meta name="twitter:card" content="summary_large_image">\n  <meta name="twitter:title" content="Page Title">\n  <meta name="twitter:description" content="Page description">\n  <meta name="twitter:image" content="https://example.com/image.jpg">\n`,
+          content: `  <meta name="twitter:card" content="summary_large_image">\n  <meta name="twitter:title" content="${title}">\n  <meta name="twitter:description" content="${desc}">\n  <meta name="twitter:image" content="https://example.com/image.jpg">\n`,
           position: { line: this.findHeadInsertLine(filePath) },
         },
       ],
@@ -116,6 +141,12 @@ export class SEOFixGenerator {
   }
 
   private fixMissingCanonical(filePath: string, diagnosis: Diagnosis): Fix {
+    // Try to derive canonical URL from file path
+    const relativePath = filePath.split('/').filter(Boolean).join('/');
+    const htmlFile = relativePath.match(/[^/]+\.html$/i);
+    const pagePath = htmlFile ? htmlFile[0].replace(/\.html$/i, '') : 'page';
+    const canonicalUrl = `https://example.com/${pagePath}`;
+
     return {
       id: `fix-${diagnosis.id}`,
       diagnosisId: diagnosis.id,
@@ -126,7 +157,7 @@ export class SEOFixGenerator {
         {
           file: filePath,
           type: 'insert',
-          content: '  <link rel="canonical" href="https://example.com/page">\n',
+          content: `  <link rel="canonical" href="${canonicalUrl}">\n`,
           position: { line: this.findHeadInsertLine(filePath) },
         },
       ],
@@ -203,7 +234,7 @@ export class SEOFixGenerator {
     return 1;
   }
 
-  private getOGContent(tag: string): string {
+  private extractOGContent(tag: string, content: string): string {
     const defaults: Record<string, string> = {
       title: 'Page Title',
       description: 'Page description',
@@ -211,7 +242,24 @@ export class SEOFixGenerator {
       url: 'https://example.com/page',
       type: 'website',
     };
-    return defaults[tag] || 'Content here';
+
+    // Try to extract from existing content
+    switch (tag) {
+      case 'title': {
+        const titleMatch = content.match(/<title>([^<]*)<\/title>/i);
+        return titleMatch ? titleMatch[1].trim() : defaults.title;
+      }
+      case 'description': {
+        const descMatch = content.match(/<meta[^>]*name\s*=\s*["']description["'][^>]*content\s*=\s*["']([^"']*)["\']/i);
+        return descMatch ? descMatch[1].trim() : defaults.description;
+      }
+      case 'url': {
+        const canonicalMatch = content.match(/<link[^>]*rel\s*=\s*["']canonical["\'][^>]*href\s*=\s*["']([^"']*)["\']/i);
+        return canonicalMatch ? canonicalMatch[1].trim() : defaults.url;
+      }
+      default:
+        return defaults[tag] || 'Content here';
+    }
   }
 }
 

@@ -65,7 +65,7 @@ export async function ciCommandOld(action: string, options: CICommandOptions) {
 async function initCI(
   options: CICommandOptions,
   formatter: ReturnType<typeof createFormatter>,
-  logger: ReturnType<typeof createLogger>
+  _logger: ReturnType<typeof createLogger>
 ) {
   const projectPath = options.path || process.cwd();
 
@@ -150,8 +150,8 @@ async function detectCI(
 
 async function runCI(
   options: CICommandOptions,
-  formatter: ReturnType<typeof createFormatter>,
-  logger: ReturnType<typeof createLogger>
+  _formatter: ReturnType<typeof createFormatter>,
+  _logger: ReturnType<typeof createLogger>
 ) {
   // Import diagnose and audit commands
   const { diagnoseCommand } = await import('./diagnose');

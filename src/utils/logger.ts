@@ -2,7 +2,6 @@
  * Logger implementation
  */
 
-import { Severity } from '../types';
 
 export interface LoggerOptions {
   level: 'debug' | 'info' | 'warn' | 'error';

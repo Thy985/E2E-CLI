@@ -23,7 +23,7 @@ export abstract class BaseSkill implements Skill {
 
   abstract diagnose(context: SkillContext): Promise<Diagnosis[]>;
 
-  async fix?(diagnosis: Diagnosis, context: SkillContext): Promise<Fix> {
+  async fix?(_diagnosis: Diagnosis, _context: SkillContext): Promise<Fix> {
     throw new Error(`Skill ${this.name} does not support auto-fix`);
   }
 

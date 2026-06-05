@@ -43,7 +43,7 @@ export class TestChecker {
     };
   }
 
-  private async checkTestFramework(projectPath: string, logger: Logger): Promise<AuditCheck> {
+  private async checkTestFramework(projectPath: string, _logger: Logger): Promise<AuditCheck> {
     const pkgPath = path.join(projectPath, 'package.json');
     
     try {
@@ -101,7 +101,7 @@ export class TestChecker {
     }
   }
 
-  private async checkTestFiles(projectPath: string, logger: Logger): Promise<AuditCheck> {
+  private async checkTestFiles(projectPath: string, _logger: Logger): Promise<AuditCheck> {
     const testPatterns = [
       '__tests__',
       'test',
@@ -156,7 +156,7 @@ export class TestChecker {
     };
   }
 
-  private async checkCoverage(projectPath: string, logger: Logger): Promise<AuditCheck> {
+  private async checkCoverage(projectPath: string, _logger: Logger): Promise<AuditCheck> {
     // Check for coverage configuration
     const pkgPath = path.join(projectPath, 'package.json');
     

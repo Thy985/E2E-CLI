@@ -7,7 +7,6 @@ import { BaseSkill } from '../../base-skill';
 import {
   SkillContext,
   Diagnosis,
-  Fix,
   Severity,
   DiagnosisType,
 } from '../../../types';
@@ -73,6 +72,26 @@ const SECURITY_RULES = [
     title: '不安全的随机数',
     description: 'Math.random() 不适用于安全敏感场景',
     suggestion: '使用 crypto.getRandomValues() 或 crypto.randomBytes()',
+    // Context-aware: skip in non-security contexts
+    contextFilter: (line: string): boolean => {
+      // Skip if used in UI animations, visual effects, random IDs for React keys,
+      // test data generation, game mechanics, or random positioning
+      const nonSecurityContexts = [
+        /key\s*[=:]\s*.*Math\.random/i,        // React keys
+        /Math\.random\(\)\s*\*\s*\d+\s*[+\-]/, // Visual positioning/scaling
+        /opacity.*Math\.random|Math\.random.*opacity/i,
+        /animation.*Math\.random|Math\.random.*animation/i,
+        /color.*Math\.random|Math\.random.*color/i,
+        /Math\.random\(\)\s*<\s*0?\.5/i,        // Simple boolean toggle (UI)
+        /(?:mock|fixture|dummy|fake|test).*Math\.random/i,
+        /Math\.random.*(?:mock|fixture|dummy|fake|test)/i,
+        /className.*Math\.random|Math\.random.*className/i,
+        /style.*Math\.random|Math\.random.*style/i,
+        /randomize.*(?:order|position|layout)/i,
+        /(?:shuffle|random).*(?:item|element|display)/i,
+      ];
+      return !nonSecurityContexts.some((r) => r.test(line));
+    },
   },
   {
     id: 'http-url',
@@ -107,6 +126,23 @@ const SECURITY_RULES = [
     description: '允许所有来源的 CORS 配置存在安全风险',
     suggestion: '限制允许的来源',
   },
+];
+
+// File patterns that indicate test, mock, or example code (false positive sources)
+const FALSE_POSITIVE_FILE_PATTERNS = [
+  /\.test\.(ts|tsx|js|jsx)$/,
+  /\.spec\.(ts|tsx|js|jsx)$/,
+  /__tests__\//,
+  /__mocks__\//,
+  /\.mock\.(ts|tsx|js|jsx)$/,
+  /\/mocks?\//,
+  /\.stories\.(ts|tsx|js|jsx)$/,         // Storybook stories
+  /\.story\.(ts|tsx|js|jsx)$/,
+  /\/examples?\//,
+  /\/example\.(ts|tsx|js|jsx)$/,
+  /\/demo\//,
+  /\.d\.ts$/,                             // Type declaration files
+  /fixture/i,
 ];
 
 export class SecuritySkill extends BaseSkill {
@@ -164,7 +200,7 @@ export class SecuritySkill extends BaseSkill {
     return diagnoses;
   }
 
-  private async getSourceFiles(projectPath: string, tools: SkillContext['tools'], config?: SkillContext['config']): Promise<string[]> {
+  private async getSourceFiles(_projectPath: string, tools: SkillContext['tools'], config?: SkillContext['config']): Promise<string[]> {
     const patterns = ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx'];
     const files: string[] = [];
 
@@ -188,8 +224,13 @@ export class SecuritySkill extends BaseSkill {
       return diagnoses;
     }
 
-    // Skip security skill definition file (contains rule patterns)
+    // Skip test files, mock files, and example/documentation code to reduce false positives
     const normalizedPath = filePath.replace(/\\/g, '/');
+    if (FALSE_POSITIVE_FILE_PATTERNS.some((p) => p.test(normalizedPath))) {
+      return diagnoses;
+    }
+
+    // Skip security skill definition file (contains rule patterns)
     const isSecurityDefinition = normalizedPath.includes('skills/builtin/security/index');
     
     for (const rule of SECURITY_RULES) {
@@ -218,6 +259,13 @@ export class SecuritySkill extends BaseSkill {
           // Skip false positives in example code or documentation
           if (line?.includes('@example') || line?.includes('```')) {
             continue;
+          }
+
+          // Apply context-aware filtering for rules that define it (e.g., insecure-random)
+          if ('contextFilter' in rule && typeof rule.contextFilter === 'function' && line) {
+            if (!(rule as any).contextFilter(line)) {
+              continue;
+            }
           }
 
           // Check for ignore comments
@@ -266,24 +314,29 @@ export class SecuritySkill extends BaseSkill {
   private async checkConfigFiles(projectPath: string, tools: SkillContext['tools'], config?: SkillContext['config']): Promise<Diagnosis[]> {
     const diagnoses: Diagnosis[] = [];
 
-    // Check .env files (should not be committed)
+    // Check .env files (should not be committed unless in .gitignore)
     const envFiles = await tools.fs.glob('.env*');
     for (const file of envFiles) {
       // Skip if ignored by config
       if (config && shouldIgnore(file, config)) continue;
       
-      if (!file.includes('.example') && !file.includes('.sample')) {
+      // Skip example/sample files
+      if (file.includes('.example') || file.includes('.sample')) continue;
+      
+      // Check if .env is covered by .gitignore
+      const isIgnored = await this.isEnvInGitignore(projectPath, tools, file);
+      if (!isIgnored) {
         diagnoses.push({
           id: `Sec-${generateId()}`,
           skill: this.name,
           type: 'security' as DiagnosisType,
           severity: 'warning',
           title: '.env 文件可能被提交',
-          description: '环境变量文件不应提交到版本控制',
+          description: '环境变量文件不应提交到版本控制，请确保 .env 已添加到 .gitignore',
           location: { file },
           fixSuggestion: {
             description: '将 .env 添加到 .gitignore',
-            autoApplicable: false,
+            autoApplicable: true,
             riskLevel: 'medium',
           },
         });
@@ -320,6 +373,38 @@ export class SecuritySkill extends BaseSkill {
     }
 
     return diagnoses;
+  }
+
+  /**
+   * Check if a given env file path is covered by .gitignore entries
+   */
+  private async isEnvInGitignore(projectPath: string, tools: SkillContext['tools'], envFile: string): Promise<boolean> {
+    try {
+      const gitignorePath = `${projectPath}/.gitignore`;
+      const exists = await tools.fs.exists(gitignorePath);
+      if (!exists) return false;
+
+      const gitignoreContent = await tools.fs.readFile(gitignorePath);
+      const lines = gitignoreContent.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+
+      // Extract the basename of the env file (e.g. ".env", ".env.local")
+      const envBasename = envFile.split('/').pop() || envFile;
+
+      for (const pattern of lines) {
+        // Exact match
+        if (pattern === envBasename) return true;
+        // Wildcard match: .env* covers .env, .env.local, .env.production, etc.
+        if (pattern === '.env*' || pattern.endsWith('/.env*')) return true;
+        // Glob-style: *.env covers *.env files
+        if (pattern.endsWith('.env*') && envBasename.startsWith(pattern.replace('*', ''))) return true;
+        // Direct env pattern
+        if (pattern === '.env' && envBasename === '.env') return true;
+      }
+
+      return false;
+    } catch {
+      return false;
+    }
   }
 
   private getLineNumber(content: string, index: number): number {

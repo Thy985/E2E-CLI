@@ -9,15 +9,15 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Diagnosis, Severity } from '../../../../types';
+import { Diagnosis } from '../../../../types';
 import { DesignTokens } from '../design-token-extractor';
 import { QAConfig } from '../../../../config';
 
 export class LayoutChecker {
   async check(
     projectPath: string,
-    designTokens: DesignTokens,
-    config: QAConfig
+    _designTokens: DesignTokens,
+    _config: QAConfig
   ): Promise<Diagnosis[]> {
     const issues: Diagnosis[] = [];
 

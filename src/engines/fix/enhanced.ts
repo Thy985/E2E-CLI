@@ -193,7 +193,7 @@ export class FixEngine {
   /**
    * Preview a fix without applying
    */
-  async previewFix(fix: Fix, projectPath: string): Promise<string> {
+  async previewFix(fix: Fix, _projectPath: string): Promise<string> {
     const lines: string[] = [];
     
     lines.push(`# Fix Preview: ${fix.id}\n`);
@@ -204,7 +204,6 @@ export class FixEngine {
     lines.push(`## Changes (${fix.changes.length} files)\n`);
     
     for (const change of fix.changes) {
-      const filePath = path.join(projectPath, change.file);
       lines.push(`### ${change.file}`);
       lines.push(`**Type**: ${change.type}\n`);
       

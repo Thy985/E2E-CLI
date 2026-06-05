@@ -4,7 +4,6 @@
 
 import { Diagnosis, Fix, SkillContext } from '../../types';
 import { FixEngine } from './index';
-import { createLogger, Logger } from '../../utils/logger';
 
 export interface BatchFixOptions {
   autoApproveLowRisk: boolean;
@@ -26,7 +25,6 @@ export interface BatchFixResult {
 
 export class BatchFixEngine {
   private fixEngine: FixEngine;
-  private logger: Logger;
 
   constructor() {
     this.fixEngine = new FixEngine({
@@ -35,7 +33,6 @@ export class BatchFixEngine {
       previewBeforeApply: false,
       verifyAfterFix: false,
     });
-    this.logger = createLogger({ level: 'info' });
   }
 
   async batchFix(
@@ -116,7 +113,6 @@ export class BatchFixEngine {
     if (!issue.fixSuggestion) {
       // 检查 metadata 中是否有 type 或 category 信息
       const type = issue.metadata?.type;
-      const category = issue.metadata?.category;
       
       // 定义可自动修复的类型列表
       const autoFixableTypes = [

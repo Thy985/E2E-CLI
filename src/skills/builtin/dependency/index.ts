@@ -14,7 +14,6 @@ import { BaseSkill } from '../../base-skill';
 import {
   SkillContext,
   Diagnosis,
-  Severity,
   Fix,
 } from '../../../types';
 import { DependencyFixGenerator } from './fixers/dependency-fix-generator';

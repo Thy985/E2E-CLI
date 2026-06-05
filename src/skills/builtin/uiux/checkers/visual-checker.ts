@@ -11,7 +11,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Diagnosis, Severity } from '../../../../types';
+import { Diagnosis } from '../../../../types';
 import { DesignTokens } from '../design-token-extractor';
 import { QAConfig } from '../../../../config';
 
@@ -19,7 +19,7 @@ export class VisualChecker {
   async check(
     projectPath: string,
     designTokens: DesignTokens,
-    config: QAConfig
+    _config: QAConfig
   ): Promise<Diagnosis[]> {
     const issues: Diagnosis[] = [];
 
@@ -96,7 +96,7 @@ export class VisualChecker {
     return issues;
   }
 
-  private checkSpacing(content: string, file: string, tokens: DesignTokens): Diagnosis[] {
+  private checkSpacing(content: string, file: string, _tokens: DesignTokens): Diagnosis[] {
     const issues: Diagnosis[] = [];
     const lines = content.split('\n');
 
@@ -138,7 +138,7 @@ export class VisualChecker {
     return issues;
   }
 
-  private checkBorderRadius(content: string, file: string, tokens: DesignTokens): Diagnosis[] {
+  private checkBorderRadius(content: string, file: string, _tokens: DesignTokens): Diagnosis[] {
     const issues: Diagnosis[] = [];
     const lines = content.split('\n');
 
@@ -181,7 +181,7 @@ export class VisualChecker {
     return issues;
   }
 
-  private checkTypography(content: string, file: string, tokens: DesignTokens): Diagnosis[] {
+  private checkTypography(_content: string, _file: string, _tokens: DesignTokens): Diagnosis[] {
     const issues: Diagnosis[] = [];
     // TODO: 实现字体规范检查
     return issues;

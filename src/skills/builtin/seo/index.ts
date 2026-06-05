@@ -14,7 +14,6 @@ import { BaseSkill } from '../../base-skill';
 import {
   SkillContext,
   Diagnosis,
-  Severity,
   Fix,
 } from '../../../types';
 import { SEOFixGenerator } from './fixers/seo-fix-generator';
@@ -248,8 +247,10 @@ export class SEOSkill extends BaseSkill {
       // 检查外部链接是否有 rel="noopener noreferrer"
       const externalLinkRegex = /<a[^>]*href\s*=\s*["\']https?:\/\/[^"\']+["\'][^>]*>/gi;
       let match;
+      const externalLinks: number[] = [];
       while ((match = externalLinkRegex.exec(line)) !== null) {
         const linkTag = match[0];
+        externalLinks.push(match.index);
         if (!/rel\s*=\s*["\'][^"\']*noopener/.test(linkTag)) {
           issues.push({
             id: `seo-external-link-${file}-${index}`,
@@ -259,7 +260,7 @@ export class SEOSkill extends BaseSkill {
             title: 'External link missing rel="noopener"',
             description: 'External links should use rel="noopener noreferrer" for security and performance',
             location: { file, line: index + 1, column: match.index + 1 },
-            evidence: { type: 'code', content: line.trim()  },
+            evidence: { type: 'code', content: line.trim() },
             metadata: {
               category: 'seo',
               type: 'external-link-security',
@@ -269,8 +270,8 @@ export class SEOSkill extends BaseSkill {
         }
       }
 
-      // 检查是否有空链接
-      const emptyLinkRegex = /<a[^>]*href\s*=\s*["\']#?["\'][^>]*>/gi;
+      // 检查是否有空链接 (exclude external links and already-flagged ones)
+      const emptyLinkRegex = /<a[^>]*href\s*=\s*["\']#["\'][^>]*>/gi;
       while ((match = emptyLinkRegex.exec(line)) !== null) {
         issues.push({
           id: `seo-empty-link-${file}-${index}`,
@@ -280,7 +281,7 @@ export class SEOSkill extends BaseSkill {
           title: 'Empty or placeholder link',
           description: 'Links should have meaningful destinations',
           location: { file, line: index + 1, column: match.index + 1 },
-          evidence: { type: 'code', content: line.trim()  },
+          evidence: { type: 'code', content: line.trim() },
           metadata: {
             category: 'seo',
             type: 'empty-link',
@@ -400,7 +401,7 @@ export class SEOSkill extends BaseSkill {
     return issues;
   }
 
-  private checkURLStructure(content: string, file: string): Diagnosis[] {
+  private checkURLStructure(_content: string, _file: string): Diagnosis[] {
     const issues: Diagnosis[] = [];
 
     // 检查是否有重复内容（多个 URL 指向相同内容）

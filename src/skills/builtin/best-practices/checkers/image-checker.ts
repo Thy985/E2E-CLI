@@ -6,7 +6,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Diagnosis, Severity } from '../../../../types';
+import { Diagnosis } from '../../../../types';
 
 export class ImageChecker {
   async check(projectPath: string): Promise<Diagnosis[]> {

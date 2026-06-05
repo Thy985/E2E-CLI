@@ -46,7 +46,7 @@ export class DocumentationChecker {
     };
   }
 
-  private async checkReadme(projectPath: string, logger: Logger): Promise<AuditCheck> {
+  private async checkReadme(projectPath: string, _logger: Logger): Promise<AuditCheck> {
     const readmeFiles = ['README.md', 'README.txt', 'readme.md'];
     
     for (const file of readmeFiles) {
@@ -91,7 +91,7 @@ export class DocumentationChecker {
     };
   }
 
-  private async checkChangelog(projectPath: string, logger: Logger): Promise<AuditCheck> {
+  private async checkChangelog(projectPath: string, _logger: Logger): Promise<AuditCheck> {
     const changelogFiles = ['CHANGELOG.md', 'HISTORY.md', 'CHANGES.md'];
     
     for (const file of changelogFiles) {
@@ -123,7 +123,7 @@ export class DocumentationChecker {
     };
   }
 
-  private async checkContributing(projectPath: string, logger: Logger): Promise<AuditCheck> {
+  private async checkContributing(projectPath: string, _logger: Logger): Promise<AuditCheck> {
     const contributingFiles = ['CONTRIBUTING.md', 'CONTRIBUTE.md'];
     
     for (const file of contributingFiles) {
@@ -155,7 +155,7 @@ export class DocumentationChecker {
     };
   }
 
-  private async checkApiDocs(projectPath: string, logger: Logger): Promise<AuditCheck> {
+  private async checkApiDocs(projectPath: string, _logger: Logger): Promise<AuditCheck> {
     const docsPath = path.join(projectPath, 'docs');
     
     try {

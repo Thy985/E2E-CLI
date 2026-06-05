@@ -46,7 +46,7 @@ export class ConfigChecker {
     };
   }
 
-  private async checkGitignore(projectPath: string, logger: Logger): Promise<AuditCheck> {
+  private async checkGitignore(projectPath: string, _logger: Logger): Promise<AuditCheck> {
     const gitignorePath = path.join(projectPath, '.gitignore');
     
     try {
@@ -84,7 +84,7 @@ export class ConfigChecker {
     }
   }
 
-  private async checkEnvExample(projectPath: string, logger: Logger): Promise<AuditCheck> {
+  private async checkEnvExample(projectPath: string, _logger: Logger): Promise<AuditCheck> {
     const envExamplePath = path.join(projectPath, '.env.example');
     
     try {
@@ -128,7 +128,7 @@ export class ConfigChecker {
     }
   }
 
-  private async checkEditorConfig(projectPath: string, logger: Logger): Promise<AuditCheck> {
+  private async checkEditorConfig(projectPath: string, _logger: Logger): Promise<AuditCheck> {
     const editorConfigPath = path.join(projectPath, '.editorconfig');
     
     try {
@@ -156,7 +156,7 @@ export class ConfigChecker {
     }
   }
 
-  private async checkCICD(projectPath: string, logger: Logger): Promise<AuditCheck> {
+  private async checkCICD(projectPath: string, _logger: Logger): Promise<AuditCheck> {
     const cicdPaths = [
       '.github/workflows',
       '.gitlab-ci.yml',

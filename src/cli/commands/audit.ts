@@ -123,7 +123,7 @@ function displayAuditReport(
 
 function displayOverallScore(
   summary: AuditReport['summary'],
-  formatter: ReturnType<typeof createFormatter>
+  _formatter: ReturnType<typeof createFormatter>
 ): void {
   const gradeEmoji: Record<string, string> = {
     A: '🏆',
@@ -153,7 +153,7 @@ function displayOverallScore(
 
 function displayCategoryScores(
   categories: AuditCategory[],
-  formatter: ReturnType<typeof createFormatter>
+  _formatter: ReturnType<typeof createFormatter>
 ): void {
   console.log('─'.repeat(60));
   console.log('  分类得分');
@@ -175,7 +175,7 @@ function displayCategoryScores(
 
 function displayDetailedChecks(
   categories: AuditCategory[],
-  formatter: ReturnType<typeof createFormatter>
+  _formatter: ReturnType<typeof createFormatter>
 ): void {
   console.log('─'.repeat(60));
   console.log('  详细检查');
@@ -201,7 +201,7 @@ function displayDetailedChecks(
 
 function displayCompliance(
   compliance: NonNullable<AuditReport['compliance']>,
-  formatter: ReturnType<typeof createFormatter>
+  _formatter: ReturnType<typeof createFormatter>
 ): void {
   console.log('─'.repeat(60));
   console.log(`  合规性检查: ${compliance.standard}`);
@@ -226,7 +226,7 @@ function displayCompliance(
 
 function displayTrends(
   trends: NonNullable<AuditReport['trends']>,
-  formatter: ReturnType<typeof createFormatter>
+  _formatter: ReturnType<typeof createFormatter>
 ): void {
   console.log('─'.repeat(60));
   console.log('  趋势分析');
@@ -253,7 +253,7 @@ function displayTrends(
 
 function displayRecommendations(
   recommendations: AuditReport['recommendations'],
-  formatter: ReturnType<typeof createFormatter>
+  _formatter: ReturnType<typeof createFormatter>
 ): void {
   if (recommendations.length === 0) return;
 
@@ -402,12 +402,6 @@ function formatHTML(report: AuditReport): string {
     C: '#eab308',
     D: '#f97316',
     F: '#ef4444',
-  };
-
-  const statusColors: Record<string, string> = {
-    healthy: '#22c55e',
-    warning: '#eab308',
-    critical: '#ef4444',
   };
 
   return `<!DOCTYPE html>

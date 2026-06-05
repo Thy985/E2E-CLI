@@ -8,13 +8,10 @@
  * 4. 性能优化
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
 import { BaseSkill } from '../../base-skill';
 import {
   SkillContext,
   Diagnosis,
-  Severity,
   Fix,
 } from '../../../types';
 import { HTMLChecker } from './checkers/html-checker';
@@ -73,7 +70,7 @@ export class BestPracticesSkill extends BaseSkill {
 
   async diagnose(context: SkillContext): Promise<Diagnosis[]> {
     const issues: Diagnosis[] = [];
-    const { project, config } = context;
+    const { project, config: _config } = context;
 
     // HTML 语义化检查
     context.logger.info('Checking HTML semantics...');

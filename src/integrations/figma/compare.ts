@@ -37,7 +37,7 @@ export class FigmaCompare {
   async compareTokens(
     fileKey: string,
     codeTokens: DesignTokens,
-    projectPath: string
+    _projectPath: string
   ): Promise<ComparisonResult> {
     const figmaTokens = await this.client.extractDesignTokens(fileKey);
     const result: ComparisonResult = {
@@ -133,7 +133,7 @@ export class FigmaCompare {
   async compareScreenshots(
     fileKey: string,
     nodeId: string,
-    screenshotPath: string
+    _screenshotPath: string
   ): Promise<{ similarity: number; diffImagePath?: string }> {
     // 导出 Figma 设计稿截图
     const figmaImageUrl = await this.client.exportImage(fileKey, nodeId, 'png');

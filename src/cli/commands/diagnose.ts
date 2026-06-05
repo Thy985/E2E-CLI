@@ -19,7 +19,7 @@ import { createReportGenerator } from '../../engines/report';
 import { createModelClient } from '../../models';
 import { createTools } from '../../tools';
 import { createStorage } from '../../storage';
-import { loadConfig, QAConfig, shouldIgnore } from '../../config';
+import { loadConfig, QAConfig } from '../../config';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 

@@ -7,7 +7,6 @@ import { BaseSkill } from '../../base-skill';
 import {
   SkillContext,
   Diagnosis,
-  Fix,
   Severity,
   DiagnosisType,
 } from '../../../types';
@@ -192,7 +191,7 @@ export class UIUXSkill extends BaseSkill {
     return diagnoses;
   }
 
-  private async getComponentFiles(projectPath: string, tools: SkillContext['tools']): Promise<string[]> {
+  private async getComponentFiles(_projectPath: string, tools: SkillContext['tools']): Promise<string[]> {
     const patterns = ['**/*.tsx', '**/*.jsx'];
     const files: string[] = [];
 
@@ -208,7 +207,7 @@ export class UIUXSkill extends BaseSkill {
     return [...new Set(files)];
   }
 
-  private async getStyleFiles(projectPath: string, tools: SkillContext['tools']): Promise<string[]> {
+  private async getStyleFiles(_projectPath: string, tools: SkillContext['tools']): Promise<string[]> {
     const patterns = ['**/*.css', '**/*.scss', '**/*.less'];
     const files: string[] = [];
 

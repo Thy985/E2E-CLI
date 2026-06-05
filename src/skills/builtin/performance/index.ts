@@ -201,18 +201,30 @@ export class PerformanceSkill extends BaseSkill {
     }
 
     const varName = importMatch[1];
-    // Replace with specific import pattern (user needs to specify which functions)
-    const fixedLine = targetLine.replace(
-      /import\s+\w+\s+from\s+['"]lodash['"]/,
-      `// TODO: Replace with specific imports, e.g.:\n// import { specificFunction } from 'lodash-es';
-// or\n// import specificFunction from 'lodash/specificFunction';`
-    );
+    
+    // Find all usages of the lodash variable to determine which methods are actually used
+    const usedMethods = new Set<string>();
+    const usageRegex = new RegExp(`\\b${varName}\\.(\\w+)\\b`, 'g');
+    for (const match of content.matchAll(usageRegex)) {
+      usedMethods.add(match[1]);
+    }
+
+    let replacement: string;
+    if (usedMethods.size === 0) {
+      // If no specific usages found, add a TODO comment with guidance
+      replacement = `// TODO: Replace 'import ${varName} from "lodash"' with specific imports` +
+        `\n// e.g. import { ${varName} } from 'lodash-es'; or import individual functions`;
+    } else {
+      // Generate specific imports for the methods that are actually used
+      const methodList = Array.from(usedMethods).sort().join(', ');
+      replacement = `import { ${methodList} } from 'lodash-es';`;
+    }
 
     return [{
       file: diagnosis.location.file,
       type: 'replace',
       position: { line, column: 1 },
-      content: fixedLine,
+      content: replacement,
       oldContent: targetLine,
     }];
   }
@@ -241,18 +253,33 @@ export class PerformanceSkill extends BaseSkill {
   }
 
   /**
-   * Remove or comment out console statements
+   * Remove console statements by wrapping in production check
    */
   private fixConsoleLog(content: string, diagnosis: Diagnosis): FileChange[] {
     const line = diagnosis.location.line || 1;
     const lines = content.split('\n');
     const targetLine = lines[line - 1];
 
-    // Comment out the console statement
+    // Wrap console statement in a production environment check instead of commenting out
+    // This preserves logs during development while removing them in production
     const fixedLine = targetLine.replace(
-      /(console\.(log|debug|info|warn)\s*\()/,
-      '// $1'
+      /(\s*)(console\.(log|debug|info|warn)\s*\()/,
+      '$1if (process.env.NODE_ENV !== \'production\') $2'
     );
+
+    // If the replacement didn't change anything (e.g., the console is in a complex expression),
+    // fall back to wrapping the entire line
+    if (fixedLine === targetLine) {
+      const indentation = targetLine.match(/^(\s*)/)?.[1] || '';
+      const trimmedLine = targetLine.trim();
+      return [{
+        file: diagnosis.location.file,
+        type: 'replace',
+        position: { line, column: 1 },
+        content: `${indentation}if (process.env.NODE_ENV !== 'production') { ${trimmedLine} }`,
+        oldContent: targetLine,
+      }];
+    }
 
     return [{
       file: diagnosis.location.file,
@@ -290,7 +317,7 @@ export class PerformanceSkill extends BaseSkill {
     }];
   }
 
-  private async getSourceFiles(projectPath: string, tools: SkillContext['tools']): Promise<string[]> {
+  private async getSourceFiles(_projectPath: string, tools: SkillContext['tools']): Promise<string[]> {
     const patterns = ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx'];
     const files: string[] = [];
 
@@ -360,7 +387,7 @@ export class PerformanceSkill extends BaseSkill {
     return diagnoses;
   }
 
-  private async checkLargeFiles(projectPath: string, tools: SkillContext['tools']): Promise<Diagnosis[]> {
+  private async checkLargeFiles(_projectPath: string, tools: SkillContext['tools']): Promise<Diagnosis[]> {
     const diagnoses: Diagnosis[] = [];
     const files = await tools.fs.glob('**/*.{js,ts,jsx,tsx}');
 
@@ -392,7 +419,7 @@ export class PerformanceSkill extends BaseSkill {
     return diagnoses;
   }
 
-  private async checkPackageJson(projectPath: string, tools: SkillContext['tools']): Promise<Diagnosis[]> {
+  private async checkPackageJson(_projectPath: string, tools: SkillContext['tools']): Promise<Diagnosis[]> {
     const diagnoses: Diagnosis[] = [];
 
     try {
@@ -403,6 +430,15 @@ export class PerformanceSkill extends BaseSkill {
       for (const dep of Object.keys(pkg.dependencies || {})) {
         if (HEAVY_DEPENDENCIES[dep]) {
           const info = HEAVY_DEPENDENCIES[dep];
+          // Check if the alternative is already present - avoid false positives
+          const allDeps = new Set([
+            ...Object.keys(pkg.dependencies || {}),
+            ...Object.keys(pkg.devDependencies || {}),
+          ]);
+          if (allDeps.has(info.alternative)) {
+            // Alternative is already installed, skip this warning
+            continue;
+          }
           diagnoses.push({
             id: `Perf-${generateId()}`,
             skill: this.name,

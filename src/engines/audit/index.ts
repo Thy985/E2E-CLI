@@ -14,7 +14,7 @@ import {
   ComplianceResult,
   TrendAnalysis,
 } from '../../types';
-import { createLogger, Logger } from '../../utils/logger';
+import { Logger } from '../../utils/logger';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 

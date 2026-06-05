@@ -596,7 +596,7 @@ export class SkillManager {
     }
   }
 
-  private generateSkillFiles(name: string, description: string, template: string): Record<string, string> {
+  private generateSkillFiles(name: string, description: string, _template: string): Record<string, string> {
     const normalizedName = this.normalizeSkillName(name);
     const className = name.split('-').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join('') + 'Skill';
 
