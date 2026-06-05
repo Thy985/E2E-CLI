@@ -10,7 +10,10 @@ import { createLogger } from '../../utils/logger';
 import { UIUXSkill } from '../../skills/builtin/uiux';
 import { createSkillRegistry } from '../../skills/registry';
 import { FixEngine } from '../../engines/fix';
-import * as fs from 'fs/promises';
+import { createTools } from '../../tools';
+import { createModelClient, ModelProvider } from '../../models';
+import { createStorage } from '../../storage';
+import { outputResult } from '../output/report-renderer';
 
 export const uxAuditCommand = new Command('ux-audit')
   .description('UI/UX视觉规范审查')
@@ -39,14 +42,24 @@ export const uxAuditCommand = new Command('ux-audit')
       const uiuxSkill = new UIUXSkill();
       registry.register(uiuxSkill);
 
-      // 创建 Skill Context
+      // Create Skill Context
+      const VALID_PROVIDERS: ModelProvider[] = ['deepseek', 'openai', 'claude', 'siliconflow', 'groq', 'minimax'];
+      const provider = (config.model?.provider && VALID_PROVIDERS.includes(config.model?.provider as ModelProvider))
+        ? config.model?.provider as ModelProvider
+        : undefined;
+
       const context = {
         project: { path: options.path, name: 'test', type: 'webapp' as const },
         config,
         logger,
-        tools: {} as any,
-        model: {} as any,
-        storage: {} as any,
+        tools: createTools(options.path),
+        model: createModelClient({
+          provider,
+          model: config.model?.model,
+          apiKey: config.model?.apiKey,
+          baseUrl: config.model?.baseUrl,
+        }),
+        storage: createStorage(),
       };
 
       // 执行审查
@@ -64,7 +77,19 @@ export const uxAuditCommand = new Command('ux-audit')
       };
 
       // 渲染输出（之前该步骤缺失，导致命令只退出码不打印报告）
-      await outputResult(result, options, logger);
+      await outputResult(result, {
+        output: options.output,
+        outputFile: options.outputFile,
+        title: 'UI/UX Audit Report',
+        getCategoryName,
+        renderIssueMetadata: (issue: any) => {
+          const lines: string[] = [];
+          if (issue.evidence?.code) {
+            lines.push(`Code: ${issue.evidence.code}`);
+          }
+          return lines;
+        },
+      }, logger);
 
       // 如果有 --preview 选项，预览修复效果
       if (options.preview && options.fix) {
@@ -151,129 +176,6 @@ export const uxAuditCommand = new Command('ux-audit')
     }
   });
 
-async function outputResult(result: any, options: any, logger: any) {
-  const { output } = options;
-
-  switch (output) {
-    case 'json':
-      const jsonOutput = JSON.stringify(result, null, 2);
-      if (options.outputFile) {
-        await fs.writeFile(options.outputFile, jsonOutput, 'utf-8');
-        logger.info(`报告已保存到: ${options.outputFile}`);
-      } else {
-        logger.info(jsonOutput);
-      }
-      break;
-
-    case 'html':
-      const htmlReport = generateHTMLReport(result);
-      if (options.outputFile) {
-        await fs.writeFile(options.outputFile, htmlReport, 'utf-8');
-        logger.info(`HTML报告已保存到: ${options.outputFile}`);
-      } else {
-        logger.info(htmlReport);
-      }
-      break;
-
-    case 'text':
-    default:
-      printTextReport(result, logger);
-      break;
-  }
-}
-
-function printTextReport(result: any, logger: any) {
-  const { issues, summary } = result;
-
-  logger.info('\n═══════════════════════════════════════════════════════════');
-  logger.info('                    UI/UX Audit Report');
-  logger.info('═══════════════════════════════════════════════════════════\n');
-
-  // 统计信息
-  logger.info(`📊 Total: ${summary.total} issues`);
-  logger.info(`   🔴 Critical: ${summary.critical}`);
-  logger.info(`   🟡 Warning:  ${summary.warning}`);
-  logger.info(`   🔵 Info:     ${summary.info}\n`);
-
-  // 按类别分组
-  const byCategory = groupBy(issues, (i: any) => i.metadata?.category || 'other');
-
-  for (const [category, categoryIssues] of Object.entries(byCategory)) {
-    const categoryName = getCategoryName(category);
-    logger.info(`\n${categoryName} (${(categoryIssues as any[]).length})`);
-    logger.info('─'.repeat(50));
-
-    (categoryIssues as any[]).forEach((issue: any) => {
-      const severity = getSeverityIcon(issue.severity);
-      logger.info(`\n  ${severity} ${issue.title}`);
-      logger.info(`     File: ${issue.location.file}:${issue.location.line}`);
-      logger.info(`     Description: ${issue.description}`);
-      
-      if (issue.evidence?.code) {
-        logger.info(`     Code: ${issue.evidence.code}`);
-      }
-      
-      if (issue.metadata?.suggestion) {
-        logger.info(`     Suggestion: ${issue.metadata.suggestion}`);
-      }
-    });
-  }
-
-  logger.info('\n═══════════════════════════════════════════════════════════\n');
-}
-
-function generateHTMLReport(result: any): string {
-  // 简化版HTML报告
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <title>UI/UX Audit Report</title>
-  <style>
-    body { font-family: -apple-system, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; }
-    .header { background: #f5f5f5; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
-    .issue { border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 4px; }
-    .critical { border-left: 4px solid #ff4d4f; }
-    .warning { border-left: 4px solid #faad14; }
-    .info { border-left: 4px solid #1890ff; }
-    .stats { display: flex; gap: 20px; margin: 20px 0; }
-    .stat { padding: 10px 20px; background: #f5f5f5; border-radius: 4px; }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <h1>UI/UX Audit Report</h1>
-    <p>Generated: ${new Date().toLocaleString()}</p>
-  </div>
-  <div class="stats">
-    <div class="stat">Total: ${result.summary.total}</div>
-    <div class="stat">Critical: ${result.summary.critical}</div>
-    <div class="stat">Warning: ${result.summary.warning}</div>
-    <div class="stat">Info: ${result.summary.info}</div>
-  </div>
-  <div class="issues">
-    ${result.issues.map((issue: any) => `
-      <div class="issue ${issue.severity}">
-        <h3>${issue.title}</h3>
-        <p><strong>File:</strong> ${issue.location.file}:${issue.location.line}</p>
-        <p><strong>Description:</strong> ${issue.description}</p>
-        ${issue.metadata?.suggestion ? `<p><strong>Suggestion:</strong> ${issue.metadata.suggestion}</p>` : ''}
-      </div>
-    `).join('')}
-  </div>
-</body>
-</html>
-  `;
-}
-
-function groupBy<T>(array: T[], keyFn: (item: T) => string): Record<string, T[]> {
-  return array.reduce((result, item) => {
-    const key = keyFn(item);
-    (result[key] = result[key] || []).push(item);
-    return result;
-  }, {} as Record<string, T[]>);
-}
-
 function getCategoryName(category: string): string {
   const names: Record<string, string> = {
     visual: '🎨 Visual',
@@ -282,13 +184,4 @@ function getCategoryName(category: string): string {
     other: '📋 Other',
   };
   return names[category] || category;
-}
-
-function getSeverityIcon(severity: string): string {
-  const icons: Record<string, string> = {
-    critical: '🔴',
-    warning: '🟡',
-    info: '🔵',
-  };
-  return icons[severity] || '⚪';
 }

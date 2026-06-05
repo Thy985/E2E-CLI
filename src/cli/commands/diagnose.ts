@@ -16,7 +16,7 @@ import { APISkill } from '../../skills/builtin/api';
 import { DependencySkill } from '../../skills/builtin/dependency';
 import { ComplexitySkill } from '../../skills/builtin/complexity';
 import { createReportGenerator } from '../../engines/report';
-import { createModelClient } from '../../models';
+import { createModelClient, ModelProvider } from '../../models';
 import { createTools } from '../../tools';
 import { createStorage } from '../../storage';
 import { loadConfig, QAConfig } from '../../config';
@@ -102,13 +102,18 @@ export async function diagnoseCommand(options: any) {
     }
 
     // Create skill context with config
+    const VALID_PROVIDERS: ModelProvider[] = ['deepseek', 'openai', 'claude', 'siliconflow', 'groq', 'minimax'];
+    const provider = (config.model?.provider && VALID_PROVIDERS.includes(config.model?.provider as ModelProvider))
+      ? config.model?.provider as ModelProvider
+      : undefined;
+
     const context: SkillContext = {
       project: projectInfo,
       config: config,
       logger: logger.child('Skill'),
       tools: createTools(diagnoseOptions.path!),
       model: createModelClient({
-        provider: config.model?.provider as any,
+        provider,
         model: config.model?.model,
         apiKey: config.model?.apiKey,
         baseUrl: config.model?.baseUrl,

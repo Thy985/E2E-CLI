@@ -89,7 +89,7 @@ export async function execFileAsync(
   validateFilePath(file);
 
   return new Promise((resolve, reject) => {
-    const child = execFile(
+    execFile(
       file,
       args,
       {
@@ -110,8 +110,8 @@ export async function execFileAsync(
           return;
         }
         resolve({
-          stdout: (stdout as string).toString('utf-8').trim(),
-          stderr: (stderr as string).toString('utf-8').trim(),
+          stdout: String(stdout).trim(),
+          stderr: String(stderr).trim(),
           exitCode: 0,
         });
       }
