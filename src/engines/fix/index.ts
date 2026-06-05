@@ -26,6 +26,7 @@ export interface FixEngineConfig {
   sandboxEnabled: boolean;
   previewBeforeApply: boolean;
   verifyAfterFix: boolean;
+  compileCheck: boolean;
 }
 
 export interface FixResult {
@@ -33,6 +34,8 @@ export interface FixResult {
   fix: Fix;
   applied: boolean;
   verified: boolean;
+  compileCheckPassed?: boolean;
+  compileCheckOutput?: string;
   previewUrl?: string;
   beforeScreenshot?: string;
   afterScreenshot?: string;
@@ -369,6 +372,7 @@ export class FixEngine {
    * Apply fix with:
    * - Pre-flight validation for every change
    * - Atomic apply (all-or-nothing via in-memory backup)
+   * - Optional compilation check after apply
    */
   async applyFix(fix: Fix, projectPath: string): Promise<FixResult> {
     const appliedFiles: Map<string, string> = new Map();
@@ -411,6 +415,34 @@ export class FixEngine {
         appliedChanges.push(change.file);
       }
 
+      // Phase 3.5: Optional compilation check
+      if (this.config.compileCheck) {
+        const compileResult = await this.runCompileCheck(projectPath);
+        if (!compileResult.success) {
+          // Rollback files to original content
+          for (const [relPath, originalContent] of appliedFiles) {
+            const fullPath = path.join(projectPath, relPath);
+            fs.writeFileSync(fullPath, originalContent, 'utf-8');
+          }
+          return {
+            success: false,
+            fix,
+            applied: false,
+            verified: false,
+            compileCheckPassed: false,
+            compileCheckOutput: compileResult.output,
+            error: `Compilation check failed:\n${compileResult.output}`,
+          };
+        }
+        return {
+          success: true,
+          fix,
+          applied: true,
+          verified: false,
+          compileCheckPassed: true,
+        };
+      }
+
       return {
         success: true,
         fix,
@@ -449,18 +481,80 @@ export class FixEngine {
   }
 
   /**
-   * Verify fix: apply in sandbox and run tests. Original project stays clean.
+   * Run `tsc --noEmit` in the given project directory.
+   * Uses `npx tsc` so that the project's own TypeScript version is used.
    */
-  async verifyFix(fix: Fix, projectPath: string): Promise<boolean> {
+  private async runCompileCheck(projectPath: string): Promise<{ success: boolean; output: string }> {
+    const { execFile } = await import('child_process');
+
+    return new Promise((resolve) => {
+      execFile(
+        'npx',
+        ['tsc', '--noEmit'],
+        { cwd: projectPath, timeout: 60_000 },
+        (error, stdout, stderr) => {
+          const output = String(stdout) + String(stderr);
+          resolve({
+            success: error === null || (error && (error as NodeJS.ErrnoException).code === undefined),
+            output,
+          });
+        }
+      );
+    });
+  }
+
+  /**
+   * Verify fix: apply in sandbox, run compilation check, then run tests.
+   * Original project stays clean.
+   */
+  async verifyFix(fix: Fix, projectPath: string): Promise<{
+    success: boolean;
+    compileCheckPassed: boolean;
+    testsPassed: boolean;
+    compileOutput?: string;
+    testOutput?: string;
+  }> {
     let sandboxId: string | undefined;
     try {
       const sandbox = await this.sandboxManager.create({ projectPath });
       sandboxId = sandbox.id;
       await this.sandboxManager.applyFix(sandbox.id, fix);
-      const { success } = await this.sandboxManager.runTests(sandbox.id);
-      return success;
+
+      // Step 1: Compilation check
+      let compileCheckPassed = false;
+      let compileOutput: string | undefined;
+      if (this.config.compileCheck) {
+        const compileResult = await this.sandboxManager.runTypeCheck(sandbox.id);
+        compileCheckPassed = compileResult.success;
+        compileOutput = compileResult.output;
+        if (!compileCheckPassed) {
+          return {
+            success: false,
+            compileCheckPassed: false,
+            testsPassed: false,
+            compileOutput,
+          };
+        }
+      } else {
+        compileCheckPassed = true;
+      }
+
+      // Step 2: Run tests
+      const { success: testsPassed, output: testOutput } = await this.sandboxManager.runTests(sandbox.id);
+
+      return {
+        success: compileCheckPassed && testsPassed,
+        compileCheckPassed,
+        testsPassed,
+        compileOutput,
+        testOutput,
+      };
     } catch {
-      return false;
+      return {
+        success: false,
+        compileCheckPassed: false,
+        testsPassed: false,
+      };
     } finally {
       if (sandboxId) {
         try {

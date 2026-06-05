@@ -312,6 +312,40 @@ export class SandboxManager {
   }
 
   /**
+   * Run TypeScript compilation check (`tsc --noEmit`) in the sandbox.
+   * Returns `{ success: true }` when compilation succeeds, or
+   * `{ success: false, output: <tsc stderr+stdout> }` on failure.
+   */
+  async runTypeCheck(instanceId: string): Promise<{ success: boolean; output: string }> {
+    const instance = this.instances.get(instanceId);
+    if (!instance) {
+      throw new Error(`Sandbox instance ${instanceId} not found`);
+    }
+
+    return new Promise((resolve) => {
+      const proc = spawn('npx', ['tsc', '--noEmit'], {
+        cwd: instance.path,
+        shell: true,
+      });
+
+      let output = '';
+      proc.stdout?.on('data', (data: Buffer) => {
+        output += data.toString();
+      });
+      proc.stderr?.on('data', (data: Buffer) => {
+        output += data.toString();
+      });
+
+      proc.on('close', (code) => {
+        resolve({
+          success: code === 0,
+          output,
+        });
+      });
+    });
+  }
+
+  /**
    * 运行测试
    */
   async runTests(instanceId: string): Promise<{ success: boolean; output: string }> {
