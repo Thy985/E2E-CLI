@@ -36,6 +36,7 @@ beforeEach(() => {
     sandboxEnabled: false,
     previewBeforeApply: false,
     verifyAfterFix: false,
+    compileCheck: false,
   });
 });
 
@@ -423,6 +424,379 @@ describe('FixEngine.assessRisk – real file risk evaluation', () => {
       position: { line: 5 },
       content: '<meta name="description" content="test">',
     }]);
+
+    expect(engine.assessRisk(fix)).toBe('medium');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Compile check tests
+// ---------------------------------------------------------------------------
+
+describe('FixEngine.applyFix – compile check integration', () => {
+  it('should pass compile check for a valid TypeScript fix', async () => {
+    const tsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'qa-tsc-pass-'));
+
+    // Create a minimal tsconfig.json
+    fs.writeFileSync(
+      path.join(tsDir, 'tsconfig.json'),
+      JSON.stringify({
+        compilerOptions: { target: 'ES2020', strict: true, module: 'ESNext', moduleResolution: 'bundler' },
+        include: ['*.ts'],
+      }),
+      'utf-8'
+    );
+
+    // Create a file with a bug
+    const srcPath = path.join(tsDir, 'app.ts');
+    fs.writeFileSync(srcPath, 'export function greet(name: string): string {\n  return "Hello, " + name;\n}', 'utf-8');
+
+    // Create a fix engine with compile check enabled
+    const compileEngine = new FixEngine({
+      autoApproveLowRisk: true,
+      sandboxEnabled: false,
+      previewBeforeApply: false,
+      verifyAfterFix: false,
+      compileCheck: true,
+    });
+
+    // Apply a valid fix (improve the return statement)
+    const fix = makeFix([{
+      file: 'app.ts',
+      type: 'replace',
+      oldContent: 'return "Hello, " + name;',
+      content: 'return `Hello, ${name}`;',
+    }]);
+
+    const result = await compileEngine.applyFix(fix, tsDir);
+
+    expect(result.success).toBe(true);
+    expect(result.applied).toBe(true);
+    expect(result.compileCheckPassed).toBe(true);
+
+    fs.rmSync(tsDir, { recursive: true, force: true });
+  });
+
+  it('should fail compile check and rollback when fix introduces type error', async () => {
+    const tsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'qa-tsc-fail-'));
+
+    // Create a minimal tsconfig.json
+    fs.writeFileSync(
+      path.join(tsDir, 'tsconfig.json'),
+      JSON.stringify({
+        compilerOptions: { target: 'ES2020', strict: true, module: 'ESNext', moduleResolution: 'bundler' },
+        include: ['*.ts'],
+      }),
+      'utf-8'
+    );
+
+    // Create a file with correct code
+    const srcPath = path.join(tsDir, 'app.ts');
+    const originalContent = 'export function add(a: number, b: number): number {\n  return a + b;\n}';
+    fs.writeFileSync(srcPath, originalContent, 'utf-8');
+
+    // Create a fix engine with compile check enabled
+    const compileEngine = new FixEngine({
+      autoApproveLowRisk: true,
+      sandboxEnabled: false,
+      previewBeforeApply: false,
+      verifyAfterFix: false,
+      compileCheck: true,
+    });
+
+    // Apply a fix that introduces a type error (return string instead of number)
+    const fix = makeFix([{
+      file: 'app.ts',
+      type: 'replace',
+      oldContent: 'return a + b;',
+      content: 'return "sum: " + (a + b);',
+    }]);
+
+    const result = await compileEngine.applyFix(fix, tsDir);
+
+    expect(result.success).toBe(false);
+    expect(result.applied).toBe(false);
+    expect(result.compileCheckPassed).toBe(false);
+    expect(result.compileCheckOutput).toBeTruthy();
+
+    // Verify the file was rolled back to original content
+    const afterContent = fs.readFileSync(srcPath, 'utf-8');
+    expect(afterContent).toBe(originalContent);
+
+    fs.rmSync(tsDir, { recursive: true, force: true });
+  });
+
+  it('should skip compile check when compileCheck is false', async () => {
+    const tsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'qa-tsc-skip-'));
+
+    // No tsconfig.json — compile check would fail if run
+    const srcPath = path.join(tsDir, 'app.ts');
+    fs.writeFileSync(srcPath, 'export const x = 1;', 'utf-8');
+
+    const noCompileEngine = new FixEngine({
+      autoApproveLowRisk: true,
+      sandboxEnabled: false,
+      previewBeforeApply: false,
+      verifyAfterFix: false,
+      compileCheck: false,
+    });
+
+    const fix = makeFix([{
+      file: 'app.ts',
+      type: 'replace',
+      oldContent: 'export const x = 1;',
+      content: 'export const x = 2;',
+    }]);
+
+    const result = await noCompileEngine.applyFix(fix, tsDir);
+
+    expect(result.success).toBe(true);
+    expect(result.applied).toBe(true);
+    expect(result.compileCheckPassed).toBeUndefined();
+
+    fs.rmSync(tsDir, { recursive: true, force: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Edge case tests
+// ---------------------------------------------------------------------------
+
+describe('FixEngine edge cases', () => {
+  it('should handle empty changes array', async () => {
+    const fix = makeFix([]);
+    const result = await engine.applyFix(fix, tmpDir);
+
+    expect(result.success).toBe(true);
+    expect(result.applied).toBe(true);
+  });
+
+  it('should handle replace with empty oldContent matching empty file', async () => {
+    const filePath = path.join(tmpDir, 'empty.txt');
+    fs.writeFileSync(filePath, '', 'utf-8');
+
+    const fix = makeFix([{
+      file: 'empty.txt',
+      type: 'replace',
+      oldContent: '',
+      content: 'now has content',
+    }]);
+
+    const result = await engine.applyFix(fix, tmpDir);
+
+    expect(result.success).toBe(true);
+    expect(result.applied).toBe(true);
+    expect(fs.readFileSync(filePath, 'utf-8')).toBe('now has content');
+  });
+
+  it('should handle file with special characters in content', async () => {
+    const filePath = path.join(tmpDir, 'special.html');
+    const originalContent = '<div class="foo & bar" data-id="123">\n  <script>var x = "<b>test</b>";</script>\n</div>';
+    fs.writeFileSync(filePath, originalContent, 'utf-8');
+
+    const fix = makeFix([{
+      file: 'special.html',
+      type: 'replace',
+      oldContent: '<b>test</b>',
+      content: '<strong>test</strong>',
+    }]);
+
+    const result = await engine.applyFix(fix, tmpDir);
+
+    expect(result.success).toBe(true);
+    expect(result.applied).toBe(true);
+    expect(fs.readFileSync(filePath, 'utf-8')).toContain('<strong>test</strong>');
+  });
+
+  it('should handle large file with small change', async () => {
+    const filePath = path.join(tmpDir, 'large.ts');
+    // Create a file with 500 lines
+    const lines: string[] = [];
+    for (let i = 0; i < 500; i++) {
+      lines.push(`const line${i} = ${i};`);
+    }
+    lines[250] = "console.log('bug');";
+    const largeContent = lines.join('\n');
+    fs.writeFileSync(filePath, largeContent, 'utf-8');
+
+    const fix = makeFix([{
+      file: 'large.ts',
+      type: 'replace',
+      oldContent: "console.log('bug');",
+      content: "// console.log removed",
+    }]);
+
+    const result = await engine.applyFix(fix, tmpDir);
+
+    expect(result.success).toBe(true);
+    expect(result.applied).toBe(true);
+
+    const afterContent = fs.readFileSync(filePath, 'utf-8');
+    // Verify only the one line changed
+    expect(afterContent).not.toContain("console.log('bug')");
+    expect(afterContent).toContain('const line0 = 0;');
+    expect(afterContent).toContain('const line499 = 499;');
+  });
+
+  it('should handle multiple replaces in the same file', async () => {
+    const filePath = path.join(tmpDir, 'multi.html');
+    fs.writeFileSync(filePath, '<img src="a.jpg"><img src="b.jpg"><img src="c.jpg">', 'utf-8');
+
+    const fix = makeFix([
+      {
+        file: 'multi.html',
+        type: 'replace',
+        oldContent: '<img src="a.jpg">',
+        content: '<img src="a.jpg" alt="A">',
+      },
+      {
+        file: 'multi.html',
+        type: 'replace',
+        oldContent: '<img src="b.jpg">',
+        content: '<img src="b.jpg" alt="B">',
+      },
+      {
+        file: 'multi.html',
+        type: 'replace',
+        oldContent: '<img src="c.jpg">',
+        content: '<img src="c.jpg" alt="C">',
+      },
+    ]);
+
+    const result = await engine.applyFix(fix, tmpDir);
+
+    expect(result.success).toBe(true);
+    expect(result.applied).toBe(true);
+    const after = fs.readFileSync(filePath, 'utf-8');
+    expect(after).toContain('alt="A"');
+    expect(after).toContain('alt="B"');
+    expect(after).toContain('alt="C"');
+  });
+
+  it('should handle deeply nested directory paths', async () => {
+    const deepDir = path.join(tmpDir, 'a', 'b', 'c', 'd', 'e');
+    fs.mkdirSync(deepDir, { recursive: true });
+    const filePath = path.join(deepDir, 'component.tsx');
+    fs.writeFileSync(filePath, 'export const Cmp = () => <div></div>;', 'utf-8');
+
+    const fix = makeFix([{
+      file: 'a/b/c/d/e/component.tsx',
+      type: 'replace',
+      oldContent: '<div></div>',
+      content: '<div role="main"></div>',
+    }]);
+
+    const result = await engine.applyFix(fix, tmpDir);
+
+    expect(result.success).toBe(true);
+    expect(result.applied).toBe(true);
+    expect(fs.readFileSync(filePath, 'utf-8')).toContain('role="main"');
+  });
+
+  it('should handle unicode content', async () => {
+    const filePath = path.join(tmpDir, 'i18n.ts');
+    fs.writeFileSync(filePath, 'const greeting = "こんにちは世界";\nconst emoji = "🎉🚀";', 'utf-8');
+
+    const fix = makeFix([{
+      file: 'i18n.ts',
+      type: 'replace',
+      oldContent: 'const greeting = "こんにちは世界";',
+      content: 'const greeting = "Hello World";',
+    }]);
+
+    const result = await engine.applyFix(fix, tmpDir);
+
+    expect(result.success).toBe(true);
+    expect(result.applied).toBe(true);
+    const after = fs.readFileSync(filePath, 'utf-8');
+    expect(after).toContain('Hello World');
+    expect(after).toContain('🎉🚀');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Risk assessment edge cases
+// ---------------------------------------------------------------------------
+
+describe('FixEngine.assessRisk – edge cases', () => {
+  it('should rate empty changes as low', () => {
+    const fix = makeFix([]);
+    expect(engine.assessRisk(fix)).toBe('low');
+  });
+
+  it('should rate .env file changes as high', () => {
+    const fix = makeFix([{
+      file: '.env',
+      type: 'replace',
+      oldContent: 'DB_HOST=localhost',
+      content: 'DB_HOST=production-db.example.com',
+    }]);
+
+    expect(engine.assessRisk(fix)).toBe('high');
+  });
+
+  it('should rate tsconfig changes as high', () => {
+    const fix = makeFix([{
+      file: 'tsconfig.json',
+      type: 'replace',
+      oldContent: '"strict": false',
+      content: '"strict": true',
+    }]);
+
+    expect(engine.assessRisk(fix)).toBe('high');
+  });
+
+  it('should rate Dockerfile changes as high', () => {
+    const fix = makeFix([{
+      file: 'Dockerfile',
+      type: 'replace',
+      oldContent: 'FROM node:16',
+      content: 'FROM node:20',
+    }]);
+
+    expect(engine.assessRisk(fix)).toBe('high');
+  });
+
+  it('should rate webpack.config.ts changes as high', () => {
+    const fix = makeFix([{
+      file: 'webpack.config.ts',
+      type: 'replace',
+      oldContent: 'mode: "development"',
+      content: 'mode: "production"',
+    }]);
+
+    expect(engine.assessRisk(fix)).toBe('high');
+  });
+
+  it('should rate >5 files as high', () => {
+    const changes: FileChange[] = [];
+    for (let i = 0; i < 6; i++) {
+      changes.push({
+        file: `page${i}.html`,
+        type: 'replace',
+        oldContent: '<div>',
+        content: '<section>',
+      });
+    }
+    const fix = makeFix(changes);
+    expect(engine.assessRisk(fix)).toBe('high');
+  });
+
+  it('should rate cross-file changes as medium', () => {
+    const fix = makeFix([
+      {
+        file: 'a.html',
+        type: 'replace',
+        oldContent: '<div>',
+        content: '<section>',
+      },
+      {
+        file: 'b.html',
+        type: 'replace',
+        oldContent: '<div>',
+        content: '<section>',
+      },
+    ]);
 
     expect(engine.assessRisk(fix)).toBe('medium');
   });

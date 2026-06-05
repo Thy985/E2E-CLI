@@ -100,6 +100,7 @@ export const uxAuditCommand = new Command('ux-audit')
           sandboxEnabled: true,
           previewBeforeApply: true,
           verifyAfterFix: true,
+          compileCheck: true,
         });
 
         for (const issue of issues) {
@@ -131,6 +132,7 @@ export const uxAuditCommand = new Command('ux-audit')
           sandboxEnabled: false,
           previewBeforeApply: false,
           verifyAfterFix: true,
+          compileCheck: true,
         });
 
         for (const issue of issues) {

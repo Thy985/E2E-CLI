@@ -37,6 +37,7 @@ export class BatchFixEngine {
       sandboxEnabled: false,
       previewBeforeApply: false,
       verifyAfterFix: false,
+      compileCheck: false,
     });
   }
 

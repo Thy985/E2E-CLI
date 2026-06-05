@@ -494,8 +494,9 @@ export class FixEngine {
         { cwd: projectPath, timeout: 60_000 },
         (error, stdout, stderr) => {
           const output = String(stdout) + String(stderr);
+          // tsc returns error code 2 on type errors, null on success
           resolve({
-            success: error === null || (error && (error as NodeJS.ErrnoException).code === undefined),
+            success: error === null,
             output,
           });
         }

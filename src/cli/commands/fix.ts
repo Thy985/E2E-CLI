@@ -143,6 +143,7 @@ async function runSingleFix(options: any, config: any, logger: any) {
     sandboxEnabled: options.preview,
     previewBeforeApply: options.preview,
     verifyAfterFix: options.verify,
+    compileCheck: true,
   });
 
   try {
