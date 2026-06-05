@@ -15,6 +15,7 @@ import {
   TrendAnalysis,
 } from '../../types';
 import { createLogger, Logger } from '../../utils/logger';
+import { detectProjectInfo } from '../../utils/project-detector';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -121,41 +122,8 @@ export class AuditEngine {
   }
 
   private async getProjectInfo(projectPath: string): Promise<ProjectInfo> {
-    const packageJsonPath = path.join(projectPath, 'package.json');
-    
-    let name = path.basename(projectPath);
-    let type: ProjectInfo['type'] = 'webapp';
-    let framework: string | undefined;
-    let packageManager: ProjectInfo['packageManager'] = 'npm';
-
-    try {
-      const packageJson = JSON.parse(await fs.readFile(packageJsonPath, 'utf-8'));
-      name = packageJson.name || name;
-
-      // Detect framework
-      const deps = { ...packageJson.dependencies, ...packageJson.devDependencies };
-      if (deps.react) framework = 'react';
-      else if (deps.vue) framework = 'vue';
-      else if (deps.angular) framework = 'angular';
-      else if (deps.svelte) framework = 'svelte';
-      else if (deps.next) framework = 'next';
-      else if (deps.nuxt) framework = 'nuxt';
-
-      // Detect type
-      if (deps.express || deps.fastify || deps.koa) type = 'api';
-      else if (packageJson.bin) type = 'cli';
-      else if (deps.typescript && !deps.react && !deps.vue) type = 'library';
-
-      // Detect package manager
-      const lockFiles = await fs.readdir(projectPath).catch(() => [] as string[]);
-      if (lockFiles.includes('pnpm-lock.yaml')) packageManager = 'pnpm';
-      else if (lockFiles.includes('yarn.lock')) packageManager = 'yarn';
-
-    } catch {
-      // package.json not found
-    }
-
-    return { name, path: projectPath, type, framework, packageManager };
+    // 公共推断逻辑挪到 utils/project-detector，这里只负责传 path。
+    return detectProjectInfo(projectPath);
   }
 
   private calculateSummary(categories: AuditCategory[]): AuditSummary {

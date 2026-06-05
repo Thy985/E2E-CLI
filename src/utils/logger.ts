@@ -1,71 +1,83 @@
 /**
  * Logger implementation
+ *
+ * 设计要点：
+ * 1. 同时存 level 数字 + 名称，避免 child() 时反向查表
+ * 2. 4 个日志方法走同一条 shouldLog 路径
+ * 3. quiet 模式只影响 console 输出，不影响计数
  */
 
-import { Severity } from '../types';
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 export interface LoggerOptions {
-  level: 'debug' | 'info' | 'warn' | 'error';
+  level?: LogLevel;
   prefix?: string;
   quiet?: boolean;
 }
 
-const LOG_LEVELS = {
+const LOG_LEVELS: Record<LogLevel, number> = {
   debug: 0,
   info: 1,
   warn: 2,
   error: 3,
 };
 
+const LEVEL_NAMES: Record<number, LogLevel> = Object.fromEntries(
+  Object.entries(LOG_LEVELS).map(([name, n]) => [n, name as LogLevel])
+) as Record<number, LogLevel>;
+
 export class Logger {
   private level: number;
+  private levelName: LogLevel;
   private prefix: string;
   private quiet: boolean;
 
-  constructor(options: LoggerOptions = { level: 'info' }) {
-    this.level = LOG_LEVELS[options.level];
+  constructor(options: LoggerOptions = {}) {
+    const level: LogLevel = options.level ?? 'info';
+    this.level = LOG_LEVELS[level];
+    this.levelName = level;
     this.prefix = options.prefix || 'QA-Agent';
     this.quiet = options.quiet || false;
   }
 
-  debug(message: string, data?: any): void {
-    if (this.level <= LOG_LEVELS.debug && !this.quiet) {
-      console.log(`[${this.prefix}] [DEBUG] ${message}`, data || '');
+  private shouldLog(target: LogLevel): boolean {
+    if (this.quiet) return false;
+    return this.level <= LOG_LEVELS[target];
+  }
+
+  debug(message: string, data?: unknown): void {
+    if (this.shouldLog('debug')) {
+      console.log(`[${this.prefix}] [DEBUG] ${message}`, data ?? '');
     }
   }
 
-  info(message: string, data?: any): void {
-    if (this.level <= LOG_LEVELS.info && !this.quiet) {
-      console.log(`[${this.prefix}] [INFO] ${message}`, data || '');
+  info(message: string, data?: unknown): void {
+    if (this.shouldLog('info')) {
+      console.log(`[${this.prefix}] [INFO] ${message}`, data ?? '');
     }
   }
 
-  warn(message: string, data?: any): void {
-    if (this.level <= LOG_LEVELS.warn && !this.quiet) {
-      console.warn(`[${this.prefix}] [WARN] ${message}`, data || '');
+  warn(message: string, data?: unknown): void {
+    if (this.shouldLog('warn')) {
+      console.warn(`[${this.prefix}] [WARN] ${message}`, data ?? '');
     }
   }
 
-  error(message: string, data?: any): void {
-    if (this.level <= LOG_LEVELS.error && !this.quiet) {
-      console.error(`[${this.prefix}] [ERROR] ${message}`, data || '');
+  error(message: string, data?: unknown): void {
+    if (this.shouldLog('error')) {
+      console.error(`[${this.prefix}] [ERROR] ${message}`, data ?? '');
     }
   }
 
   child(prefix: string): Logger {
     return new Logger({
-      level: Object.keys(LOG_LEVELS).find(
-        k => LOG_LEVELS[k as keyof typeof LOG_LEVELS] === this.level
-      ) as LoggerOptions['level'],
+      level: this.levelName,
       prefix: `${this.prefix}:${prefix}`,
       quiet: this.quiet,
     });
   }
 }
 
-/**
- * Create default logger instance
- */
 export function createLogger(options?: Partial<LoggerOptions>): Logger {
   return new Logger({
     level: 'info',

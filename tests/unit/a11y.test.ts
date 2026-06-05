@@ -33,7 +33,7 @@ describe('A11ySkill', () => {
   it('should detect missing alt attributes', async () => {
     const context = {
       project: { name: 'test', path: process.cwd() },
-      config: { enabled: true, options: {} },
+      config: { version: 1, project: { name: 'test' } },
       logger: createLogger({ level: 'error' }),
       tools: createTools(),
       model: mockModelClient,

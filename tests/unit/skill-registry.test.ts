@@ -238,20 +238,20 @@ describe('SkillRegistry', () => {
 function createMockContext(): SkillContext {
   return {
     project: { name: 'test', path: process.cwd() },
-    config: { enabled: true, options: {} },
+    config: { version: 1, project: { name: 'test' } },
     logger: createLogger({ level: 'error' }),
     tools: {
       fs: {
-        readFile: mock(() => {}),
-        writeFile: mock(() => {}),
-        exists: mock(async () => false),
-        glob: mock(async () => []),
-        mkdir: mock(() => {}),
-        remove: mock(() => {}),
-        stat: mock(() => {}),
+        readFile: mock(async (_path: string) => ''),
+        writeFile: mock(async (_path: string, _content: string) => undefined),
+        exists: mock(async (_path: string) => false),
+        glob: mock(async () => [] as string[]),
+        mkdir: mock(async (_path: string) => undefined),
+        remove: mock(async (_path: string) => undefined),
+        stat: mock(async (_path: string) => ({ size: 0, isFile: true, isDirectory: false })),
       },
       git: {
-        getChangedFiles: mock(async () => []),
+        getChangedFiles: mock(async () => [] as string[]),
         getCurrentBranch: mock(async () => 'main'),
         getCommitHash: mock(async () => 'abc123'),
       },
@@ -264,9 +264,12 @@ function createMockContext(): SkillContext {
     },
     storage: {
       get: mock(async () => null),
-      set: mock(() => {}),
-      delete: mock(() => {}),
-      clear: mock(() => {}),
+      set: mock(async () => undefined),
+      delete: mock(async () => true),
+      has: mock(async () => true),
+      keys: mock(async () => [] as string[]),
+      clear: mock(async () => undefined),
+      flush: mock(async () => undefined),
     },
   };
 }

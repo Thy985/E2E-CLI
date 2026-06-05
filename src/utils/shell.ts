@@ -50,23 +50,32 @@ export async function execAsync(
     const stderrChunks: Buffer[] = [];
     let stdoutLen = 0;
     let stderrLen = 0;
-    let killedByTimeout = false;
-    let killedByBuffer = false;
+    let settled = false;
+
+    // 用 settled 标志统一保证 resolve/reject 只触发一次
+    const settle = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn();
+    };
 
     const timer = setTimeout(() => {
-      killedByTimeout = true;
-      child.kill('SIGKILL');
-      reject(new Error(`Command timed out after ${timeout}ms: ${command}`));
+      try { child.kill('SIGKILL'); } catch { /* 进程可能已退出 */ }
+      settle(() => reject(new Error(`Command timed out after ${timeout}ms: ${command}`)));
     }, timeout);
 
     function handleChunk(target: 'stdout' | 'stderr', chunk: Buffer): void {
       const chunks = target === 'stdout' ? stdoutChunks : stderrChunks;
-      const lenRef = target === 'stdout' ? { value: stdoutLen } : { value: stderrLen };
+      const lenRef = target === 'stdout' ? stdoutLen : stderrLen;
       chunks.push(chunk);
-      lenRef.value += chunk.length;
-      if (lenRef.value > maxBuffer) {
-        killedByBuffer = true;
-        child.kill('SIGKILL');
+      if (lenRef + chunk.length > maxBuffer) {
+        try { child.kill('SIGKILL'); } catch { /* 进程可能已退出 */ }
+        settle(() => reject(new Error(`Command output exceeded maxBuffer (${maxBuffer} bytes): ${command}`)));
+      } else if (target === 'stdout') {
+        stdoutLen = lenRef + chunk.length;
+      } else {
+        stderrLen = lenRef + chunk.length;
       }
     }
 
@@ -74,24 +83,15 @@ export async function execAsync(
     child.stderr?.on('data', (chunk: Buffer) => handleChunk('stderr', chunk));
 
     child.on('error', (error) => {
-      clearTimeout(timer);
-      if (!killedByTimeout) {
-        reject(error);
-      }
+      settle(() => reject(error));
     });
 
     child.on('close', (code) => {
-      clearTimeout(timer);
-      if (killedByTimeout || killedByBuffer) return;
-      if (killedByBuffer) {
-        reject(new Error(`Command output exceeded maxBuffer (${maxBuffer} bytes): ${command}`));
-        return;
-      }
-      resolve({
+      settle(() => resolve({
         stdout: Buffer.concat(stdoutChunks).toString('utf-8').trim(),
         stderr: Buffer.concat(stderrChunks).toString('utf-8').trim(),
         exitCode: code ?? 1,
-      });
+      }));
     });
   });
 }
@@ -114,4 +114,72 @@ export async function execAsyncOrThrow(
   }
 
   return result;
+}
+
+/**
+ * Execute a binary with an explicit argv (no shell). This is the safe
+ * alternative to execAsync: user-supplied values become a single argv entry
+ * and never reach a shell interpreter, eliminating command injection.
+ */
+export async function execFileAsync(
+  command: string,
+  args: readonly string[] = [],
+  options: ExecOptions = {}
+): Promise<ExecResult> {
+  const { cwd = process.cwd(), timeout = 60000, env = {}, maxBuffer = DEFAULT_MAX_BUFFER } = options;
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd,
+      env: { ...process.env, ...env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    let stdoutLen = 0;
+    let stderrLen = 0;
+    let settled = false;
+
+    const settle = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn();
+    };
+
+    const timer = setTimeout(() => {
+      try { child.kill('SIGKILL'); } catch { /* 进程可能已退出 */ }
+      settle(() => reject(new Error(`Command timed out after ${timeout}ms: ${command} ${args.join(' ')}`)));
+    }, timeout);
+
+    function handleChunk(target: 'stdout' | 'stderr', chunk: Buffer): void {
+      const chunks = target === 'stdout' ? stdoutChunks : stderrChunks;
+      const lenRef = target === 'stdout' ? stdoutLen : stderrLen;
+      chunks.push(chunk);
+      if (lenRef + chunk.length > maxBuffer) {
+        try { child.kill('SIGKILL'); } catch { /* 进程可能已退出 */ }
+        settle(() => reject(new Error(`Command output exceeded maxBuffer (${maxBuffer} bytes): ${command} ${args.join(' ')}`)));
+      } else if (target === 'stdout') {
+        stdoutLen = lenRef + chunk.length;
+      } else {
+        stderrLen = lenRef + chunk.length;
+      }
+    }
+
+    child.stdout?.on('data', (chunk: Buffer) => handleChunk('stdout', chunk));
+    child.stderr?.on('data', (chunk: Buffer) => handleChunk('stderr', chunk));
+
+    child.on('error', (error) => {
+      settle(() => reject(error));
+    });
+
+    child.on('close', (code) => {
+      settle(() => resolve({
+        stdout: Buffer.concat(stdoutChunks).toString('utf-8').trim(),
+        stderr: Buffer.concat(stderrChunks).toString('utf-8').trim(),
+        exitCode: code ?? 1,
+      }));
+    });
+  });
 }

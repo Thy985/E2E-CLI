@@ -10,6 +10,7 @@ import { createLogger } from '../../utils/logger';
 import { UIUXSkill } from '../../skills/builtin/uiux';
 import { createSkillRegistry } from '../../skills/registry';
 import { FixEngine } from '../../engines/fix';
+import { groupBy } from '../../utils/array';
 
 export const uxAuditCommand = new Command('ux-audit')
   .description('UI/UX视觉规范审查')
@@ -222,14 +223,6 @@ function generateHTMLReport(result: any): string {
 </body>
 </html>
   `;
-}
-
-function groupBy<T>(array: T[], keyFn: (item: T) => string): Record<string, T[]> {
-  return array.reduce((result, item) => {
-    const key = keyFn(item);
-    (result[key] = result[key] || []).push(item);
-    return result;
-  }, {} as Record<string, T[]>);
 }
 
 function getCategoryName(category: string): string {

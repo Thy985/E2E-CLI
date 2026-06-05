@@ -263,8 +263,11 @@ export interface ModelResponse {
 export interface Storage {
   get<T>(key: string): Promise<T | null>;
   set<T>(key: string, value: T): Promise<void>;
-  delete(key: string): Promise<void>;
+  delete(key: string): Promise<boolean>;
+  has(key: string): Promise<boolean>;
+  keys(): Promise<string[]>;
   clear(): Promise<void>;
+  flush(): Promise<void>;
 }
 
 // ============================================

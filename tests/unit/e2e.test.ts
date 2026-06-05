@@ -21,8 +21,8 @@ describe('E2ESkill', () => {
         framework: 'react',
       },
       config: {
-        enabled: true,
-        options: {},
+        version: 1,
+        project: { name: 'test-project', type: 'webapp', framework: 'react' },
       },
       tools: {
         fs: {
@@ -50,8 +50,11 @@ describe('E2ESkill', () => {
       storage: {
         get: async () => null,
         set: async () => {},
-        delete: async () => {},
+        delete: async () => true,
+        has: async () => true,
+        keys: async () => [],
         clear: async () => {},
+        flush: async () => {},
       },
       logger: {
         info: () => {},

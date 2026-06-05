@@ -163,19 +163,16 @@ async function runSingleFix(options: any, config: any, logger: any) {
 }
 
 function pickSkillFor(skillName: string): any | null {
-  switch (skillName) {
-    case 'uiux':
-    case 'ui-ux':
-      return new UIUXSkill();
-    case 'best-practices':
-      return new BestPracticesSkill();
-    case 'seo':
-      return new SEOSkill();
-    case 'dependency':
-      return new DependencySkill();
-    default:
-      return null;
-  }
+  // 单 skill 名称映射 —— 数据驱动避免 5 段 case 重复
+  const map: Record<string, () => any> = {
+    'uiux': () => new UIUXSkill(),
+    'ui-ux': () => new UIUXSkill(),
+    'best-practices': () => new BestPracticesSkill(),
+    'seo': () => new SEOSkill(),
+    'dependency': () => new DependencySkill(),
+  };
+  const factory = map[skillName];
+  return factory ? factory() : null;
 }
 
 async function runInteractiveFix(options: any, config: any, logger: any) {

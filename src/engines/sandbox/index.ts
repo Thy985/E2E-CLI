@@ -1,94 +1,59 @@
 /**
- * Sandbox System
- * 
- * 核心功能：
- * 1. 创建隔离的临时环境
- * 2. 应用代码变更
- * 3. 启动开发服务器
- * 4. 截图对比
- * 5. 运行测试
- * 6. 清理环境
+ * Sandbox Manager
+ * Manages isolated, temporary working copies of the user's project for safe
+ * experimentation and verification.
+ *
+ * 设计要点：
+ * 1. 拷贝走异步 fs.promises，不阻塞事件循环
+ * 2. 启动命令由用户 package.json 自动推断
+ * 3. captureScreenshot / visualDiff 显式抛错而非假装成功
+ *    —— 删除 web/gui 之后我们没装 headless browser，不应继续伪造数据
  */
 
+import { spawn, ChildProcess } from 'child_process';
+import * as fsp from 'fs/promises';
 import * as fs from 'fs';
 import * as path from 'path';
-import { spawn, ChildProcess } from 'child_process';
-import { Fix } from '../../types';
-
-export interface SandboxConfig {
-  projectPath: string;
-  port?: number;
-  timeout?: number;
-  keepAlive?: boolean;
-}
+import * as os from 'os';
 
 export interface SandboxInstance {
   id: string;
   path: string;
-  url: string;
+  url?: string;
   process?: ChildProcess;
-  createdAt: Date;
-}
-
-export interface PreviewResult {
-  success: boolean;
-  url: string;
-  screenshot?: string;
-  error?: string;
+  createdAt: number;
 }
 
 export class SandboxManager {
   private instances: Map<string, SandboxInstance> = new Map();
   private tempDir: string;
 
-  constructor() {
-    this.tempDir = path.join(process.cwd(), '.qa-agent', 'sandbox');
-    this.ensureTempDir();
+  constructor(tempDir?: string) {
+    this.tempDir = tempDir ?? path.join(os.tmpdir(), 'qa-agent-sandbox');
   }
 
   /**
-   * 创建沙箱实例
+   * Create a sandbox instance by copying the project
    */
-  async create(config: SandboxConfig): Promise<SandboxInstance> {
-    const id = this.generateId();
-    const sandboxPath = path.join(this.tempDir, id);
+  async create(projectPath: string): Promise<string> {
+    await fsp.mkdir(this.tempDir, { recursive: true });
+    const id = `sandbox-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+    const targetPath = path.join(this.tempDir, id);
 
-    // 复制项目到沙箱
-    await this.copyProject(config.projectPath, sandboxPath);
+    await this.copyProject(projectPath, targetPath);
 
     const instance: SandboxInstance = {
       id,
-      path: sandboxPath,
-      url: `http://localhost:${config.port || 3000}`,
-      createdAt: new Date(),
+      path: targetPath,
+      createdAt: Date.now(),
     };
-
     this.instances.set(id, instance);
-    return instance;
+
+    return id;
   }
 
   /**
-   * 应用修复到沙箱
-   */
-  async applyFix(instanceId: string, fix: Fix): Promise<void> {
-    const instance = this.instances.get(instanceId);
-    if (!instance) {
-      throw new Error(`Sandbox instance ${instanceId} not found`);
-    }
-
-    for (const change of fix.changes) {
-      const filePath = path.join(instance.path, change.file);
-      
-      if (change.type === 'replace') {
-        await this.replaceInFile(filePath, change.oldContent || '', change.content || '');
-      } else if (change.type === 'insert') {
-        await this.insertInFile(filePath, change.position?.line || 0, change.content || '');
-      }
-    }
-  }
-
-  /**
-   * 启动开发服务器
+   * Start the project's dev server in the sandbox
    */
   async startServer(instanceId: string, port: number = 3000): Promise<string> {
     const instance = this.instances.get(instanceId);
@@ -96,72 +61,57 @@ export class SandboxManager {
       throw new Error(`Sandbox instance ${instanceId} not found`);
     }
 
-    // 检测项目类型并启动相应的开发服务器
     const packageJsonPath = path.join(instance.path, 'package.json');
-    
     if (fs.existsSync(packageJsonPath)) {
-      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+      const packageJson = JSON.parse(await fsp.readFile(packageJsonPath, 'utf-8'));
       const scripts = packageJson.scripts || {};
 
-      // 检测启动命令
-      let startCommand = 'npm run dev';
-      if (scripts.dev) {
-        startCommand = 'npm run dev';
-      } else if (scripts.start) {
-        startCommand = 'npm start';
-      } else if (scripts.serve) {
-        startCommand = 'npm run serve';
-      }
+      const startCommand = this.pickStartCommand(scripts);
 
-      // 启动服务器
       const serverProcess = spawn(startCommand, [], {
         cwd: instance.path,
         shell: true,
         env: { ...process.env, PORT: port.toString() },
       });
-
       instance.process = serverProcess;
       instance.url = `http://localhost:${port}`;
 
-      // 等待服务器启动
       await this.waitForServer(instance.url);
-
       return instance.url;
     }
 
-    // 如果没有 package.json，使用简单的 HTTP 服务器
     return await this.startSimpleServer(instance.path, port);
   }
 
   /**
    * 截图
+   *
+   * 之前返回的是一坨字符串占位符。删了 web/gui 之后我们没有 headless
+   * browser，不能再给假数据；改为显式抛错，让上游 fallback 到 "skip visual check"。
    */
-  async captureScreenshot(instanceId: string, outputPath: string): Promise<string> {
-    const instance = this.instances.get(instanceId);
-    if (!instance) {
-      throw new Error(`Sandbox instance ${instanceId} not found`);
-    }
-
-    // TODO: 使用 Playwright 截图（需要解决依赖问题）
-    // 暂时返回占位符
-    fs.writeFileSync(outputPath, 'Screenshot placeholder');
-    return outputPath;
+  async captureScreenshot(_instanceId: string, _outputPath: string): Promise<string> {
+    throw new Error(
+      'SandboxManager.captureScreenshot is not available: headless browser support ' +
+      'was removed when the web/gui frontends were cut. Use a CLI skill (e.g. e2e ' +
+      'headless) or pass `--skip-visual` to opt out of screenshot-based verification.'
+    );
   }
 
   /**
    * 视觉对比
+   *
+   * 之前恒返回 diffPercentage=0 —— 上游会以为 "没有差异" 错放 bug 出门。
+   * 改为显式抛错。
    */
   async visualDiff(
-    beforeScreenshot: string,
-    afterScreenshot: string,
-    outputPath: string
+    _beforeScreenshot: string,
+    _afterScreenshot: string,
+    _outputPath: string
   ): Promise<{ diffPercentage: number; diffImagePath: string }> {
-    // 简化实现：返回模拟数据
-    // 实际实现需要使用 pixelmatch 库
-    return {
-      diffPercentage: 0,
-      diffImagePath: outputPath,
-    };
+    throw new Error(
+      'SandboxManager.visualDiff is not available: pixelmatch was removed when the ' +
+      'web/gui frontends were cut. Visual regression checks are unsupported in CLI mode.'
+    );
   }
 
   /**
@@ -178,21 +128,10 @@ export class SandboxManager {
         cwd: instance.path,
         shell: true,
       });
-
       let output = '';
-      testProcess.stdout?.on('data', (data) => {
-        output += data.toString();
-      });
-      testProcess.stderr?.on('data', (data) => {
-        output += data.toString();
-      });
-
-      testProcess.on('close', (code) => {
-        resolve({
-          success: code === 0,
-          output,
-        });
-      });
+      testProcess.stdout?.on('data', (d) => { output += d.toString(); });
+      testProcess.stderr?.on('data', (d) => { output += d.toString(); });
+      testProcess.on('close', (code) => resolve({ success: code === 0, output }));
     });
   }
 
@@ -202,14 +141,10 @@ export class SandboxManager {
   async destroy(instanceId: string): Promise<void> {
     const instance = this.instances.get(instanceId);
     if (!instance) return;
-
-    // 停止服务器进程
     if (instance.process) {
-      instance.process.kill();
+      try { instance.process.kill(); } catch { /* already exited */ }
     }
-
-    // 删除临时目录
-    await this.removeDir(instance.path);
+    await fsp.rm(instance.path, { recursive: true, force: true });
     this.instances.delete(instanceId);
   }
 
@@ -222,95 +157,73 @@ export class SandboxManager {
     }
   }
 
-  // 私有方法
+  // ============= private helpers =============
 
-  private ensureTempDir(): void {
-    if (!fs.existsSync(this.tempDir)) {
-      fs.mkdirSync(this.tempDir, { recursive: true });
-    }
-  }
-
-  private generateId(): string {
-    return `sandbox-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  private pickStartCommand(scripts: Record<string, string>): string {
+    if (scripts.dev) return 'npm run dev';
+    if (scripts.start) return 'npm start';
+    if (scripts.serve) return 'npm run serve';
+    return 'npm run dev';
   }
 
   private async copyProject(source: string, target: string): Promise<void> {
-    await this.copyDir(source, target, [
-      'node_modules',
-      '.git',
-      'dist',
-      'build',
-      '.qa-agent',
-    ]);
+    await this.copyDir(source, target, new Set([
+      'node_modules', '.git', 'dist', 'build', '.qa-agent', '.next', '.nuxt',
+    ]));
   }
 
-  private async copyDir(source: string, target: string, exclude: string[]): Promise<void> {
-    if (!fs.existsSync(target)) {
-      fs.mkdirSync(target, { recursive: true });
-    }
-
-    const entries = fs.readdirSync(source, { withFileTypes: true });
-
+  private async copyDir(source: string, target: string, exclude: Set<string>): Promise<void> {
+    await fsp.mkdir(target, { recursive: true });
+    const entries = await fsp.readdir(source, { withFileTypes: true });
     for (const entry of entries) {
-      if (exclude.includes(entry.name)) continue;
-
+      if (exclude.has(entry.name)) continue;
       const sourcePath = path.join(source, entry.name);
       const targetPath = path.join(target, entry.name);
-
       if (entry.isDirectory()) {
         await this.copyDir(sourcePath, targetPath, exclude);
-      } else {
-        fs.copyFileSync(sourcePath, targetPath);
+      } else if (entry.isFile()) {
+        await fsp.copyFile(sourcePath, targetPath);
       }
+      // 跳过 symlink/socket/device 等特殊文件类型
     }
   }
 
   private async replaceInFile(filePath: string, search: string | RegExp, replace: string): Promise<void> {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const newContent = content.replace(search, replace);
-    fs.writeFileSync(filePath, newContent, 'utf-8');
+    const content = await fsp.readFile(filePath, 'utf-8');
+    await fsp.writeFile(filePath, content.replace(search, replace), 'utf-8');
   }
 
   private async insertInFile(filePath: string, line: number, content: string): Promise<void> {
-    const lines = fs.readFileSync(filePath, 'utf-8').split('\n');
+    const lines = (await fsp.readFile(filePath, 'utf-8')).split('\n');
     lines.splice(line, 0, content);
-    fs.writeFileSync(filePath, lines.join('\n'), 'utf-8');
+    await fsp.writeFile(filePath, lines.join('\n'), 'utf-8');
   }
 
   private async waitForServer(url: string, timeout: number = 30000): Promise<void> {
-    const startTime = Date.now();
-    
-    while (Date.now() - startTime < timeout) {
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
       try {
         const response = await fetch(url);
         if (response.ok) return;
       } catch {
-        // 服务器还未启动
+        // server not up yet
       }
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise((r) => setTimeout(r, 500));
     }
-    
-    throw new Error(`Server failed to start within ${timeout}ms`);
+    throw new Error(`Server failed to start within ${timeout}ms: ${url}`);
   }
 
   private async startSimpleServer(projectPath: string, port: number): Promise<string> {
-    // 使用 Python 或 Node.js 启动简单 HTTP 服务器
     const serverProcess = spawn('npx', ['serve', '-l', port.toString()], {
       cwd: projectPath,
       shell: true,
     });
 
+    // fire-and-forget; if it exits immediately the next waitForServer will time out
+    void serverProcess;
+
     const url = `http://localhost:${port}`;
     await this.waitForServer(url);
-
     return url;
   }
-
-  private async removeDir(dirPath: string): Promise<void> {
-    if (fs.existsSync(dirPath)) {
-      fs.rmSync(dirPath, { recursive: true, force: true });
-    }
-  }
 }
-
-export default SandboxManager;

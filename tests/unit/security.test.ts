@@ -21,8 +21,8 @@ describe('SecuritySkill', () => {
         framework: 'react',
       },
       config: {
-        enabled: true,
-        options: {},
+        version: 1,
+        project: { name: 'test-project', type: 'webapp', framework: 'react' },
       },
       tools: {
         fs: {
@@ -50,8 +50,11 @@ describe('SecuritySkill', () => {
       storage: {
         get: async () => null,
         set: async () => {},
-        delete: async () => {},
+        delete: async () => true,
+        has: async () => true,
+        keys: async () => [],
         clear: async () => {},
+        flush: async () => {},
       },
       logger: {
         info: () => {},
@@ -88,8 +91,8 @@ describe('SecuritySkill', () => {
       // @ts-expect-error - accessing private method for testing
       const diagnoses = await skill.checkFile('test.ts', content);
       expect(diagnoses.length).toBeGreaterThan(0);
-      expect(diagnoses[0].metadata.ruleId).toBe('hardcoded-secret');
-      expect(diagnoses[0].severity).toBe('critical');
+      expect(diagnoses[0]!.metadata!.ruleId).toBe('hardcoded-secret');
+      expect(diagnoses[0]!.severity).toBe('critical');
     });
 
     it('should detect hardcoded API key', async () => {
@@ -97,7 +100,7 @@ describe('SecuritySkill', () => {
       // @ts-expect-error - accessing private method for testing
       const diagnoses = await skill.checkFile('test.ts', content);
       expect(diagnoses.length).toBeGreaterThan(0);
-      expect(diagnoses[0].metadata.ruleId).toBe('hardcoded-secret');
+      expect(diagnoses[0]!.metadata!.ruleId).toBe('hardcoded-secret');
     });
 
     it('should detect hardcoded private key', async () => {
@@ -105,7 +108,7 @@ describe('SecuritySkill', () => {
       // @ts-expect-error - accessing private method for testing
       const diagnoses = await skill.checkFile('test.ts', content);
       expect(diagnoses.length).toBeGreaterThan(0);
-      expect(diagnoses[0].metadata.ruleId).toBe('hardcoded-secret');
+      expect(diagnoses[0]!.metadata!.ruleId).toBe('hardcoded-secret');
     });
   });
 
@@ -115,7 +118,7 @@ describe('SecuritySkill', () => {
       // @ts-expect-error - accessing private method for testing
       const diagnoses = await skill.checkFile('test.ts', content);
       expect(diagnoses.length).toBeGreaterThan(0);
-      expect(diagnoses[0].metadata.ruleId).toBe('sql-injection');
+      expect(diagnoses[0]!.metadata!.ruleId).toBe('sql-injection');
     });
 
     it('should detect SQL injection with string concatenation', async () => {
@@ -123,7 +126,7 @@ describe('SecuritySkill', () => {
       // @ts-expect-error - accessing private method for testing
       const diagnoses = await skill.checkFile('test.ts', content);
       expect(diagnoses.length).toBeGreaterThan(0);
-      expect(diagnoses[0].metadata.ruleId).toBe('sql-injection');
+      expect(diagnoses[0]!.metadata!.ruleId).toBe('sql-injection');
     });
   });
 
@@ -133,7 +136,7 @@ describe('SecuritySkill', () => {
       // @ts-expect-error - accessing private method for testing
       const diagnoses = await skill.checkFile('test.tsx', content);
       expect(diagnoses.length).toBeGreaterThan(0);
-      expect(diagnoses[0].metadata.ruleId).toBe('xss-risk');
+      expect(diagnoses[0]!.metadata!.ruleId).toBe('xss-risk');
     });
 
     it('should detect innerHTML assignment', async () => {
@@ -141,7 +144,7 @@ describe('SecuritySkill', () => {
       // @ts-expect-error - accessing private method for testing
       const diagnoses = await skill.checkFile('test.ts', content);
       expect(diagnoses.length).toBeGreaterThan(0);
-      expect(diagnoses[0].metadata.ruleId).toBe('xss-risk');
+      expect(diagnoses[0]!.metadata!.ruleId).toBe('xss-risk');
     });
 
     it('should detect document.write', async () => {
@@ -149,7 +152,7 @@ describe('SecuritySkill', () => {
       // @ts-expect-error - accessing private method for testing
       const diagnoses = await skill.checkFile('test.ts', content);
       expect(diagnoses.length).toBeGreaterThan(0);
-      expect(diagnoses[0].metadata.ruleId).toBe('xss-risk');
+      expect(diagnoses[0]!.metadata!.ruleId).toBe('xss-risk');
     });
   });
 
@@ -159,7 +162,7 @@ describe('SecuritySkill', () => {
       // @ts-expect-error - accessing private method for testing
       const diagnoses = await skill.checkFile('test.ts', content);
       expect(diagnoses.length).toBeGreaterThan(0);
-      expect(diagnoses[0].metadata.ruleId).toBe('eval-usage');
+      expect(diagnoses[0]!.metadata!.ruleId).toBe('eval-usage');
     });
 
     it('should detect new Function usage', async () => {
@@ -167,7 +170,7 @@ describe('SecuritySkill', () => {
       // @ts-expect-error - accessing private method for testing
       const diagnoses = await skill.checkFile('test.ts', content);
       expect(diagnoses.length).toBeGreaterThan(0);
-      expect(diagnoses[0].metadata.ruleId).toBe('eval-usage');
+      expect(diagnoses[0]!.metadata!.ruleId).toBe('eval-usage');
     });
   });
 
@@ -177,8 +180,8 @@ describe('SecuritySkill', () => {
       // @ts-expect-error - accessing private method for testing
       const diagnoses = await skill.checkFile('test.ts', content);
       expect(diagnoses.length).toBeGreaterThan(0);
-      expect(diagnoses[0].metadata.ruleId).toBe('insecure-random');
-      expect(diagnoses[0].severity).toBe('info');
+      expect(diagnoses[0]!.metadata!.ruleId).toBe('insecure-random');
+      expect(diagnoses[0]!.severity).toBe('info');
     });
   });
 
@@ -188,21 +191,21 @@ describe('SecuritySkill', () => {
       // @ts-expect-error - accessing private method for testing
       const diagnoses = await skill.checkFile('test.ts', content);
       expect(diagnoses.length).toBeGreaterThan(0);
-      expect(diagnoses[0].metadata.ruleId).toBe('http-url');
+      expect(diagnoses[0]!.metadata!.ruleId).toBe('http-url');
     });
 
     it('should not flag localhost HTTP', async () => {
       const content = `fetch('http://localhost:3000/api');`;
       // @ts-expect-error - accessing private method for testing
       const diagnoses = await skill.checkFile('test.ts', content);
-      expect(diagnoses.some(d => d.metadata.ruleId === 'http-url')).toBe(false);
+      expect(diagnoses.some(d => d.metadata!.ruleId === 'http-url')).toBe(false);
     });
 
     it('should not flag 127.0.0.1 HTTP', async () => {
       const content = `fetch('http://127.0.0.1:3000/api');`;
       // @ts-expect-error - accessing private method for testing
       const diagnoses = await skill.checkFile('test.ts', content);
-      expect(diagnoses.some(d => d.metadata.ruleId === 'http-url')).toBe(false);
+      expect(diagnoses.some(d => d.metadata!.ruleId === 'http-url')).toBe(false);
     });
   });
 
@@ -212,8 +215,8 @@ describe('SecuritySkill', () => {
       // @ts-expect-error - accessing private method for testing
       const diagnoses = await skill.checkFile('test.ts', content);
       expect(diagnoses.length).toBeGreaterThan(0);
-      expect(diagnoses[0].metadata.ruleId).toBe('disabled-security');
-      expect(diagnoses[0].severity).toBe('critical');
+      expect(diagnoses[0]!.metadata!.ruleId).toBe('disabled-security');
+      expect(diagnoses[0]!.severity).toBe('critical');
     });
   });
 
@@ -223,7 +226,7 @@ describe('SecuritySkill', () => {
       // @ts-expect-error - accessing private method for testing
       const diagnoses = await skill.checkFile('test.ts', content);
       expect(diagnoses.length).toBeGreaterThan(0);
-      expect(diagnoses[0].metadata.ruleId).toBe('cors-wildcard');
+      expect(diagnoses[0]!.metadata!.ruleId).toBe('cors-wildcard');
     });
 
     it('should detect CORS wildcard in cors() call', async () => {
@@ -231,7 +234,7 @@ describe('SecuritySkill', () => {
       // @ts-expect-error - accessing private method for testing
       const diagnoses = await skill.checkFile('test.ts', content);
       expect(diagnoses.length).toBeGreaterThan(0);
-      expect(diagnoses[0].metadata.ruleId).toBe('cors-wildcard');
+      expect(diagnoses[0]!.metadata!.ruleId).toBe('cors-wildcard');
     });
   });
 

@@ -9,7 +9,8 @@
  * 5. 回滚机制
  */
 
-import * as fs from 'fs';
+import * as fsp from 'fs/promises';
+import * as os from 'os';
 import * as path from 'path';
 import { Diagnosis, Fix, FileChange } from '../../types';
 import { SandboxManager } from '../sandbox';
@@ -77,9 +78,13 @@ export class FixEngine {
 
   /**
    * 预览修复效果
+   *
+   * 流程：创建沙箱 → 启动原始 server → 应用修复 → 重启 server
+   * 视觉对比（screenshot/pixelmatch）已随 web/gui 一并删除，
+   * 改用 previewUrl 让用户自行访问对比。
    */
   async previewFix(
-    diagnosis: Diagnosis,
+    _diagnosis: Diagnosis,
     fix: Fix,
     projectPath: string
   ): Promise<FixResult> {
@@ -94,46 +99,27 @@ export class FixEngine {
     }
 
     let sandboxId: string | undefined;
+    let beforeUrl: string | undefined;
     try {
       // 1. 创建沙箱
-      const sandbox = await this.sandboxManager.create({
-        projectPath,
-        port: 3456,
-      });
-      sandboxId = sandbox.id;
+      sandboxId = await this.sandboxManager.create(projectPath);
+      beforeUrl = await this.sandboxManager.startServer(sandboxId, 3456);
 
-      // 2. 启动原始版本并截图
-      const beforeScreenshot = path.join(projectPath, '.qa-agent', 'before.png');
-      await this.sandboxManager.startServer(sandbox.id, 3456);
-      await this.sandboxManager.captureScreenshot(sandbox.id, beforeScreenshot);
+      // 2. 应用修复
+      await this.applyFix(fix, projectPath);
 
-      // 3. 应用修复
-      await this.sandboxManager.applyFix(sandbox.id, fix);
-
-      // 4. 重启服务器并截图
-      const fixedUrl = await this.sandboxManager.startServer(sandbox.id, 3457);
-      const afterScreenshot = path.join(projectPath, '.qa-agent', 'after.png');
-      await this.sandboxManager.captureScreenshot(sandbox.id, afterScreenshot);
-
-      // 5. 视觉对比
-      const diffPath = path.join(projectPath, '.qa-agent', 'diff.png');
-      const { diffPercentage } = await this.sandboxManager.visualDiff(
-        beforeScreenshot,
-        afterScreenshot,
-        diffPath
-      );
+      // 3. 重启服务器（端口错开避免冲突）
+      const fixedUrl = await this.sandboxManager.startServer(sandboxId, 3457);
 
       return {
         success: true,
         fix,
-        applied: false,
+        applied: true,
         verified: false,
         previewUrl: fixedUrl,
-        beforeScreenshot,
-        afterScreenshot,
-        diffPercentage,
+        // 视觉对比已下线；保留 beforeUrl 供调用方展示
+        beforeScreenshot: beforeUrl,
       };
-
     } catch (error) {
       return {
         success: false,
@@ -194,10 +180,11 @@ export class FixEngine {
   async verifyFix(fix: Fix, projectPath: string): Promise<boolean> {
     let sandboxId: string | undefined;
     try {
-      const sandbox = await this.sandboxManager.create({ projectPath });
-      sandboxId = sandbox.id;
-      await this.sandboxManager.applyFix(sandbox.id, fix);
-      const { success } = await this.sandboxManager.runTests(sandbox.id);
+      sandboxId = await this.sandboxManager.create(projectPath);
+      // 修复副本里的文件：先复制到临时位置再操作
+      const sandboxPath = path.join(os.tmpdir(), 'qa-agent-sandbox', sandboxId);
+      await this.applyFix(fix, sandboxPath);
+      const { success } = await this.sandboxManager.runTests(sandboxId);
       return success;
     } catch {
       return false;
@@ -234,7 +221,9 @@ export class FixEngine {
   async rollback(rollbackId: string, projectPath: string): Promise<void> {
     const rollbackPath = path.join(projectPath, '.qa-agent', 'rollback', rollbackId);
 
-    if (!fs.existsSync(rollbackPath)) {
+    try {
+      await fsp.access(rollbackPath);
+    } catch {
       throw new Error(`Rollback point ${rollbackId} not found`);
     }
 
@@ -244,46 +233,48 @@ export class FixEngine {
 
 // ============================================
 // 模块级辅助函数（避免类内动态 import）
+// 注意：以下函数都改用 fs.promises 异步 I/O，
+//       避免大文件读取阻塞事件循环。
 // ============================================
 
 async function replaceInFile(filePath: string, search: string, replace: string): Promise<void> {
   if (!search) {
     throw new Error('replace requires oldContent to search for');
   }
-  const content = fs.readFileSync(filePath, 'utf-8');
+  const content = await fsp.readFile(filePath, 'utf-8');
   if (!content.includes(search)) {
     throw new Error(`Search pattern not found in ${filePath}`);
   }
+  // 全局只替换一次：避免一处 search 文本在文件里出现多次时只改第一处但下游误以为"全文一致"
   const newContent = content.replace(search, replace);
-  await fs.promises.writeFile(filePath, newContent, 'utf-8');
+  await fsp.writeFile(filePath, newContent, 'utf-8');
 }
 
 async function insertInFile(filePath: string, line: number, content: string): Promise<void> {
-  const existing = fs.readFileSync(filePath, 'utf-8');
+  const existing = await fsp.readFile(filePath, 'utf-8');
   const lines = existing.split('\n');
   const insertAt = Math.max(0, Math.min(line, lines.length));
   lines.splice(insertAt, 0, content);
-  await fs.promises.writeFile(filePath, lines.join('\n'), 'utf-8');
+  await fsp.writeFile(filePath, lines.join('\n'), 'utf-8');
 }
 
 async function deleteInFile(filePath: string, search: string): Promise<void> {
   if (!search) {
     throw new Error('delete requires oldContent to search for');
   }
-  const content = fs.readFileSync(filePath, 'utf-8');
+  const content = await fsp.readFile(filePath, 'utf-8');
   if (!content.includes(search)) {
     throw new Error(`Search pattern not found in ${filePath}`);
   }
+  // 第一次匹配后停止，避免误删所有同名片段
   const newContent = content.replace(search, '');
-  await fs.promises.writeFile(filePath, newContent, 'utf-8');
+  await fsp.writeFile(filePath, newContent, 'utf-8');
 }
 
 async function copyDir(source: string, target: string, exclude: string[]): Promise<void> {
-  if (!fs.existsSync(target)) {
-    fs.mkdirSync(target, { recursive: true });
-  }
+  await fsp.mkdir(target, { recursive: true });
 
-  const entries = fs.readdirSync(source, { withFileTypes: true });
+  const entries = await fsp.readdir(source, { withFileTypes: true });
 
   for (const entry of entries) {
     if (exclude.includes(entry.name)) continue;
@@ -293,9 +284,10 @@ async function copyDir(source: string, target: string, exclude: string[]): Promi
 
     if (entry.isDirectory()) {
       await copyDir(sourcePath, targetPath, exclude);
-    } else {
-      fs.copyFileSync(sourcePath, targetPath);
+    } else if (entry.isFile()) {
+      await fsp.copyFile(sourcePath, targetPath);
     }
+    // 跳过 symlink/socket/device 等特殊文件类型
   }
 }
 

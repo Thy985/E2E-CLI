@@ -6,20 +6,13 @@ import { DiagnoseOptions, Diagnosis, ProjectInfo, SkillContext } from '../../typ
 import { createLogger } from '../../utils/logger';
 import { createFormatter } from '../output/formatter';
 import { createSkillRegistry } from '../../skills/registry';
-import { A11ySkill } from '../../skills/builtin/a11y';
-import { E2ESkill } from '../../skills/builtin/e2e';
-import { PerformanceSkill } from '../../skills/builtin/performance';
-import { SecuritySkill } from '../../skills/builtin/security';
-import { UIUXSkill } from '../../skills/builtin/uiux';
-import { SEOSkill } from '../../skills/builtin/seo';
-import { APISkill } from '../../skills/builtin/api';
-import { DependencySkill } from '../../skills/builtin/dependency';
-import { ComplexitySkill } from '../../skills/builtin/complexity';
+import { getAllBuiltinSkills } from '../../skills/builtin';
 import { createReportGenerator } from '../../engines/report';
 import { createModelClient } from '../../models';
 import { createTools } from '../../tools';
 import { createStorage } from '../../storage';
 import { loadConfig, QAConfig, shouldIgnore } from '../../config';
+import { detectProjectInfo } from '../../utils/project-detector';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -71,16 +64,10 @@ export async function diagnoseCommand(options: any) {
     // Initialize skill registry
     const skillRegistry = createSkillRegistry(logger);
     
-    // Register built-in skills
-    skillRegistry.register(new A11ySkill());
-    skillRegistry.register(new E2ESkill());
-    skillRegistry.register(new PerformanceSkill());
-    skillRegistry.register(new SecuritySkill());
-    skillRegistry.register(new UIUXSkill());
-    skillRegistry.register(new SEOSkill());
-    skillRegistry.register(new APISkill());
-    skillRegistry.register(new DependencySkill());
-    skillRegistry.register(new ComplexitySkill());
+    // Register built-in skills (single source: skills/builtin/index.ts)
+    for (const skill of getAllBuiltinSkills()) {
+      skillRegistry.register(skill);
+    }
 
     // Filter skills (respect disabled skills from config)
     const disabledSkills = config.skills?.disabled || [];
@@ -177,50 +164,11 @@ export async function diagnoseCommand(options: any) {
 }
 
 async function getProjectInfo(projectPath: string, config?: QAConfig): Promise<ProjectInfo> {
-  const packageJsonPath = path.join(projectPath, 'package.json');
-  
-  // Use config values as defaults
-  let name = config?.project?.name || path.basename(projectPath);
-  let type: ProjectInfo['type'] = config?.project?.type || 'webapp';
-  let framework: string | undefined = config?.project?.framework;
-
-  // Auto-detect from package.json if not in config
-  try {
-    const packageJson = JSON.parse(await fs.readFile(packageJsonPath, 'utf-8'));
-    
-    if (!config?.project?.name) {
-      name = packageJson.name || name;
-    }
-
-    // Detect framework if not in config
-    if (!config?.project?.framework) {
-      const deps = { ...packageJson.dependencies, ...packageJson.devDependencies };
-      if (deps.react) framework = 'react';
-      else if (deps.vue) framework = 'vue';
-      else if (deps.angular) framework = 'angular';
-      else if (deps.svelte) framework = 'svelte';
-      else if (deps.next) framework = 'next';
-      else if (deps.nuxt) framework = 'nuxt';
-    }
-
-    // Detect type if not in config
-    if (!config?.project?.type) {
-      const deps = { ...packageJson.dependencies, ...packageJson.devDependencies };
-      if (deps.express || deps.fastify || deps.koa) type = 'api';
-      else if (packageJson.bin) type = 'cli';
-      else if (deps.typescript && !deps.react && !deps.vue) type = 'library';
-    }
-
-  } catch {
-    // package.json not found, use defaults
-  }
-
-  return {
-    name,
-    path: projectPath,
-    type,
-    framework,
-  };
+  return detectProjectInfo(projectPath, {
+    name: config?.project?.name,
+    type: config?.project?.type,
+    framework: config?.project?.framework,
+  });
 }
 
 async function outputReport(
