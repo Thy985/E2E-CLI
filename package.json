@@ -34,7 +34,9 @@
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
-    "dev:link": "bun link"
+    "dev:link": "bun link",
+    "eval": "bun run src/cli/index.ts eval",
+    "eval:ci": "bun run src/ci/eval-harness.ts"
   },
   "dependencies": {
     "@types/js-yaml": "^4.0.9",
