@@ -16,6 +16,12 @@ import {
   generateReport,
   checkQualityGate,
 } from '../../engines/harness/evaluation-engine';
+import {
+  loadEvalHistory,
+  saveEvalHistory,
+  type EvalHistoryEntry,
+} from '../../engines/harness/eval-history';
+import { generateDashboard } from '../../engines/harness/dashboard';
 import type {
   Diagnosis,
   Fix,
@@ -250,6 +256,9 @@ export const evalCommand = new Command('eval')
   .option('--list', 'List all golden cases without running')
   .option('--stats', 'Show golden set statistics')
   .option('--verbose', 'Show per-case details')
+  .option('--no-dashboard', 'Skip dashboard generation')
+  .option('--dashboard-only', 'Only generate dashboard from history without running evaluation')
+  .option('--output <file>', 'Dashboard output file path', 'qa-dashboard.html')
   .action(async (options: {
     skill?: string;
     difficulty?: string;
@@ -257,8 +266,22 @@ export const evalCommand = new Command('eval')
     list?: boolean;
     stats?: boolean;
     verbose?: boolean;
+    noDashboard?: boolean;
+    dashboardOnly?: boolean;
+    output: string;
   }) => {
     const threshold = parseInt(options.threshold, 10);
+
+    // --dashboard-only
+    if (options.dashboardOnly) {
+      const history = loadEvalHistory();
+      const dashboardHtml = generateDashboard({ entries: history });
+      const fs = await import('fs');
+      fs.writeFileSync(options.output, dashboardHtml);
+      logger.info(`Dashboard generated: ${options.output}`);
+      logger.info(`History entries: ${history.length}`);
+      return;
+    }
 
     // --stats
     if (options.stats) {
@@ -416,6 +439,34 @@ export const evalCommand = new Command('eval')
     for (const line of gate.details) {
       logger.info(`  ${line}`);
     }
+    logger.info('');
+
+    // Save to evaluation history
+    const historyEntry: EvalHistoryEntry = {
+      timestamp: new Date().toISOString(),
+      totalCases: overall.totalCases,
+      passedCases: overall.passedCases,
+      failedCases: overall.failedCases,
+      avgPrecision: overall.avgPrecision,
+      avgRecall: overall.avgRecall,
+      avgF1: overall.avgF1,
+      passRate: overall.passRate,
+      bySkill: overall.bySkill,
+      byDifficulty: overall.byDifficulty,
+      qualityGatePassed: gate.passed,
+    };
+    saveEvalHistory(historyEntry);
+    logger.info('📈 Evaluation saved to history');
+
+    // Auto-generate dashboard (unless --no-dashboard)
+    if (!options.noDashboard) {
+      const history = loadEvalHistory();
+      const dashboardHtml = generateDashboard({ entries: history });
+      const fs = await import('fs');
+      fs.writeFileSync(options.output, dashboardHtml);
+      logger.info(`📊 Dashboard generated: ${options.output}`);
+    }
+
     logger.info('');
 
     if (gate.passed) {

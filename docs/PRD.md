@@ -240,7 +240,7 @@ qa-agent skill install @qa-agent/skill-security
 - [x] Figma 集成（设计令牌同步、截图对比）
 - [x] CI/CD 配置生成（GitHub Actions, GitLab CI, Jenkins）
 
-### Phase 2: AI Harness 工程 🔧 进行中 (95%)
+### Phase 2: AI Harness 工程 ✅ 已完成 (100%)
 - [x] Golden Set 基准数据集
   - [x] 类型定义和数据结构
   - [x] A11y Golden Set (10 用例)
@@ -250,14 +250,14 @@ qa-agent skill install @qa-agent/skill-security
   - [x] 回归检测
   - [x] 质量门禁
   - [x] 报告生成
-- [x] `qa-agent eval` CLI 命令（--list, --stats, --skill, --difficulty, --threshold）
+- [x] `qa-agent eval` CLI 命令（--list, --stats, --skill, --difficulty, --threshold, --dashboard-only）
 - [x] 验证引擎：
   - [x] Level 0: 格式验证
   - [x] Level 1: 编译验证（tsc 集成）
   - [x] Level 2: 测试验证（多 runner 支持 + 前后对比 + 新增失败检测）
   - [x] Level 3: AST diff 验证（@typescript-eslint/parser + 节点签名对比）
 - [x] CI 集成 AI Harness 评估（GitHub Actions + eval:ci 脚本 + 质量门禁）
-- [ ] 监控面板（趋势图、按 skill 分解）
+- [x] 监控面板（F1 趋势图、按 skill 分解、历史对比、Sparkline 迷你图）
 
 ### Phase 3: 诊断精度提升
 - [ ] AST 解析替代正则（Babel/ESLint/TsQuery 集成）
