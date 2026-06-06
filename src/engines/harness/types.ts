@@ -113,6 +113,12 @@ export interface EvaluationMetrics {
     f1: number;
     fixedCount: number;
     expectedFixCount: number;
+    structuralChanges?: {
+      addedNodes: number;
+      removedNodes: number;
+      modifiedNodes: number;
+      totalChanges: number;
+    };
   };
   overall: {
     precision: number;

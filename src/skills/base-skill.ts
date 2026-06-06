@@ -56,7 +56,15 @@ export abstract class BaseSkill implements Skill {
   /**
    * Check if this skill can auto-fix the given diagnosis
    */
-  canAutoFix(_diagnosis: Diagnosis): boolean {
+  canAutoFix(diagnosis: Diagnosis): boolean {
+    // Explicit fixable flag in metadata overrides everything
+    if (diagnosis.metadata?.fixable === true) return true;
+    if (diagnosis.metadata?.fixable === false) return false;
+
+    // Use fixSuggestion.autoApplicable if present
+    if (diagnosis.fixSuggestion?.autoApplicable === true) return true;
+
+    // Fallback: check capabilities
     return this.capabilities.some(
       cap => cap.autoFixable && cap.riskLevel === 'low'
     );

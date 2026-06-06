@@ -253,33 +253,18 @@ export class PerformanceSkill extends BaseSkill {
   }
 
   /**
-   * Remove console statements by wrapping in production check
+   * Remove console statements — comment out instead of wrapping in runtime check
+   * Wrapping in `if (process.env.NODE_ENV !== 'production')` adds runtime overhead.
+   * Better approach: comment out the line so build tools (babel/terser) can dead-code-eliminate.
    */
   private fixConsoleLog(content: string, diagnosis: Diagnosis): FileChange[] {
     const line = diagnosis.location.line || 1;
     const lines = content.split('\n');
     const targetLine = lines[line - 1];
+    const indentation = targetLine.match(/^(\s*)/)?.[1] || '';
 
-    // Wrap console statement in a production environment check
-    // This preserves logs during development while removing them in production
-    const fixedLine = targetLine.replace(
-      /(\s*)(console\.(log|debug|info|warn)\s*\()/,
-      '$1if (process.env.NODE_ENV !== \'production\') $2'
-    );
-
-    // If the replacement didn't change anything (e.g., the console is in a complex expression),
-    // fall back to wrapping the entire line
-    if (fixedLine === targetLine) {
-      const indentation = targetLine.match(/^(\s*)/)?.[1] || '';
-      const trimmedLine = targetLine.trim();
-      return [{
-        file: diagnosis.location.file,
-        type: 'replace',
-        position: { line, column: 1 },
-        content: `${indentation}if (process.env.NODE_ENV !== 'production') { ${trimmedLine} }`,
-        oldContent: targetLine,
-      }];
-    }
+    // Comment out the console statement with a clear explanation
+    const fixedLine = `${indentation}// TODO: Remove console.${diagnosis.metadata?.match?.match(/console\.(\w+)/)?.[1] ?? 'log'} in production\n${indentation}// ${targetLine.trim()}`;
 
     return [{
       file: diagnosis.location.file,

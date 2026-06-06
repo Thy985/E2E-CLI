@@ -114,14 +114,17 @@ export function analyzeTrend(
   const values = history.map((h) => h[metric]);
   const timestamps = history.map((h) => h.timestamp);
 
-  // 计算趋势：比较最近 3 条和最早 3 条的平均值
-  const recentCount = Math.min(3, Math.floor(history.length / 2));
+  // Compare recent entries vs older entries without overlap
+  const halfCount = Math.floor(history.length / 2);
+  const recentCount = Math.min(3, halfCount);
+  const olderCount = Math.min(3, history.length - recentCount);
+
   const recentAvg =
     values.slice(0, recentCount).reduce((s, v) => s + v, 0) / recentCount;
   const olderAvg =
     values
-      .slice(-recentCount)
-      .reduce((s, v) => s + v, 0) / recentCount;
+      .slice(-olderCount)
+      .reduce((s, v) => s + v, 0) / olderCount;
 
   const change = recentAvg - olderAvg;
   let trend: 'improving' | 'declining' | 'stable';

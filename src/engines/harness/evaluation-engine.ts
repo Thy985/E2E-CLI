@@ -19,7 +19,7 @@ import type { Diagnosis, Fix, FileChange } from '../../types';
 // 评估接口
 // ---------------------------------------------------------------------------
 
-/** 评估修复结果 */
+/** 评估修复结果 — AST 级别验证 + 代码模式匹配 */
 export function evaluateFix(
   testCase: GoldenTestCase,
   fixedCode: string | null,
@@ -34,6 +34,7 @@ export function evaluateFix(
       f1: 0,
       fixedCount: 0,
       expectedFixCount: codePattern ? 1 : 0,
+      structuralChanges: { addedNodes: 0, removedNodes: 0, modifiedNodes: 0, totalChanges: 0 },
     };
   }
 
@@ -58,13 +59,112 @@ export function evaluateFix(
 
   const f1 = precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : 0;
 
+  // AST structural validation
+  let structuralChanges = { addedNodes: 0, removedNodes: 0, modifiedNodes: 0, totalChanges: 0 };
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const parser = require('@typescript-eslint/parser');
+    const beforeAst = parser.parse(testCase.input.code, {
+      sourceType: 'module', ecmaVersion: 'latest', loc: false, range: false, tokens: false, comment: false,
+    });
+    const afterAst = parser.parse(fixedCode, {
+      sourceType: 'module', ecmaVersion: 'latest', loc: false, range: false, tokens: false, comment: false,
+    });
+    structuralChanges = diffAST(beforeAst, afterAst);
+  } catch {
+    // AST parsing failed — structural validation not possible
+  }
+
+  // Penalize precision if structural changes are excessive
+  let adjustedPrecision = precision;
+  if (structuralChanges.totalChanges > 50 && adjustedPrecision > 0) {
+    adjustedPrecision *= Math.max(0.3, 1 - (structuralChanges.totalChanges - 50) / 100);
+  }
+  const adjustedF1 = adjustedPrecision + recall > 0 ? (2 * adjustedPrecision * recall) / (adjustedPrecision + recall) : 0;
+
   return {
-    precision,
+    precision: adjustedPrecision,
     recall,
-    f1,
+    f1: adjustedF1,
     fixedCount: foundPatterns + removedCount,
     expectedFixCount: expectedPatterns + totalShouldNotExist,
+    structuralChanges,
   };
+}
+
+/** Diff two ASTs and count structural changes */
+function diffAST(
+  before: unknown,
+  after: unknown,
+): { addedNodes: number; removedNodes: number; modifiedNodes: number; totalChanges: number } {
+  const beforeNodes = collectNodeSignatures(before);
+  const afterNodes = collectNodeSignatures(after);
+
+  const beforeSet = new Set(beforeNodes);
+  const afterSet = new Set(afterNodes);
+
+  let addedNodes = 0;
+  for (const sig of afterNodes) {
+    if (!beforeSet.has(sig)) addedNodes++;
+  }
+
+  let removedNodes = 0;
+  for (const sig of beforeNodes) {
+    if (!afterSet.has(sig)) removedNodes++;
+  }
+
+  const totalUnique = new Set([...beforeNodes, ...afterNodes]).size;
+  const unchanged = beforeNodes.filter((s) => afterSet.has(s)).length;
+  const modifiedNodes = Math.max(0, totalUnique - beforeNodes.length - afterNodes.length + unchanged);
+
+  return {
+    addedNodes,
+    removedNodes,
+    modifiedNodes: Math.min(modifiedNodes, addedNodes + removedNodes),
+    totalChanges: addedNodes + removedNodes + modifiedNodes,
+  };
+}
+
+/** Collect node signatures from AST for comparison */
+function collectNodeSignatures(node: unknown, path = 'root'): string[] {
+  const signatures: string[] = [];
+
+  if (node === null || node === undefined || typeof node !== 'object') {
+    return signatures;
+  }
+
+  if (Array.isArray(node)) {
+    node.forEach((item, index) => {
+      const childPath = `${path}[${index}]`;
+      signatures.push(...collectNodeSignatures(item, childPath));
+    });
+    return signatures;
+  }
+
+  const obj = node as Record<string, unknown>;
+  const type = obj.type as string | undefined;
+
+  if (type) {
+    signatures.push(`${type}:${path}`);
+
+    const childKeys = [
+      'body', 'declarations', 'expression', 'argument',
+      'arguments', 'callee', 'consequent', 'alternate', 'init', 'test',
+      'update', 'left', 'right', 'properties', 'elements', 'key', 'value',
+      'object', 'property', 'params', 'block', 'handler',
+      'finalizer', 'declaration', 'specifiers', 'source', 'local',
+      'imported', 'exported',
+    ];
+
+    for (const key of childKeys) {
+      if (obj[key] !== undefined) {
+        const childPath = `${path}.${key}`;
+        signatures.push(...collectNodeSignatures(obj[key], childPath));
+      }
+    }
+  }
+
+  return signatures;
 }
 
 /** 应用 FileChange[] 到原始代码 */
@@ -164,7 +264,7 @@ export async function evaluateCase(
   };
 }
 
-/** 评估诊断结果 */
+/** 评估诊断结果 — 按实例匹配而非仅按类型匹配 */
 export function evaluateDiagnosis(
   testCase: GoldenTestCase,
   actualDiagnosis: Diagnosis[],
@@ -183,8 +283,6 @@ export function evaluateDiagnosis(
   const tp = [...expectedTypes].filter((t) => actualTypes.has(t)).length;
 
   // False Positives: 实际发现的但不期望的类型
-  // 包括：(1) 明确定义的 falsePositiveTypes 中出现的
-  //        (2) 不在 expectedTypes 也不在 falsePositiveTypes 中的"额外"规则
   const fpFromDefined = [...falsePositiveTypes].filter((t) => actualTypes.has(t)).length;
   const fpExtra = [...actualTypes].filter((t) => !expectedTypes.has(t) && !falsePositiveTypes.has(t)).length;
   const fp = fpFromDefined + fpExtra;
@@ -192,17 +290,47 @@ export function evaluateDiagnosis(
   // False Negatives: 期望发现但实际没发现的
   const fn = [...expectedTypes].filter((t) => !actualTypes.has(t)).length;
 
-  const precision = tp + fp > 0 ? tp / (tp + fp) : 0;
-  const recall = tp + fn > 0 ? tp / (tp + fn) : 0;
+  // 按实例数量计算更精确的指标
+  // 如果 expectedCount > issueTypes.length，说明期望多个同类型实例
+  const expectedInstanceCount = testCase.expectedDiagnosis.issueCount;
+
+  // 如果用例期望多个实例，按实例数量调整 TP/FN
+  let adjustedTp = tp;
+  let adjustedFn = fn;
+
+  if (expectedInstanceCount > expectedTypes.size && expectedTypes.size > 0) {
+    // 期望多个实例但类型数量少 — 按实例比例调整
+    // Cap per-type expected count so that finding at least 1 instance of an expected type counts as a full TP
+    const instancesPerType = Math.ceil(expectedInstanceCount / expectedTypes.size);
+    const detectedInstancesPerType = new Map<string, number>();
+    for (const d of actualDiagnosis) {
+      const ruleId = d.metadata?.ruleId;
+      if (ruleId) {
+        detectedInstancesPerType.set(ruleId, (detectedInstancesPerType.get(ruleId) || 0) + 1);
+      }
+    }
+
+    adjustedTp = 0;
+    for (const expectedType of expectedTypes) {
+      const found = detectedInstancesPerType.get(expectedType) || 0;
+      // If at least one instance found, credit a full type-level TP
+      // Additional instances capped at instancesPerType - 1
+      adjustedTp += found > 0 ? 1 + Math.min(found - 1, instancesPerType - 1) : 0;
+    }
+    adjustedFn = Math.max(0, expectedInstanceCount - adjustedTp);
+  }
+
+  const precision = adjustedTp + fp > 0 ? adjustedTp / (adjustedTp + fp) : 0;
+  const recall = adjustedTp + adjustedFn > 0 ? adjustedTp / (adjustedTp + adjustedFn) : 0;
   const f1 = precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : 0;
 
   return {
     precision,
     recall,
     f1,
-    truePositives: tp,
+    truePositives: adjustedTp,
     falsePositives: fp,
-    falseNegatives: fn,
+    falseNegatives: adjustedFn,
     expectedCount: testCase.expectedDiagnosis.issueCount,
     actualCount: actualDiagnosis.length,
     issueTypes: {

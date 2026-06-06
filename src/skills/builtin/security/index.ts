@@ -240,16 +240,35 @@ export class SecuritySkill extends BaseSkill {
     const matchedCode = diagnosis.metadata?.matchedCode as string | undefined;
     if (!matchedCode) return [];
 
-    // Find the line with the hardcoded secret and replace with process.env
     const line = diagnosis.location.line || 1;
     const lines = content.split('\n');
     const targetLine = lines[line - 1];
 
-    // Replace hardcoded secret with process.env reference
-    const fixedLine = targetLine
-      .replace(/(['"]?\w*['"]?)\s*[=:]\s*['"][^'"]{8,}['"]/, '$1 = process.env.API_KEY || ""')
-      .replace(/(['"]?\w*password\w*['"]?)\s*[=:]\s*['"][^'"]+['"]/i, '$1 = process.env.DB_PASSWORD || ""')
-      .replace(/(['"]?\w*secret\w*['"]?)\s*[=:]\s*['"][^'"]+['"]/i, '$1 = process.env.SECRET || ""');
+    // Extract the variable name and replace value with process.env reference
+    const varNameMatch = targetLine.match(/(?:const\s+|let\s+|var\s+)?(\w+)\s*[=:]\s*['"]/);
+    const varName = varNameMatch ? varNameMatch[1] : 'API_KEY';
+
+    // Map common variable names to env variable names
+    const envMap: Record<string, string> = {
+      password: 'DB_PASSWORD',
+      passwd: 'DB_PASSWORD',
+      pwd: 'DB_PASSWORD',
+      apiKey: 'API_KEY',
+      api_key: 'API_KEY',
+      apikey: 'API_KEY',
+      secret: 'SECRET',
+      token: 'AUTH_TOKEN',
+      privateKey: 'PRIVATE_KEY',
+      private_key: 'PRIVATE_KEY',
+    };
+
+    const envName = envMap[varName.toLowerCase()] || varName.toUpperCase();
+    const fixedLine = targetLine.replace(
+      /(['"]?\w*['"]?)\s*[=:]\s*['"][^'"]{8,}['"]/,
+      `$1 = process.env.${envName} || ''`
+    );
+
+    if (fixedLine === targetLine) return [];
 
     return [{
       file: diagnosis.location.file,
@@ -265,14 +284,32 @@ export class SecuritySkill extends BaseSkill {
     const lines = content.split('\n');
     const targetLine = lines[line - 1];
 
-    // Replace eval with JSON.parse
-    const fixedLine = targetLine.replace(
-      /eval\s*\(\s*['"]\(\s*['"]?\s*\+\s*(\w+)\s*\+\s*['"]\s*\)\s*['"]\s*\)/g,
-      'JSON.parse($1)'
-    ).replace(
-      /eval\s*\(\s*['"]\s*['"]?\s*\+\s*(\w+)\s*\+\s*['"]\s*\)\s*\)/g,
-      'JSON.parse($1)'
-    );
+    // Detect the eval pattern and suggest safe alternatives
+    // eval(JSON) → JSON.parse
+    // eval(expression) → Function constructor or safer alternative
+    const jsonEvalMatch = targetLine.match(/eval\s*\(\s*(?:['"]\(.*['"]?\s*\+\s*(\w+)\s*\+\s*['"].*['"]\s*\)|['"](.+?)['"]\s*)\)/);
+    let fixedLine: string;
+
+    if (jsonEvalMatch) {
+      // eval("(" + x + ")") pattern → JSON.parse
+      fixedLine = targetLine.replace(
+        /eval\s*\(\s*['"]\(\s*['"]?\s*\+\s*(\w+)\s*\+\s*['"]\s*\)\s*['"]\s*\)/g,
+        'JSON.parse($1)'
+      );
+    } else if (targetLine.includes('eval(')) {
+      // Generic eval — replace with comment and safe placeholder
+      fixedLine = targetLine.replace(
+        /eval\s*\((.+?)\)/g,
+        '/* SECURITY FIX: Replace eval with safer alternative */ JSON.parse($1)'
+      );
+    } else {
+      fixedLine = targetLine.replace(
+        /new\s+Function\s*\(/g,
+        '/* SECURITY FIX: Replace new Function with safer alternative */ function('
+      );
+    }
+
+    if (fixedLine === targetLine) return [];
 
     return [{
       file: diagnosis.location.file,
@@ -291,21 +328,11 @@ export class SecuritySkill extends BaseSkill {
     const lines = content.split('\n');
     const targetLine = lines[line - 1];
 
-    // Handle innerHTML assignment
-    if (matchedCode.includes('innerHTML')) {
-      // Match innerHTML = '...' + variable + '...' pattern
-      // Handle both single and double quotes in the string literals
+    // Handle dangerouslySetInnerHTML (React) — wrap value with DOMPurify.sanitize
+    if (matchedCode.includes('dangerouslySetInnerHTML')) {
       const fixedLine = targetLine.replace(
-        /\.innerHTML\s*=\s*[^;]+;?$/,
-        (match) => {
-          // Extract the variable(s) from the concatenation
-          const varMatch = match.match(/\+\s*(\w+)\s*\+/);
-          if (varMatch) {
-            return `.textContent = ${varMatch[1]};`;
-          }
-          // If no concatenation pattern found, just use textContent with a safe fallback
-          return `.textContent = '';`;
-        }
+        /dangerouslySetInnerHTML\s*=\s*\{\s*__html:\s*(\w+)\s*\}/g,
+        'dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize($1) }}'
       );
       return [{
         file: diagnosis.location.file,
@@ -316,11 +343,32 @@ export class SecuritySkill extends BaseSkill {
       }];
     }
 
-    // Handle dangerouslySetInnerHTML (React)
-    if (matchedCode.includes('dangerouslySetInnerHTML')) {
+    // Handle innerHTML — replace with textContent only when the assignment is purely concatenation
+    // This preserves the original intent of setting text content safely
+    if (matchedCode.includes('innerHTML')) {
+      // Check if it's a string concatenation pattern: .innerHTML = 'text' + var + 'text'
+      const concatMatch = targetLine.match(/(\w+\.innerHTML)\s*=\s*['"]([^'"]*)['"]\s*\+\s*(\w+)\s*\+\s*['"]([^'"]*)['"]/);
+      if (concatMatch) {
+        // Replace: el.innerHTML = 'prefix' + userInput + 'suffix'
+        // With: el.textContent = 'prefix' + userInput + 'suffix'
+        // This is safe because textContent does NOT interpret HTML
+        const fixedLine = targetLine.replace(
+          /\.innerHTML\s*=\s*['"][^'"]*['"]\s*\+\s*\w+\s*\+\s*['"][^'"]*['"]/,
+          '.textContent = ' + concatMatch[2] + ' + ' + concatMatch[3] + ' + ' + concatMatch[4]
+        );
+        return [{
+          file: diagnosis.location.file,
+          type: 'replace',
+          position: { line, column: 1 },
+          content: fixedLine,
+          oldContent: targetLine,
+        }];
+      }
+
+      // Simple innerHTML assignment without concatenation
       const fixedLine = targetLine.replace(
-        /dangerouslySetInnerHTML\s*=\s*\{\s*__html:\s*(\w+)\s*\}/g,
-        'dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize($1) }}'
+        /\.innerHTML\s*=\s*(.+?);?$/,
+        '.textContent = $1;'
       );
       return [{
         file: diagnosis.location.file,
@@ -351,10 +399,44 @@ export class SecuritySkill extends BaseSkill {
     const lines = content.split('\n');
     const targetLine = lines[line - 1];
 
-    // Replace string concatenation with parameterized query placeholder
+    // Replace template literal string concatenation with parameterized query
+    // Template: query(`SELECT * FROM users WHERE id = ${userId}`)
+    // Fixed:    query('SELECT * FROM users WHERE id = ?', [userId])
+    const templateMatch = targetLine.match(/`([^`]*)\$/);
+    if (templateMatch) {
+      // Extract the SQL string and variables from template literal
+      let sqlPart = targetLine.match(/`([^`]*)`/)?.[1];
+      const variables: string[] = [];
+
+      if (sqlPart) {
+        // Replace ${var} with ? and collect variables
+        sqlPart = sqlPart.replace(/\$\{(\w+)\}/g, (_match, varName) => {
+          variables.push(varName);
+          return '?';
+        });
+      }
+
+      const fixedLine = variables.length > 0
+        ? targetLine.replace(/`[^`]*`/, `'${sqlPart}'`).replace(
+          /\)\s*$/,
+          `, [${variables.join(', ')}])`
+        )
+        : targetLine;
+
+      return [{
+        file: diagnosis.location.file,
+        type: 'replace',
+        position: { line, column: 1 },
+        content: fixedLine,
+        oldContent: targetLine,
+      }];
+    }
+
+    // String concatenation pattern: "SELECT * FROM users WHERE id = " + userId
+    // Replace with parameterized style placeholder
     const fixedLine = targetLine
-      .replace(/"\s*\+\s*(\w+)\s*\+\s*"/g, '", $1, "')
-      .replace(/\$\{(\w+)\}/g, '?');
+      .replace(/\s*\+\s*(\w+)\s*$/g, ', [$1]')
+      .replace(/=\s*["']/g, "= '");
 
     return [{
       file: diagnosis.location.file,

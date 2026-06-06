@@ -101,7 +101,7 @@ export const performanceGoldenCases: GoldenTestCase[] = [
       falsePositives: [],
     },
     expectedFix: {
-      codePattern: "if (process.env.NODE_ENV !== 'production')",
+      codePattern: '// TODO: Remove console',
       shouldNotExist: [],
     },
     difficulty: 'easy',

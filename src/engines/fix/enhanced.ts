@@ -109,10 +109,11 @@ export class FixEngine {
         if (!verifyResult.success) {
           result.warnings.push(...verifyResult.errors);
           this.logger.warn(`⚠️ Fix verification issues: ${fix.id}`);
-          
-          // Rollback if verification failed
-          if (rollbackId && verifyResult.diff.new > 0) {
-            this.logger.info(`Rolling back fix due to new issues introduced`);
+
+          // Rollback if: (1) new issues introduced, OR (2) fix had no effect (no issues fixed)
+          const shouldRollback = verifyResult.diff.new > 0 || verifyResult.diff.fixed === 0;
+          if (rollbackId && shouldRollback) {
+            this.logger.info(`Rolling back fix: verification failed (new=${verifyResult.diff.new}, fixed=${verifyResult.diff.fixed})`);
             await this.rollbackManager.rollback(rollbackId);
             result.applied = false;
             result.errors.push('Fix rolled back due to verification failure');
@@ -262,8 +263,9 @@ export class FixEngine {
 
   private async replaceInFile(filePath: string, search: string, replace: string): Promise<void> {
     const content = fs.readFileSync(filePath, 'utf-8');
-    const newContent = content.replace(search, replace);
-    
+    // Replace ALL occurrences, not just the first one
+    const newContent = content.split(search).join(replace);
+
     if (content === newContent) {
       this.logger.warn(`No changes made to ${filePath} - pattern not found`);
     } else {

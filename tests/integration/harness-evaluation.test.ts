@@ -206,21 +206,21 @@ describe('Golden Set loading', () => {
 
 describe('evaluateDiagnosis', () => {
   it('should return perfect metrics when actual matches expected', () => {
-    const testCase = getCasesBySkill('a11y')[0]; // a11y-missing-alt-001, expects img-alt
-    const actual = makeDiagnosis(['img-alt']);
+    const testCase = getCasesBySkill('a11y')[0]; // a11y-missing-alt-001, expects img-alt (issueCount=2)
+    const actual = makeDiagnosis(['img-alt', 'img-alt']); // 2 instances to match expected count
 
     const result = evaluateDiagnosis(testCase, actual);
 
     expect(result.precision).toBe(1);
     expect(result.recall).toBe(1);
     expect(result.f1).toBe(1);
-    expect(result.truePositives).toBe(1);
+    expect(result.truePositives).toBe(2);
     expect(result.falsePositives).toBe(0);
     expect(result.falseNegatives).toBe(0);
   });
 
   it('should detect false positives', () => {
-    const testCase = getCasesBySkill('a11y')[0]; // expects img-alt, falsePositives: [button-name, label]
+    const testCase = getCasesBySkill('a11y')[0]; // expects img-alt (issueCount=2), falsePositives: [button-name, label]
     const actual = makeDiagnosis(['img-alt', 'button-name']);
 
     const result = evaluateDiagnosis(testCase, actual);
@@ -230,12 +230,12 @@ describe('evaluateDiagnosis', () => {
   });
 
   it('should detect missed issues (false negatives)', () => {
-    const testCase = getCasesBySkill('a11y')[0]; // expects img-alt
+    const testCase = getCasesBySkill('a11y')[0]; // expects img-alt (issueCount=2)
     const actual = makeDiagnosis([]);
 
     const result = evaluateDiagnosis(testCase, actual);
 
-    expect(result.falseNegatives).toBe(1);
+    expect(result.falseNegatives).toBe(2);
     expect(result.recall).toBe(0);
     expect(result.f1).toBe(0);
   });

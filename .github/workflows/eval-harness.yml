@@ -68,6 +68,6 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .qa-eval-cache
-          key: eval-cache-${{ github.base_ref }}
+          key: eval-cache-${{ github.workflow }}-${{ github.head_ref }}
           restore-keys: |
-            eval-cache-${{ github.base_ref }}
+            eval-cache-${{ github.workflow }}-${{ github.base_ref }}
