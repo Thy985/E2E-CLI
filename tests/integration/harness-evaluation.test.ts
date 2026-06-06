@@ -689,5 +689,100 @@ describe('E2E: Golden case → skill.diagnose() → skill.fix() → evaluateFix'
       expect(fixResult.f1).toBeGreaterThan(0);
     }
   });
+
+  it('should fix eval-usage in security golden case', async () => {
+    const { SecuritySkill } = await import('../../src/skills/builtin/security');
+    const skill = new SecuritySkill();
+    const evalCase = getCasesBySkill('security').find((c) => c.id === 'sec-eval-002')!;
+
+    const context = buildSkillContext(evalCase);
+
+    // Run diagnosis
+    const actualDiagnosis = await skill.diagnose(context);
+    expect(actualDiagnosis.length).toBeGreaterThanOrEqual(1);
+
+    // Run fix
+    const fixes: Fix[] = [];
+    for (const d of actualDiagnosis) {
+      if (skill.canAutoFix(d)) {
+        const fixResult = await skill.fix(d, context);
+        fixes.push(fixResult);
+      }
+    }
+
+    expect(fixes.length).toBeGreaterThanOrEqual(1);
+
+    // Apply all changes
+    const allChanges = fixes.flatMap((f) => f.changes);
+    const fixedCode = applyChanges(evalCase.input.code, allChanges);
+
+    // Evaluate fix
+    const fixResult = evaluateFix(evalCase, fixedCode);
+    expect(fixedCode).toContain('JSON.parse');
+    expect(fixedCode).not.toContain('eval(');
+  });
+
+  it('should fix innerHTML XSS in security golden case', async () => {
+    const { SecuritySkill } = await import('../../src/skills/builtin/security');
+    const skill = new SecuritySkill();
+    const xssCase = getCasesBySkill('security').find((c) => c.id === 'sec-innerhtml-003')!;
+
+    const context = buildSkillContext(xssCase);
+
+    // Run diagnosis
+    const actualDiagnosis = await skill.diagnose(context);
+    expect(actualDiagnosis.length).toBeGreaterThanOrEqual(1);
+
+    // Run fix
+    const fixes: Fix[] = [];
+    for (const d of actualDiagnosis) {
+      if (skill.canAutoFix(d)) {
+        const fixResult = await skill.fix(d, context);
+        fixes.push(fixResult);
+      }
+    }
+
+    expect(fixes.length).toBeGreaterThanOrEqual(1);
+
+    // Apply all changes
+    const allChanges = fixes.flatMap((f) => f.changes);
+    const fixedCode = applyChanges(xssCase.input.code, allChanges);
+
+    // Evaluate fix
+    const fixResult = evaluateFix(xssCase, fixedCode);
+    expect(fixedCode).toContain('textContent');
+    expect(fixedCode).not.toContain('innerHTML =');
+  });
+
+  it('should fix hardcoded-secret in security golden case', async () => {
+    const { SecuritySkill } = await import('../../src/skills/builtin/security');
+    const skill = new SecuritySkill();
+    const secretCase = getCasesBySkill('security').find((c) => c.id === 'sec-hardcoded-key-001')!;
+
+    const context = buildSkillContext(secretCase);
+
+    // Run diagnosis
+    const actualDiagnosis = await skill.diagnose(context);
+    expect(actualDiagnosis.length).toBeGreaterThanOrEqual(1);
+
+    // Run fix
+    const fixes: Fix[] = [];
+    for (const d of actualDiagnosis) {
+      if (skill.canAutoFix(d)) {
+        const fixResult = await skill.fix(d, context);
+        fixes.push(fixResult);
+      }
+    }
+
+    expect(fixes.length).toBeGreaterThanOrEqual(1);
+
+    // Apply all changes
+    const allChanges = fixes.flatMap((f) => f.changes);
+    const fixedCode = applyChanges(secretCase.input.code, allChanges);
+
+    // Evaluate fix
+    expect(fixedCode).toContain('process.env');
+    expect(fixedCode).not.toContain("'sk-1234567890abcdef'");
+  });
 });
 

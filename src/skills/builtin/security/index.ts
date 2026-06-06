@@ -14,6 +14,8 @@ import {
   Diagnosis,
   Severity,
   DiagnosisType,
+  Fix,
+  FileChange,
 } from '../../../types';
 import { generateId } from '../../../utils';
 import { shouldIgnore, isRuleEnabled, getRuleSeverity } from '../../../config';
@@ -171,13 +173,13 @@ export class SecuritySkill extends BaseSkill {
     {
       name: 'secret-detection',
       description: '检测硬编码的敏感信息',
-      autoFixable: false,
+      autoFixable: true,
       riskLevel: 'low' as const,
     },
     {
       name: 'injection-detection',
       description: '检测注入漏洞',
-      autoFixable: false,
+      autoFixable: true,
       riskLevel: 'low' as const,
     },
     {
@@ -187,6 +189,265 @@ export class SecuritySkill extends BaseSkill {
       riskLevel: 'low' as const,
     },
   ];
+
+  async fix(diagnosis: Diagnosis, context: SkillContext): Promise<Fix> {
+    const ruleId = diagnosis.metadata?.ruleId;
+    const filePath = diagnosis.location.file;
+    const content = await context.tools.fs.readFile(filePath);
+
+    let changes: FileChange[] = [];
+
+    switch (ruleId) {
+      case 'hardcoded-secret':
+        changes = this.fixHardcodedSecret(content, diagnosis);
+        break;
+      case 'eval-usage':
+        changes = this.fixEvalUsage(content, diagnosis);
+        break;
+      case 'xss-risk':
+        changes = this.fixXSSRisk(content, diagnosis);
+        break;
+      case 'sql-injection':
+        changes = this.fixSQLInjection(content, diagnosis);
+        break;
+      case 'insecure-random':
+        changes = this.fixInsecureRandom(content, diagnosis);
+        break;
+      case 'http-url':
+        changes = this.fixHTTPUrl(content, diagnosis);
+        break;
+      case 'cors-wildcard':
+        changes = this.fixCORSWildcard(content, diagnosis);
+        break;
+      case 'disabled-security':
+        changes = this.fixDisabledSecurity(content, diagnosis);
+        break;
+      default:
+        throw new Error(`Cannot auto-fix rule: ${ruleId}`);
+    }
+
+    return {
+      id: `Fix-${generateId()}`,
+      diagnosisId: diagnosis.id,
+      description: `修复 ${diagnosis.title}`,
+      changes,
+      riskLevel: 'low',
+      autoApplicable: true,
+    };
+  }
+
+  private fixHardcodedSecret(content: string, diagnosis: Diagnosis): FileChange[] {
+    const matchedCode = diagnosis.metadata?.matchedCode as string | undefined;
+    if (!matchedCode) return [];
+
+    // Find the line with the hardcoded secret and replace with process.env
+    const line = diagnosis.location.line || 1;
+    const lines = content.split('\n');
+    const targetLine = lines[line - 1];
+
+    // Replace hardcoded secret with process.env reference
+    const fixedLine = targetLine
+      .replace(/(['"]?\w*['"]?)\s*[=:]\s*['"][^'"]{8,}['"]/, '$1 = process.env.API_KEY || ""')
+      .replace(/(['"]?\w*password\w*['"]?)\s*[=:]\s*['"][^'"]+['"]/i, '$1 = process.env.DB_PASSWORD || ""')
+      .replace(/(['"]?\w*secret\w*['"]?)\s*[=:]\s*['"][^'"]+['"]/i, '$1 = process.env.SECRET || ""');
+
+    return [{
+      file: diagnosis.location.file,
+      type: 'replace',
+      position: { line, column: 1 },
+      content: fixedLine,
+      oldContent: targetLine,
+    }];
+  }
+
+  private fixEvalUsage(content: string, diagnosis: Diagnosis): FileChange[] {
+    const line = diagnosis.location.line || 1;
+    const lines = content.split('\n');
+    const targetLine = lines[line - 1];
+
+    // Replace eval with JSON.parse
+    const fixedLine = targetLine.replace(
+      /eval\s*\(\s*['"]\(\s*['"]?\s*\+\s*(\w+)\s*\+\s*['"]\s*\)\s*['"]\s*\)/g,
+      'JSON.parse($1)'
+    ).replace(
+      /eval\s*\(\s*['"]\s*['"]?\s*\+\s*(\w+)\s*\+\s*['"]\s*\)\s*\)/g,
+      'JSON.parse($1)'
+    );
+
+    return [{
+      file: diagnosis.location.file,
+      type: 'replace',
+      position: { line, column: 1 },
+      content: fixedLine,
+      oldContent: targetLine,
+    }];
+  }
+
+  private fixXSSRisk(content: string, diagnosis: Diagnosis): FileChange[] {
+    const matchedCode = diagnosis.metadata?.matchedCode as string | undefined;
+    if (!matchedCode) return [];
+
+    const line = diagnosis.location.line || 1;
+    const lines = content.split('\n');
+    const targetLine = lines[line - 1];
+
+    // Handle innerHTML assignment
+    if (matchedCode.includes('innerHTML')) {
+      // Match innerHTML = '...' + variable + '...' pattern
+      // Handle both single and double quotes in the string literals
+      const fixedLine = targetLine.replace(
+        /\.innerHTML\s*=\s*[^;]+;?$/,
+        (match) => {
+          // Extract the variable(s) from the concatenation
+          const varMatch = match.match(/\+\s*(\w+)\s*\+/);
+          if (varMatch) {
+            return `.textContent = ${varMatch[1]};`;
+          }
+          // If no concatenation pattern found, just use textContent with a safe fallback
+          return `.textContent = '';`;
+        }
+      );
+      return [{
+        file: diagnosis.location.file,
+        type: 'replace',
+        position: { line, column: 1 },
+        content: fixedLine,
+        oldContent: targetLine,
+      }];
+    }
+
+    // Handle dangerouslySetInnerHTML (React)
+    if (matchedCode.includes('dangerouslySetInnerHTML')) {
+      const fixedLine = targetLine.replace(
+        /dangerouslySetInnerHTML\s*=\s*\{\s*__html:\s*(\w+)\s*\}/g,
+        'dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize($1) }}'
+      );
+      return [{
+        file: diagnosis.location.file,
+        type: 'replace',
+        position: { line, column: 1 },
+        content: fixedLine,
+        oldContent: targetLine,
+      }];
+    }
+
+    // Fallback: wrap with DOMPurify.sanitize
+    const fixedLine = targetLine.replace(
+      /\.innerHTML\s*=\s*(.+?);?$/,
+      '.innerHTML = DOMPurify.sanitize($1);'
+    );
+
+    return [{
+      file: diagnosis.location.file,
+      type: 'replace',
+      position: { line, column: 1 },
+      content: fixedLine,
+      oldContent: targetLine,
+    }];
+  }
+
+  private fixSQLInjection(content: string, diagnosis: Diagnosis): FileChange[] {
+    const line = diagnosis.location.line || 1;
+    const lines = content.split('\n');
+    const targetLine = lines[line - 1];
+
+    // Replace string concatenation with parameterized query placeholder
+    const fixedLine = targetLine
+      .replace(/"\s*\+\s*(\w+)\s*\+\s*"/g, '", $1, "')
+      .replace(/\$\{(\w+)\}/g, '?');
+
+    return [{
+      file: diagnosis.location.file,
+      type: 'replace',
+      position: { line, column: 1 },
+      content: fixedLine,
+      oldContent: targetLine,
+    }];
+  }
+
+  private fixInsecureRandom(content: string, diagnosis: Diagnosis): FileChange[] {
+    const line = diagnosis.location.line || 1;
+    const lines = content.split('\n');
+    const targetLine = lines[line - 1];
+
+    // Replace Math.random() with crypto.getRandomValues
+    const fixedLine = targetLine.replace(
+      /Math\.random\(\)\s*\*\s*(\w+\.length|\d+)/g,
+      'crypto.getRandomValues(new Uint32Array(1))[0] % $1'
+    );
+
+    return [{
+      file: diagnosis.location.file,
+      type: 'replace',
+      position: { line, column: 1 },
+      content: fixedLine,
+      oldContent: targetLine,
+    }];
+  }
+
+  private fixHTTPUrl(content: string, diagnosis: Diagnosis): FileChange[] {
+    const matchedCode = diagnosis.metadata?.matchedCode as string | undefined;
+    if (!matchedCode) return [];
+
+    const line = diagnosis.location.line || 1;
+    const lines = content.split('\n');
+    const targetLine = lines[line - 1];
+
+    // Replace http:// with https://
+    const fixedLine = targetLine.replace(
+      /['"]http:\/\/([^'"]+)['"]/g,
+      "'https://$1'"
+    );
+
+    return [{
+      file: diagnosis.location.file,
+      type: 'replace',
+      position: { line, column: 1 },
+      content: fixedLine,
+      oldContent: targetLine,
+    }];
+  }
+
+  private fixCORSWildcard(content: string, diagnosis: Diagnosis): FileChange[] {
+    const line = diagnosis.location.line || 1;
+    const lines = content.split('\n');
+    const targetLine = lines[line - 1];
+
+    // Replace wildcard origin with specific domain
+    const fixedLine = targetLine.replace(
+      /origin\s*:\s*['"]\*['"]/g,
+      "origin: ['https://example.com', 'https://www.example.com']"
+    );
+
+    return [{
+      file: diagnosis.location.file,
+      type: 'replace',
+      position: { line, column: 1 },
+      content: fixedLine,
+      oldContent: targetLine,
+    }];
+  }
+
+  private fixDisabledSecurity(content: string, diagnosis: Diagnosis): FileChange[] {
+    const line = diagnosis.location.line || 1;
+    const lines = content.split('\n');
+    const targetLine = lines[line - 1];
+
+    // Replace disabled security settings with enabled ones
+    const fixedLine = targetLine
+      .replace(/contentSecurityPolicy\s*:\s*false/g, 'contentSecurityPolicy: true')
+      .replace(/xssFilter\s*:\s*false/g, 'xssFilter: true')
+      .replace(/noSniff\s*:\s*false/g, 'noSniff: true')
+      .replace(/frameguard\s*:\s*false/g, 'frameguard: true');
+
+    return [{
+      file: diagnosis.location.file,
+      type: 'replace',
+      position: { line, column: 1 },
+      content: fixedLine,
+      oldContent: targetLine,
+    }];
+  }
 
   async diagnose(context: SkillContext): Promise<Diagnosis[]> {
     const diagnoses: Diagnosis[] = [];

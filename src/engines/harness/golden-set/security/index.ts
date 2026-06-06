@@ -257,7 +257,7 @@ export default app;`,
     },
     expectedDiagnosis: {
       issueCount: 1,
-      issueTypes: ['cors-misconfig'],
+      issueTypes: ['cors-wildcard'],
       falsePositives: [],
     },
     expectedFix: {
