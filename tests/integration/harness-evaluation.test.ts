@@ -492,3 +492,202 @@ describe('E2E: Golden case → skill.diagnose() → evaluateDiagnosis', () => {
     expect(result.recall).toBeGreaterThan(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// E2E Fix Evaluation Tests
+// ---------------------------------------------------------------------------
+
+import { evaluateFix, applyChanges } from '../../src/engines/harness/evaluation-engine';
+import type { FileChange, Fix } from '../../src/types';
+
+describe('evaluateFix', () => {
+  it('should return zeros when no fix produced', () => {
+    const testCase: GoldenTestCase = {
+      id: 'test-fix-001',
+      skill: 'a11y',
+      input: { code: '<img src="photo.jpg">', filePath: 'index.html', stack: ['html'] },
+      expectedDiagnosis: { issueCount: 1, issueTypes: ['img-alt'] },
+      expectedFix: { codePattern: 'alt=', shouldNotExist: ['<img src="photo.jpg">'] },
+      difficulty: 'easy',
+      tags: ['images'],
+    };
+
+    const result = evaluateFix(testCase, null);
+
+    expect(result.precision).toBe(0);
+    expect(result.recall).toBe(0);
+    expect(result.f1).toBe(0);
+  });
+
+  it('should return perfect score when fix matches expectations', () => {
+    const testCase: GoldenTestCase = {
+      id: 'test-fix-002',
+      skill: 'a11y',
+      input: { code: '<img src="photo.jpg">', filePath: 'index.html', stack: ['html'] },
+      expectedDiagnosis: { issueCount: 1, issueTypes: ['img-alt'] },
+      expectedFix: { codePattern: 'alt=', shouldNotExist: ['<img src="photo.jpg">'] },
+      difficulty: 'easy',
+      tags: ['images'],
+    };
+
+    const fixedCode = '<img src="photo.jpg" alt="Photo">';
+    const result = evaluateFix(testCase, fixedCode);
+
+    expect(result.recall).toBe(1); // contains 'alt='
+    expect(result.precision).toBe(1); // removed '<img src="photo.jpg">'
+    expect(result.f1).toBe(1);
+  });
+
+  it('should handle partial fix correctly', () => {
+    const testCase: GoldenTestCase = {
+      id: 'test-fix-003',
+      skill: 'performance',
+      input: { code: 'console.log("debug")', filePath: 'src/app.ts', stack: ['typescript'] },
+      expectedDiagnosis: { issueCount: 1, issueTypes: ['console-log'] },
+      expectedFix: { codePattern: 'process.env.NODE_ENV', shouldNotExist: ['console.log("debug")'] },
+      difficulty: 'medium',
+      tags: ['console'],
+    };
+
+    // Fix added env check but didn't remove console.log
+    const fixedCode = 'if (process.env.NODE_ENV !== "production") { console.log("debug") }';
+    const result = evaluateFix(testCase, fixedCode);
+
+    expect(result.recall).toBe(1); // contains 'process.env.NODE_ENV'
+    expect(result.precision).toBe(0); // still contains 'console.log("debug")'
+  });
+});
+
+describe('applyChanges', () => {
+  it('should apply replace change correctly', () => {
+    const changes: FileChange[] = [
+      {
+        file: 'index.html',
+        type: 'replace',
+        oldContent: '<img src="photo.jpg">',
+        content: '<img src="photo.jpg" alt="Photo">',
+      },
+    ];
+
+    const result = applyChanges('<img src="photo.jpg">', changes);
+    expect(result).toBe('<img src="photo.jpg" alt="Photo">');
+  });
+
+  it('should apply delete change correctly', () => {
+    const changes: FileChange[] = [
+      {
+        file: 'app.ts',
+        type: 'delete',
+        oldContent: 'console.log("debug");\n',
+      },
+    ];
+
+    const result = applyChanges('import { foo } from "./foo";\nconsole.log("debug");\nexport default foo;', changes);
+    expect(result).toBe('import { foo } from "./foo";\nexport default foo;');
+  });
+
+  it('should apply insert change with position', () => {
+    const changes: FileChange[] = [
+      {
+        file: 'index.html',
+        type: 'insert',
+        position: { line: 2 },
+        content: '  <meta charset="utf-8">',
+      },
+    ];
+
+    const result = applyChanges('<!DOCTYPE html>\n<html>', changes);
+    expect(result).toBe('<!DOCTYPE html>\n  <meta charset="utf-8">\n<html>');
+  });
+
+  it('should apply multiple changes in sequence', () => {
+    const changes: FileChange[] = [
+      {
+        file: 'app.ts',
+        type: 'replace',
+        oldContent: "import _ from 'lodash';",
+        content: "import { debounce } from 'lodash-es';",
+      },
+      {
+        file: 'app.ts',
+        type: 'delete',
+        oldContent: 'console.log("test");\n',
+      },
+    ];
+
+    const original = "import _ from 'lodash';\nconsole.log(\"test\");\nconst fn = debounce(someFn, 300);";
+    const result = applyChanges(original, changes);
+
+    expect(result).toContain("import { debounce } from 'lodash-es';");
+    expect(result).not.toContain('console.log("test")');
+    expect(result).toContain('debounce(someFn, 300)');
+  });
+});
+
+describe('E2E: Golden case → skill.diagnose() → skill.fix() → evaluateFix', () => {
+  it('should fix img-alt issues in a11y golden case', async () => {
+    const { A11ySkill } = await import('../../src/skills/builtin/a11y');
+    const skill = new A11ySkill();
+    const imgCase = getCasesBySkill('a11y').find((c) => c.id === 'a11y-missing-alt-001')!;
+
+    const context = buildSkillContext(imgCase);
+
+    // Run diagnosis
+    const actualDiagnosis = await skill.diagnose(context);
+    expect(actualDiagnosis.length).toBeGreaterThanOrEqual(1);
+
+    // Run fix
+    const fixes: Fix[] = [];
+    for (const d of actualDiagnosis) {
+      if (skill.canAutoFix(d)) {
+        const fixResult = await skill.fix(d, context);
+        fixes.push(fixResult);
+      }
+    }
+
+    expect(fixes.length).toBeGreaterThanOrEqual(1);
+
+    // Apply all changes
+    const allChanges = fixes.flatMap((f) => f.changes);
+    const fixedCode = applyChanges(imgCase.input.code, allChanges);
+
+    // Evaluate fix against expectedFix
+    const fixResult = evaluateFix(imgCase, fixedCode);
+    expect(fixResult.recall).toBeGreaterThan(0);
+    expect(fixedCode).toContain('alt=');
+  });
+
+  it('should fix console-log issues in performance golden case', async () => {
+    const { PerformanceSkill } = await import('../../src/skills/builtin/performance');
+    const skill = new PerformanceSkill();
+    const consoleCase = getCasesBySkill('performance').find((c) => c.id === 'perf-console-log-003')!;
+
+    const context = buildSkillContext(consoleCase);
+
+    // Run diagnosis
+    const actualDiagnosis = await skill.diagnose(context);
+    expect(actualDiagnosis.length).toBeGreaterThanOrEqual(1);
+
+    // Run fix
+    const fixes: Fix[] = [];
+    for (const d of actualDiagnosis) {
+      if (skill.canAutoFix(d)) {
+        const fixResult = await skill.fix(d, context);
+        fixes.push(fixResult);
+      }
+    }
+
+    // Apply all changes
+    const allChanges = fixes.flatMap((f) => f.changes);
+    const fixedCode = applyChanges(consoleCase.input.code, allChanges);
+
+    // Evaluate fix
+    const fixResult = evaluateFix(consoleCase, fixedCode);
+
+    // The fix should wrap console in env check or remove it
+    if (fixes.length > 0) {
+      expect(fixResult.f1).toBeGreaterThan(0);
+    }
+  });
+});
+

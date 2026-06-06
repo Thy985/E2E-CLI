@@ -260,7 +260,7 @@ export class PerformanceSkill extends BaseSkill {
     const lines = content.split('\n');
     const targetLine = lines[line - 1];
 
-    // Wrap console statement in a production environment check instead of commenting out
+    // Wrap console statement in a production environment check
     // This preserves logs during development while removing them in production
     const fixedLine = targetLine.replace(
       /(\s*)(console\.(log|debug|info|warn)\s*\()/,
