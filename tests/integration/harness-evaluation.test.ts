@@ -15,8 +15,120 @@ import {
   getCasesBySkill,
   getGoldenSetStats,
 } from '../../src/engines/harness/golden-set';
-import type { Diagnosis, Severity, DiagnosisType } from '../../src/types';
-import type { CaseEvaluation } from '../../src/engines/harness/types';
+import type {
+  Diagnosis,
+  Severity,
+  DiagnosisType,
+  SkillContext,
+  FileSystemTool,
+  Logger,
+} from '../../src/types';
+import type { CaseEvaluation, GoldenTestCase } from '../../src/engines/harness/types';
+
+// ---------------------------------------------------------------------------
+// Virtual filesystem for e2e testing
+// ---------------------------------------------------------------------------
+
+function createVirtualFS(
+  filePath: string,
+  content: string,
+): FileSystemTool {
+  const normalized = filePath.replace(/^\//, '');
+
+  return {
+    async readFile(p: string): Promise<string> {
+      const target = p.replace(/^\//, '');
+      if (target === normalized || target.endsWith(normalized)) {
+        return content;
+      }
+      throw new Error(`File not found in virtual FS: ${p}`);
+    },
+
+    async writeFile(): Promise<void> {
+      throw new Error('writeFile not supported in virtual FS');
+    },
+
+    async exists(p: string): Promise<boolean> {
+      const target = p.replace(/^\//, '');
+      return target === normalized || target.endsWith(normalized);
+    },
+
+    async glob(pattern: string): Promise<string[]> {
+      const ext = normalized.split('.').pop() ?? '';
+      const baseGlob = pattern.replace(/\*\*/g, '.*').replace(/\*/g, '[^/]*');
+      const re = new RegExp(`^${baseGlob}$`);
+      if (re.test(normalized)) return [normalized];
+
+      // Fallback: match by extension
+      if (pattern.includes('*.' + ext)) return [normalized];
+      if (pattern === `**/*.${ext}`) return [normalized];
+
+      return [];
+    },
+
+    async mkdir(): Promise<void> {},
+
+    async remove(): Promise<void> {
+      throw new Error('remove not supported in virtual FS');
+    },
+
+    async stat(p: string): Promise<{ size: number; isFile: boolean; isDirectory: boolean }> {
+      const target = p.replace(/^\//, '');
+      if (target === normalized || target.endsWith(normalized)) {
+        return { size: Buffer.byteLength(content), isFile: true, isDirectory: false };
+      }
+      throw new Error(`File not found: ${p}`);
+    },
+  };
+}
+
+function createSilentLogger(): Logger {
+  return { debug() {}, info() {}, warn() {}, error() {} };
+}
+
+/** Build a SkillContext for a single golden case */
+function buildSkillContext(testCase: GoldenTestCase): SkillContext {
+  const { code, filePath } = testCase.input;
+
+  return {
+    project: {
+      name: `golden-${testCase.id}`,
+      path: '/tmp/qa-eval',
+      type: 'webapp',
+    },
+    config: {
+      version: 1,
+      rules: {},
+      ignore: [],
+    },
+    logger: createSilentLogger(),
+    tools: {
+      fs: createVirtualFS(filePath, code),
+      git: {
+        async getChangedFiles() { return []; },
+        async getCurrentBranch() { return 'main'; },
+        async getCommitHash() { return 'golden'; },
+      },
+      shell: {
+        async execute() {
+          return { stdout: '', stderr: '', exitCode: 0 };
+        },
+      },
+    },
+    model: {
+      async chat() {
+        return { content: '' };
+      },
+      isMock: true,
+    },
+    storage: {
+      async get() { return null; },
+      async set() {},
+      async delete() {},
+      async clear() {},
+    },
+  };
+}
 
 function makeDiagnosis(ruleIds: string[]): Diagnosis[] {
   return ruleIds.map((ruleId, i) => ({
@@ -139,13 +251,16 @@ describe('evaluateDiagnosis', () => {
     expect(result.f1).toBe(0);
   });
 
-  it('should detect extra issues (not expected, not false positive)', () => {
+  it('should detect extra issues and count them as FP', () => {
     const testCase = getCasesBySkill('a11y')[0];
     const actual = makeDiagnosis(['img-alt', 'unknown-rule']);
 
     const result = evaluateDiagnosis(testCase, actual);
 
     expect(result.issueTypes.extra).toContain('unknown-rule');
+    // Extra rules that are not in expectedTypes or falsePositiveTypes should count as FP
+    expect(result.falsePositives).toBe(1);
+    expect(result.precision).toBe(0.5);
   });
 });
 
@@ -323,5 +438,57 @@ describe('generateReport', () => {
 
     expect(report).toContain('a11y');
     expect(report).toContain('security');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 端到端测试 — 真实 skill 诊断 + Golden Set 对比
+// ---------------------------------------------------------------------------
+
+describe('E2E: Golden case → skill.diagnose() → evaluateDiagnosis', () => {
+  it('should detect img-alt issues in a11y golden case', async () => {
+    const { A11ySkill } = await import('../../src/skills/builtin/a11y');
+    const skill = new A11ySkill();
+    const testCase = getCasesBySkill('a11y')[0]; // a11y-missing-alt-001
+
+    const context = buildSkillContext(testCase);
+
+    const actualDiagnosis = await skill.diagnose(context);
+    const result = evaluateDiagnosis(testCase, actualDiagnosis);
+
+    // The a11y case has 2 images without alt
+    expect(actualDiagnosis.length).toBeGreaterThanOrEqual(1);
+    expect(result.truePositives).toBeGreaterThanOrEqual(1);
+    expect(result.recall).toBeGreaterThan(0);
+  });
+
+  it('should detect eval-usage in security golden case', async () => {
+    const { SecuritySkill } = await import('../../src/skills/builtin/security');
+    const skill = new SecuritySkill();
+    // Find the eval golden case
+    const evalCase = getCasesBySkill('security').find((c) => c.id === 'sec-eval-002')!;
+
+    const context = buildSkillContext(evalCase);
+
+    const actualDiagnosis = await skill.diagnose(context);
+    const result = evaluateDiagnosis(evalCase, actualDiagnosis);
+
+    // AST-based eval detection should find eval-usage
+    expect(result.truePositives).toBeGreaterThanOrEqual(1);
+    expect(result.recall).toBeGreaterThan(0);
+  });
+
+  it('should detect console-statement in performance golden case', async () => {
+    const { PerformanceSkill } = await import('../../src/skills/builtin/performance');
+    const skill = new PerformanceSkill();
+    const consoleCase = getCasesBySkill('performance').find((c) => c.id === 'perf-console-log-003')!;
+
+    const context = buildSkillContext(consoleCase);
+
+    const actualDiagnosis = await skill.diagnose(context);
+    const result = evaluateDiagnosis(consoleCase, actualDiagnosis);
+
+    expect(result.truePositives).toBeGreaterThanOrEqual(1);
+    expect(result.recall).toBeGreaterThan(0);
   });
 });

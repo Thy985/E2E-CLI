@@ -74,8 +74,12 @@ export function evaluateDiagnosis(
   // True Positives: 期望发现的类型且实际发现了
   const tp = [...expectedTypes].filter((t) => actualTypes.has(t)).length;
 
-  // False Positives: 不应发现的类型但实际发现了
-  const fp = [...falsePositiveTypes].filter((t) => actualTypes.has(t)).length;
+  // False Positives: 实际发现的但不期望的类型
+  // 包括：(1) 明确定义的 falsePositiveTypes 中出现的
+  //        (2) 不在 expectedTypes 也不在 falsePositiveTypes 中的"额外"规则
+  const fpFromDefined = [...falsePositiveTypes].filter((t) => actualTypes.has(t)).length;
+  const fpExtra = [...actualTypes].filter((t) => !expectedTypes.has(t) && !falsePositiveTypes.has(t)).length;
+  const fp = fpFromDefined + fpExtra;
 
   // False Negatives: 期望发现但实际没发现的
   const fn = [...expectedTypes].filter((t) => !actualTypes.has(t)).length;
