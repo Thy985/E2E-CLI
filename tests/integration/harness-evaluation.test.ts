@@ -170,9 +170,9 @@ function makeEvaluation(caseId: string, skill: string, f1: number, passed: boole
 // ---------------------------------------------------------------------------
 
 describe('Golden Set loading', () => {
-  it('should load all 30 golden cases', () => {
+  it('should load all 40 golden cases', () => {
     const cases = getAllCases();
-    expect(cases.length).toBe(30);
+    expect(cases.length).toBe(40);
   });
 
   it('should have unique IDs for all cases', () => {
@@ -185,18 +185,20 @@ describe('Golden Set loading', () => {
     expect(getCasesBySkill('a11y').length).toBe(10);
     expect(getCasesBySkill('security').length).toBe(10);
     expect(getCasesBySkill('performance').length).toBe(10);
+    expect(getCasesBySkill('react').length).toBe(10);
     expect(getCasesBySkill('unknown').length).toBe(0);
   });
 
   it('should return correct stats', () => {
     const stats = getGoldenSetStats();
-    expect(stats.total).toBe(30);
+    expect(stats.total).toBe(40);
     expect(stats.bySkill.a11y).toBe(10);
     expect(stats.bySkill.security).toBe(10);
     expect(stats.bySkill.performance).toBe(10);
-    expect(stats.byDifficulty.easy).toBe(15);
-    expect(stats.byDifficulty.medium).toBe(10);
-    expect(stats.byDifficulty.hard).toBe(5);
+    expect(stats.bySkill.react).toBe(10);
+    expect(stats.byDifficulty.easy).toBe(20);
+    expect(stats.byDifficulty.medium).toBe(13);
+    expect(stats.byDifficulty.hard).toBe(7);
   });
 });
 

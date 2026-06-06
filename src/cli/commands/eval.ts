@@ -38,6 +38,7 @@ import type { CaseEvaluation, GoldenTestCase } from '../../engines/harness/types
 import { A11ySkill } from '../../skills/builtin/a11y';
 import { SecuritySkill } from '../../skills/builtin/security';
 import { PerformanceSkill } from '../../skills/builtin/performance';
+import { ReactSkill } from '../../skills/builtin/react';
 import type { BaseSkill } from '../../skills/base-skill';
 
 const logger = createLogger();
@@ -46,6 +47,7 @@ const skillInstances: Record<string, BaseSkill> = {
   a11y: new A11ySkill(),
   security: new SecuritySkill(),
   performance: new PerformanceSkill(),
+  react: new ReactSkill(),
 };
 
 // ---------------------------------------------------------------------------

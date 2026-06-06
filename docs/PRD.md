@@ -260,8 +260,8 @@ qa-agent skill install @qa-agent/skill-security
 - [x] 监控面板（F1 趋势图、按 skill 分解、历史对比、Sparkline 迷你图）
 
 ### Phase 3: 诊断精度提升
-- [ ] AST 解析替代正则（Babel/ESLint/TsQuery 集成）
-- [ ] React 组件级检测（JSX 解析、props 分析）
+- [x] AST 解析替代正则（Babel/ESLint/TsQuery 集成）
+- [x] React 组件级检测（JSX 解析、props 分析）
 - [ ] Vue 组件级检测
 - [ ] 框架感知诊断（Next.js/Nuxt 路由分析）
 
