@@ -11,12 +11,15 @@ import { createLogger } from '../../utils/logger';
 import { getAllCases, getCasesBySkill, getGoldenSetStats } from '../../engines/harness/golden-set';
 import {
   evaluateDiagnosis,
+  evaluateFix,
   computeOverallEvaluation,
   generateReport,
   checkQualityGate,
 } from '../../engines/harness/evaluation-engine';
 import type {
   Diagnosis,
+  Fix,
+  FileChange,
   SkillContext,
   FileSystemTool,
   Logger,
@@ -108,6 +111,48 @@ function createVirtualFS(
       throw new Error(`File not found: ${p}`);
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Apply FileChange[] to original code
+// ---------------------------------------------------------------------------
+
+function applyFileChanges(
+  originalCode: string,
+  changes: FileChange[],
+): string {
+  let result = originalCode;
+
+  for (const change of changes) {
+    switch (change.type) {
+      case 'replace':
+        if (change.oldContent) {
+          result = result.split(change.oldContent).join(change.content ?? '');
+        }
+        break;
+      case 'insert':
+        if (change.position) {
+          const lines = result.split('\n');
+          const insertLine = Math.min(change.position.line, lines.length);
+          lines.splice(insertLine - 1, 0, change.content ?? '');
+          result = lines.join('\n');
+        } else {
+          result += change.content ?? '';
+        }
+        break;
+      case 'delete':
+        if (change.oldContent) {
+          result = result.split(change.oldContent).join('');
+        } else if (change.position) {
+          const lines = result.split('\n');
+          lines.splice(change.position.line - 1, 1);
+          result = lines.join('\n');
+        }
+        break;
+    }
+  }
+
+  return result;
 }
 
 /** Minimal logger that discards output for quiet evaluation runs */
@@ -284,14 +329,44 @@ export const evalCommand = new Command('eval')
       // Run REAL skill diagnosis
       const startTime = Date.now();
       const actualDiagnosis = await runSkillDiagnosis(skill, testCase);
+
+      // Evaluate diagnosis
+      const diagMetrics = evaluateDiagnosis(testCase, actualDiagnosis);
+
+      // Run REAL skill fix (if skill supports it and diagnosis found issues)
+      let fixMetrics = evaluateFix(testCase, null);
+      if (skill.fix && actualDiagnosis.length > 0) {
+        try {
+          const fixes: Fix[] = [];
+          for (const d of actualDiagnosis) {
+            if (skill.canAutoFix(d)) {
+              const fixResult = await skill.fix(d, buildSkillContext(testCase));
+              fixes.push(fixResult);
+            }
+          }
+
+          if (fixes.length > 0) {
+            const allChanges = fixes.flatMap((f) => f.changes);
+            const fixedCode = applyFileChanges(testCase.input.code, allChanges);
+            fixMetrics = evaluateFix(testCase, fixedCode);
+          }
+        } catch {
+          // Fix failed — keep zero metrics
+        }
+      }
+
       const duration = Date.now() - startTime;
 
-      // Evaluate against expected
-      const diagMetrics = evaluateDiagnosis(testCase, actualDiagnosis);
+      // Overall: average of diagnosis and fix
+      const overallPrecision = (diagMetrics.precision + fixMetrics.precision) / 2;
+      const overallRecall = (diagMetrics.recall + fixMetrics.recall) / 2;
+      const overallF1 = overallPrecision + overallRecall > 0
+        ? (2 * overallPrecision * overallRecall) / (overallPrecision + overallRecall)
+        : 0;
 
       if (options.verbose) {
         logger.info(
-          `[${testCase.id}] F1=${diagMetrics.f1.toFixed(3)}  ` +
+          `[${testCase.id}] Diag F1=${diagMetrics.f1.toFixed(3)}  Fix F1=${fixMetrics.f1.toFixed(3)}  Overall F1=${overallF1.toFixed(3)}  ` +
           `expected=${diagMetrics.expectedCount}  actual=${diagMetrics.actualCount}  ` +
           `TP=${diagMetrics.truePositives}  FP=${diagMetrics.falsePositives}  FN=${diagMetrics.falseNegatives}`,
         );
@@ -302,9 +377,9 @@ export const evalCommand = new Command('eval')
           logger.info(`  Extra:  ${diagMetrics.issueTypes.extra.join(', ')}`);
         }
       } else {
-        const icon = diagMetrics.f1 >= 0.8 ? '✅' : '❌';
+        const icon = overallF1 >= 0.8 ? '✅' : '❌';
         logger.info(
-          `${icon} ${testCase.id}  F1=${diagMetrics.f1.toFixed(3)}  (${diagMetrics.actualCount} found / ${diagMetrics.expectedCount} expected)`,
+          `${icon} ${testCase.id}  F1=${overallF1.toFixed(3)}  (${diagMetrics.actualCount} found / ${diagMetrics.expectedCount} expected)`,
         );
       }
 
@@ -313,18 +388,12 @@ export const evalCommand = new Command('eval')
         skill: testCase.skill,
         difficulty: testCase.difficulty,
         diagnosis: diagMetrics,
-        fix: {
-          precision: 0,
-          recall: 0,
-          f1: 0,
-          fixedCount: 0,
-          expectedFixCount: 0,
-        },
+        fix: fixMetrics,
         overall: {
-          precision: diagMetrics.precision,
-          recall: diagMetrics.recall,
-          f1: diagMetrics.f1,
-          passed: diagMetrics.f1 >= 0.8,
+          precision: overallPrecision,
+          recall: overallRecall,
+          f1: overallF1,
+          passed: overallF1 >= 0.8,
         },
         duration,
       });

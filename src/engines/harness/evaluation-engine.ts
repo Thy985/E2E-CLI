@@ -13,7 +13,100 @@ import type {
   EvalOptions,
 } from './types';
 import { getAllCases } from './golden-set';
-import type { Diagnosis } from '../../types';
+import type { Diagnosis, Fix, FileChange } from '../../types';
+
+// ---------------------------------------------------------------------------
+// 评估接口
+// ---------------------------------------------------------------------------
+
+/** 评估修复结果 */
+export function evaluateFix(
+  testCase: GoldenTestCase,
+  fixedCode: string | null,
+): EvaluationMetrics['fix'] {
+  const { codePattern, shouldNotExist } = testCase.expectedFix;
+
+  if (!fixedCode) {
+    // No fix produced
+    return {
+      precision: 0,
+      recall: 0,
+      f1: 0,
+      fixedCount: 0,
+      expectedFixCount: codePattern ? 1 : 0,
+    };
+  }
+
+  // Check recall: does fixed code contain the expected pattern?
+  const hasPattern = fixedCode.includes(codePattern);
+  const expectedPatterns = codePattern ? 1 : 0;
+  const foundPatterns = hasPattern ? 1 : 0;
+
+  // Check precision: are all shouldNotExist patterns removed?
+  const shouldNotExistPatterns = shouldNotExist ?? [];
+  const removedCount = shouldNotExistPatterns.filter((p) => !fixedCode.includes(p)).length;
+  const totalShouldNotExist = shouldNotExistPatterns.length;
+
+  // Recall: ratio of expected patterns found
+  const recall = expectedPatterns > 0 ? foundPatterns / expectedPatterns : 1;
+
+  // Precision: ratio of should-be-removed patterns actually removed
+  const precision =
+    totalShouldNotExist > 0
+      ? removedCount / totalShouldNotExist
+      : 1; // No shouldNotExist constraints → perfect precision
+
+  const f1 = precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : 0;
+
+  return {
+    precision,
+    recall,
+    f1,
+    fixedCount: foundPatterns + removedCount,
+    expectedFixCount: expectedPatterns + totalShouldNotExist,
+  };
+}
+
+/** 应用 FileChange[] 到原始代码 */
+export function applyChanges(
+  originalCode: string,
+  changes: FileChange[],
+): string {
+  let result = originalCode;
+
+  for (const change of changes) {
+    switch (change.type) {
+      case 'replace':
+        if (change.oldContent) {
+          result = result.split(change.oldContent).join(change.content ?? '');
+        }
+        break;
+      case 'insert':
+        if (change.position) {
+          const lines = result.split('\n');
+          const insertLine = Math.min(change.position.line, lines.length);
+          const insertContent = change.content ?? '';
+          lines.splice(insertLine - 1, 0, insertContent);
+          result = lines.join('\n');
+        } else {
+          result += change.content ?? '';
+        }
+        break;
+      case 'delete':
+        if (change.oldContent) {
+          result = result.split(change.oldContent).join('');
+        } else if (change.position) {
+          const lines = result.split('\n');
+          const deleteLine = Math.min(change.position.line - 1, lines.length - 1);
+          lines.splice(deleteLine, 1);
+          result = lines.join('\n');
+        }
+        break;
+    }
+  }
+
+  return result;
+}
 
 // ---------------------------------------------------------------------------
 // 评估接口
@@ -23,6 +116,7 @@ import type { Diagnosis } from '../../types';
 export async function evaluateCase(
   testCase: GoldenTestCase,
   runDiagnosis: (code: string, filePath: string) => Promise<Diagnosis[]>,
+  runFix?: (code: string, diagnosis: Diagnosis[]) => Promise<Fix[] | null>,
 ): Promise<CaseEvaluation> {
   const startTime = Date.now();
 
@@ -32,25 +126,39 @@ export async function evaluateCase(
   // 计算诊断指标
   const diagnosis = evaluateDiagnosis(testCase, actualDiagnosis);
 
+  // 运行修复（如果支持）
+  let fixMetrics: EvaluationMetrics['fix'];
+  if (runFix && actualDiagnosis.length > 0) {
+    const fixes = await runFix(testCase.input.code, actualDiagnosis);
+    let fixedCode: string | null = null;
+    if (fixes && fixes.length > 0) {
+      const allChanges = fixes.flatMap((f) => f.changes);
+      fixedCode = applyChanges(testCase.input.code, allChanges);
+    }
+    fixMetrics = evaluateFix(testCase, fixedCode);
+  } else {
+    fixMetrics = evaluateFix(testCase, null);
+  }
+
   const duration = Date.now() - startTime;
+
+  const overallPrecision = (diagnosis.precision + fixMetrics.precision) / 2;
+  const overallRecall = (diagnosis.recall + fixMetrics.recall) / 2;
+  const overallF1 = overallPrecision + overallRecall > 0
+    ? (2 * overallPrecision * overallRecall) / (overallPrecision + overallRecall)
+    : 0;
 
   return {
     caseId: testCase.id,
     skill: testCase.skill,
     difficulty: testCase.difficulty,
     diagnosis,
-    fix: {
-      precision: 0,
-      recall: 0,
-      f1: 0,
-      fixedCount: 0,
-      expectedFixCount: 0,
-    },
+    fix: fixMetrics,
     overall: {
-      precision: diagnosis.precision,
-      recall: diagnosis.recall,
-      f1: diagnosis.f1,
-      passed: diagnosis.f1 >= 0.8,
+      precision: overallPrecision,
+      recall: overallRecall,
+      f1: overallF1,
+      passed: overallF1 >= 0.8,
     },
     duration,
   };
@@ -177,6 +285,7 @@ export function computeOverallEvaluation(
 /** 运行批量评估 */
 export async function evaluateAll(
   runDiagnosis: (code: string, filePath: string) => Promise<Diagnosis[]>,
+  runFix?: (code: string, diagnosis: Diagnosis[]) => Promise<Fix[] | null>,
   options?: EvalOptions,
 ): Promise<{
   evaluations: CaseEvaluation[];
@@ -198,7 +307,7 @@ export async function evaluateAll(
   const evaluations: CaseEvaluation[] = [];
 
   for (const testCase of cases) {
-    const eval_ = await evaluateCase(testCase, runDiagnosis);
+    const eval_ = await evaluateCase(testCase, runDiagnosis, runFix);
     evaluations.push(eval_);
   }
 
