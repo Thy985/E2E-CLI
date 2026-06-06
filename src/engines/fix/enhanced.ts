@@ -49,7 +49,7 @@ export class FixEngine {
     };
     this.logger = logger || createLogger({ level: 'info' });
     this.rollbackManager = new RollbackManager(this.logger);
-    this.verifyEngine = new VerifyEngine(this.logger);
+    this.verifyEngine = new VerifyEngine(undefined, this.logger);
   }
 
   /**
