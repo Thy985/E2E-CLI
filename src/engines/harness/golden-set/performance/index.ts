@@ -97,7 +97,7 @@ export const performanceGoldenCases: GoldenTestCase[] = [
     },
     expectedDiagnosis: {
       issueCount: 3,
-      issueTypes: ['console-statement'],
+      issueTypes: ['console-log'],
       falsePositives: [],
     },
     expectedFix: {
@@ -353,7 +353,7 @@ export default SearchResults;`,
     },
     expectedDiagnosis: {
       issueCount: 5,
-      issueTypes: ['console-statement', 'inline-style', 'unused-import'],
+      issueTypes: ['console-log', 'inline-style', 'unused-import'],
       falsePositives: [],
     },
     expectedFix: {
