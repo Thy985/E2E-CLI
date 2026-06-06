@@ -15,6 +15,7 @@ import { bestPracticesCommand } from './commands/best-practices';
 import { seoCommand } from './commands/seo';
 import { dependencyCommand } from './commands/dependency';
 import { fixCommand } from './commands/fix';
+import { evalCommand } from './commands/eval';
 
 const program = new Command();
 
@@ -142,6 +143,9 @@ program.addCommand(seoCommand);
 
 // Dependency command
 program.addCommand(dependencyCommand);
+
+// Eval command (AI Harness evaluation)
+program.addCommand(evalCommand);
 
 // Parse arguments
 program.parse();
