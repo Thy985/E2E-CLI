@@ -6,7 +6,7 @@
  * - Level 0: 格式验证（语法检查）
  * - Level 1: 编译验证（tsc --noEmit）
  * - Level 2: 测试验证（运行项目测试套件）
- * - Level 3: AST diff 验证（待实现）
+ * - Level 3: AST diff 验证（修复前后 AST 对比）
  */
 
 import { createLogger, Logger } from '../../utils/logger';
@@ -45,12 +45,13 @@ export interface VerificationResult {
     format: { passed: boolean; error?: string };
     compile: { passed: boolean; output?: string };
     testValidation: { passed: boolean; output?: string; skipped: boolean };
+    astDiff: { passed: boolean; skipped: boolean; result?: AstDiffResult };
   };
   errors: string[];
 }
 
 export interface VerifyOptions {
-  /** 验证层级：0=格式, 1=编译, 2=测试 */
+  /** 验证层级：0=格式, 1=编译, 2=测试, 3=AST diff */
   level?: number;
   /** 测试命令（默认自动检测） */
   testCommand?: string;
@@ -64,6 +65,8 @@ export interface VerifyOptions {
   testRetries?: number;
   /** 忽略测试失败（仅警告，不阻止验证通过） */
   ignoreTestFailures?: boolean;
+  /** AST diff 验证时允许的最大节点变更数（默认 50） */
+  maxAstNodeChanges?: number;
 }
 
 export interface TestRunResult {
@@ -77,6 +80,27 @@ export interface TestRunResult {
   failedTests?: string[];
 }
 
+export interface AstDiffResult {
+  passed: boolean;
+  /** AST 解析是否成功 */
+  parsed: boolean;
+  /** 错误信息 */
+  error?: string;
+  /** 修复前后的 AST 节点数 */
+  beforeNodes?: number;
+  afterNodes?: number;
+  /** 新增的 AST 节点数 */
+  addedNodes: number;
+  /** 移除的 AST 节点数 */
+  removedNodes: number;
+  /** 修改的 AST 节点数 */
+  modifiedNodes: number;
+  /** 总变更节点数 */
+  totalChanges: number;
+  /** 变更摘要 */
+  summary: string[];
+}
+
 export class VerifyEngine {
   private logger: Logger;
   private options: Required<Omit<VerifyOptions, 'testCommand'>> & { testCommand?: string };
@@ -87,13 +111,14 @@ export class VerifyEngine {
   ) {
     this.logger = logger || createLogger({ level: 'info' });
     this.options = {
-      level: options?.level ?? 2,
+      level: options?.level ?? 3,
       testCommand: options?.testCommand,
       testTimeout: options?.testTimeout ?? 120000,
       allowedTestFailures: options?.allowedTestFailures ?? 0,
       runBeforeTests: options?.runBeforeTests ?? true,
       testRetries: options?.testRetries ?? 1,
       ignoreTestFailures: options?.ignoreTestFailures ?? false,
+      maxAstNodeChanges: options?.maxAstNodeChanges ?? 50,
     };
   }
 
@@ -120,6 +145,7 @@ export class VerifyEngine {
         format: { passed: false },
         compile: { passed: false },
         testValidation: { passed: false, skipped: true },
+        astDiff: { passed: false, skipped: true },
       },
       errors: [],
     };
@@ -140,11 +166,11 @@ export class VerifyEngine {
       // Run tests BEFORE fix (baseline)
       let beforeTestResult: TestRunResult | undefined;
       if (opts.runBeforeTests && opts.level >= 2) {
-        const result = await this.runTests(context, {
+        const runResult = await this.runTests(context, {
           label: 'before-fix',
         });
-        if (result) {
-          beforeTestResult = result;
+        if (runResult) {
+          beforeTestResult = runResult;
           this.logger.info(
             `Tests before fix: ${beforeTestResult.passed} passed, ${beforeTestResult.failed} failed`,
           );
@@ -200,6 +226,11 @@ export class VerifyEngine {
         };
       }
 
+      // Level 3: AST diff validation (if enabled)
+      if (opts.level >= 3) {
+        result.levels.astDiff = this.runAstDiffVerification(fix, opts);
+      }
+
       // Determine overall success
       result.success = this.determineSuccess(result, opts);
 
@@ -217,6 +248,17 @@ export class VerifyEngine {
           if (result.tests.newFailures && result.tests.newFailures.length > 0) {
             result.errors.push(
               `New test failures: ${result.tests.newFailures.slice(0, 5).join(', ')}`,
+            );
+          }
+        }
+        if (!result.levels.astDiff.skipped && !result.levels.astDiff.passed) {
+          const astResult = result.levels.astDiff.result;
+          if (astResult?.error) {
+            result.errors.push(`AST validation failed: ${astResult.error}`);
+          }
+          if (astResult && astResult.totalChanges > opts.maxAstNodeChanges) {
+            result.errors.push(
+              `AST changes (${astResult.totalChanges}) exceed threshold (${opts.maxAstNodeChanges})`,
             );
           }
         }
@@ -342,6 +384,199 @@ export class VerifyEngine {
   }
 
   /**
+   * Level 3: AST diff verification
+   * Parse fix changes into AST and compare before/after to validate structural changes
+   */
+  private runAstDiffVerification(
+    fix: Fix,
+    opts: Required<Omit<VerifyOptions, 'testCommand'>> & { testCommand?: string },
+  ): { passed: boolean; skipped: boolean; result?: AstDiffResult } {
+    const summary: string[] = [];
+    let totalAdded = 0;
+    let totalRemoved = 0;
+    let totalModified = 0;
+    let anyParsed = false;
+    let parseOk = true;
+    let parseError: string | undefined;
+
+    if (!fix.changes || fix.changes.length === 0) {
+      return { passed: true, skipped: true };
+    }
+
+    for (const change of fix.changes) {
+      const ext = change.file.split('.').pop()?.toLowerCase();
+      if (!['js', 'ts', 'jsx', 'tsx', 'mjs', 'cjs'].includes(ext || '')) {
+        continue;
+      }
+
+      // If no oldContent provided, we can only validate the new AST is parseable
+      if (!change.oldContent) {
+        const newAst = this.parseAST(change.content || '');
+        if (!newAst) {
+          parseOk = false;
+          parseError = `Failed to parse AST for ${change.file}`;
+          break;
+        }
+        anyParsed = true;
+        continue;
+      }
+
+      const beforeAst = this.parseAST(change.oldContent);
+      const afterAst = this.parseAST(change.content || '');
+
+      if (!beforeAst || !afterAst) {
+        parseOk = false;
+        parseError = `Failed to parse AST for ${change.file}`;
+        break;
+      }
+
+      anyParsed = true;
+      const diff = this.diffAST(beforeAst, afterAst);
+
+      totalAdded += diff.addedNodes;
+      totalRemoved += diff.removedNodes;
+      totalModified += diff.modifiedNodes;
+
+      summary.push(
+        `${change.file}: +${diff.addedNodes} -${diff.removedNodes} ~${diff.modifiedNodes} nodes`,
+      );
+    }
+
+    const totalChanges = totalAdded + totalRemoved + totalModified;
+    const exceedsThreshold = totalChanges > opts.maxAstNodeChanges;
+
+    if (exceedsThreshold) {
+      summary.push(`AST changes (${totalChanges}) exceed threshold (${opts.maxAstNodeChanges})`);
+    }
+
+    return {
+      passed: parseOk && anyParsed && !exceedsThreshold,
+      skipped: false,
+      result: {
+        passed: parseOk && anyParsed && !exceedsThreshold,
+        parsed: anyParsed,
+        error: parseError,
+        addedNodes: totalAdded,
+        removedNodes: totalRemoved,
+        modifiedNodes: totalModified,
+        totalChanges,
+        summary,
+      },
+    };
+  }
+
+  /**
+   * Parse JS/TS code into AST using @typescript-eslint/parser
+   */
+  private parseAST(code: string): unknown {
+    try {
+      // Dynamic require to avoid loading heavy parser unless needed
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const parser = require('@typescript-eslint/parser');
+      return parser.parse(code, {
+        sourceType: 'module',
+        ecmaVersion: 'latest',
+        loc: false,
+        range: false,
+        tokens: false,
+        comment: false,
+      });
+    } catch {
+      // Fallback: try parsing as script instead of module
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const parser = require('@typescript-eslint/parser');
+        return parser.parse(code, {
+          sourceType: 'script',
+          ecmaVersion: 'latest',
+          loc: false,
+          range: false,
+          tokens: false,
+          comment: false,
+        });
+      } catch {
+        return null;
+      }
+    }
+  }
+
+  /**
+   * Diff two ASTs and count changes
+   */
+  private diffAST(before: unknown, after: unknown): {
+    addedNodes: number;
+    removedNodes: number;
+    modifiedNodes: number;
+  } {
+    const beforeNodes = this.collectNodeSignatures(before);
+    const afterNodes = this.collectNodeSignatures(after);
+
+    const beforeSet = new Set(beforeNodes);
+    const afterSet = new Set(afterNodes);
+
+    let addedNodes = 0;
+    for (const sig of afterNodes) {
+      if (!beforeSet.has(sig)) addedNodes++;
+    }
+
+    let removedNodes = 0;
+    for (const sig of beforeNodes) {
+      if (!afterSet.has(sig)) removedNodes++;
+    }
+
+    // Modified nodes are approximated by the overlap of changes
+    const totalUnique = new Set([...beforeNodes, ...afterNodes]).size;
+    const unchanged = beforeNodes.filter(s => afterSet.has(s)).length;
+    const modifiedNodes = Math.max(0, totalUnique - beforeNodes.length - afterNodes.length + unchanged);
+
+    return { addedNodes, removedNodes, modifiedNodes: Math.min(modifiedNodes, addedNodes + removedNodes) };
+  }
+
+  /**
+   * Collect node signatures from AST for comparison
+   * A signature is "type:path" where path is the traversal path to the node
+   */
+  private collectNodeSignatures(node: unknown, path = 'root'): string[] {
+    const signatures: string[] = [];
+
+    if (node === null || node === undefined || typeof node !== 'object') {
+      return signatures;
+    }
+
+    if (Array.isArray(node)) {
+      node.forEach((item, index) => {
+        const childPath = `${path}[${index}]`;
+        signatures.push(...this.collectNodeSignatures(item, childPath));
+      });
+      return signatures;
+    }
+
+    const obj = node as Record<string, unknown>;
+    const type = obj.type as string | undefined;
+
+    if (type) {
+      signatures.push(`${type}:${path}`);
+
+      // Collect child nodes from known AST properties
+      const childKeys = ['body', 'declarations', 'expression', 'argument',
+        'arguments', 'callee', 'consequent', 'alternate', 'init', 'test',
+        'update', 'left', 'right', 'properties', 'elements', 'key', 'value',
+        'object', 'property', 'params', 'block', 'handler',
+        'finalizer', 'declaration', 'specifiers', 'source', 'local',
+        'imported', 'exported'];
+
+      for (const key of childKeys) {
+        if (obj[key] !== undefined) {
+          const childPath = `${path}.${key}`;
+          signatures.push(...this.collectNodeSignatures(obj[key], childPath));
+        }
+      }
+    }
+
+    return signatures;
+  }
+
+  /**
    * Level 2: Run project tests with multi-runner support
    */
   async runTests(
@@ -450,6 +685,7 @@ export class VerifyEngine {
     runner: string,
   ): Promise<TestRunResult> {
     return new Promise((resolve) => {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { spawn } = require('child_process');
 
       const testProcess = spawn(command, [], {
@@ -712,7 +948,13 @@ export class VerifyEngine {
       }
     }
 
-    return diagnosisOk && testOk;
+    // AST diff validation
+    let astOk = true;
+    if (opts.level >= 3 && !result.levels.astDiff.skipped) {
+      astOk = result.levels.astDiff.passed;
+    }
+
+    return diagnosisOk && testOk && astOk;
   }
 
   private parseInt(output: string, pattern: RegExp): number | null {
@@ -815,6 +1057,20 @@ export class VerifyEngine {
       lines.push(
         `  - Level 2 (Tests): ${result.levels.testValidation.skipped ? '⏭️ Skipped' : result.levels.testValidation.passed ? '✅' : '❌'}`,
       );
+      lines.push(
+        `  - Level 3 (AST diff): ${result.levels.astDiff.skipped ? '⏭️ Skipped' : result.levels.astDiff.passed ? '✅' : '❌'}`,
+      );
+
+      // AST diff details
+      if (!result.levels.astDiff.skipped && result.levels.astDiff.result) {
+        const ast = result.levels.astDiff.result;
+        lines.push(`  - **AST Changes**: +${ast.addedNodes} -${ast.removedNodes} ~${ast.modifiedNodes} (${ast.totalChanges} total)`);
+        if (ast.summary.length > 0) {
+          for (const s of ast.summary) {
+            lines.push(`    - ${s}`);
+          }
+        }
+      }
 
       if (result.errors.length > 0) {
         lines.push(`- **Errors**:`);
