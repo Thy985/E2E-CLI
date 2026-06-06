@@ -1,6 +1,9 @@
 ﻿/**
  * Performance Skill
  * Checks performance issues and optimization opportunities
+ *
+ * Uses AST-based analysis for import detection and console statements,
+ * falls back to regex for HTML-specific patterns.
  */
 
 import { BaseSkill } from '../../base-skill';
@@ -13,19 +16,26 @@ import {
   FileChange,
 } from '../../../types';
 import { generateId } from '../../../utils';
+import {
+  parseFile,
+  walkAST,
+  detectConsoleStatements,
+} from '../../../utils/ast-analyzer';
+import type { TSESTree } from '@typescript-eslint/typescript-estree';
 
-// Performance rules to check
-const PERFORMANCE_RULES = [
-  {
+// Performance rules that use AST analysis
+const AST_PERF_RULES = {
+  'large-bundle': {
     id: 'large-bundle',
-    pattern: /import\s+.*\s+from\s+['"]lodash['"]/g,
     severity: 'warning' as Severity,
     title: 'Large Bundle Import',
     description: 'Importing entire lodash library increases bundle size',
     suggestion: 'Use lodash-es or import specific functions',
-    fixable: true,
-    fixType: 'replace',
   },
+};
+
+// Performance rules that use regex (HTML-specific patterns)
+const REGEX_PERF_RULES = [
   {
     id: 'sync-script',
     pattern: /<script\s+src=['"][^'"]+['"]\s*>\s*<\/script>/g,
@@ -34,7 +44,6 @@ const PERFORMANCE_RULES = [
     description: 'Synchronous scripts block page rendering',
     suggestion: 'Add async or defer attributes',
     fixable: true,
-    fixType: 'replace',
   },
   {
     id: 'unoptimized-image',
@@ -44,7 +53,6 @@ const PERFORMANCE_RULES = [
     description: 'Traditional image formats may impact loading performance',
     suggestion: 'Consider WebP or AVIF formats',
     fixable: false,
-    fixType: 'none',
   },
   {
     id: 'inline-style',
@@ -54,30 +62,15 @@ const PERFORMANCE_RULES = [
     description: 'Long inline styles affect caching and maintainability',
     suggestion: 'Move styles to CSS files',
     fixable: false,
-    fixType: 'none',
-  },
-  {
-    id: 'console-log',
-    pattern: /console\.(log|debug|info|warn)\s*\(/g,
-    severity: 'info' as Severity,
-    title: 'Console Statements in Production',
-    description: 'Console statements should be removed in production',
-    suggestion: 'Use environment variables to control log output',
-    fixable: true,
-    fixType: 'delete',
   },
   {
     id: 'large-component',
-    check: (content: string) => {
-      const lines = content.split('\n');
-      return lines.length > 300;
-    },
+    check: (content: string) => content.split('\n').length > 300,
     severity: 'info' as Severity,
     title: 'Large Component File',
     description: 'Large components are hard to maintain and may impact performance',
     suggestion: 'Consider splitting into smaller components',
     fixable: false,
-    fixType: 'none',
   },
 ];
 
@@ -149,9 +142,6 @@ export class PerformanceSkill extends BaseSkill {
     return diagnoses;
   }
 
-  /**
-   * Auto-fix performance issues
-   */
   async fix(diagnosis: Diagnosis, context: SkillContext): Promise<Fix> {
     const ruleId = diagnosis.metadata?.ruleId;
     const filePath = diagnosis.location.file;
@@ -186,9 +176,6 @@ export class PerformanceSkill extends BaseSkill {
     };
   }
 
-  /**
-   * Fix lodash full import to specific import
-   */
   private fixLargeBundle(content: string, diagnosis: Diagnosis): FileChange[] {
     const line = diagnosis.location.line || 1;
     const lines = content.split('\n');
@@ -201,7 +188,7 @@ export class PerformanceSkill extends BaseSkill {
     }
 
     const varName = importMatch[1];
-    
+
     // Find all usages of the lodash variable to determine which methods are actually used
     const usedMethods = new Set<string>();
     const usageRegex = new RegExp(`\\b${varName}\\.(\\w+)\\b`, 'g');
@@ -211,11 +198,9 @@ export class PerformanceSkill extends BaseSkill {
 
     let replacement: string;
     if (usedMethods.size === 0) {
-      // If no specific usages found, add a TODO comment with guidance
       replacement = `// TODO: Replace 'import ${varName} from "lodash"' with specific imports` +
         `\n// e.g. import { ${varName} } from 'lodash-es'; or import individual functions`;
     } else {
-      // Generate specific imports for the methods that are actually used
       const methodList = Array.from(usedMethods).sort().join(', ');
       replacement = `import { ${methodList} } from 'lodash-es';`;
     }
@@ -229,15 +214,11 @@ export class PerformanceSkill extends BaseSkill {
     }];
   }
 
-  /**
-   * Fix synchronous script loading by adding async/defer
-   */
   private fixSyncScript(content: string, diagnosis: Diagnosis): FileChange[] {
     const line = diagnosis.location.line || 1;
     const lines = content.split('\n');
     const targetLine = lines[line - 1];
 
-    // Add defer attribute to script tag
     const fixedLine = targetLine.replace(
       /<script\s+src=/,
       '<script defer src='
@@ -254,17 +235,15 @@ export class PerformanceSkill extends BaseSkill {
 
   /**
    * Remove console statements — comment out instead of wrapping in runtime check
-   * Wrapping in `if (process.env.NODE_ENV !== 'production')` adds runtime overhead.
-   * Better approach: comment out the line so build tools (babel/terser) can dead-code-eliminate.
    */
   private fixConsoleLog(content: string, diagnosis: Diagnosis): FileChange[] {
     const line = diagnosis.location.line || 1;
     const lines = content.split('\n');
     const targetLine = lines[line - 1];
     const indentation = targetLine.match(/^(\s*)/)?.[1] || '';
+    const consoleMethod = diagnosis.metadata?.method ?? 'log';
 
-    // Comment out the console statement with a clear explanation
-    const fixedLine = `${indentation}// TODO: Remove console.${diagnosis.metadata?.match?.match(/console\.(\w+)/)?.[1] ?? 'log'} in production\n${indentation}// ${targetLine.trim()}`;
+    const fixedLine = `${indentation}// TODO: Remove console.${consoleMethod} in production\n${indentation}// ${targetLine.trim()}`;
 
     return [{
       file: diagnosis.location.file,
@@ -275,16 +254,11 @@ export class PerformanceSkill extends BaseSkill {
     }];
   }
 
-  /**
-   * Fix duplicate dependencies in package.json
-   */
   private fixDuplicateDeps(content: string, diagnosis: Diagnosis): FileChange[] {
     const duplicates = diagnosis.metadata?.duplicates as string[] || [];
-    
-    // Parse package.json
+
     const pkg = JSON.parse(content);
-    
-    // Remove duplicates from devDependencies
+
     if (pkg.devDependencies) {
       for (const dep of duplicates) {
         delete pkg.devDependencies[dep];
@@ -308,8 +282,8 @@ export class PerformanceSkill extends BaseSkill {
 
     for (const pattern of patterns) {
       const matches = await tools.fs.glob(pattern);
-      files.push(...matches.filter(f => 
-        !f.includes('node_modules') && 
+      files.push(...matches.filter(f =>
+        !f.includes('node_modules') &&
         !f.includes('.d.ts') &&
         !f.includes('.test.') &&
         !f.includes('.spec.') &&
@@ -324,14 +298,22 @@ export class PerformanceSkill extends BaseSkill {
   private async checkFile(filePath: string, content: string): Promise<Diagnosis[]> {
     const diagnoses: Diagnosis[] = [];
 
-    for (const rule of PERFORMANCE_RULES) {
+    // ---- AST-based analysis ----
+    // 1. Large bundle import detection (AST: check ImportDeclaration nodes)
+    const largeBundleIssues = this.checkLargeBundleAST(filePath, content);
+    diagnoses.push(...largeBundleIssues);
+
+    // 2. Console statement detection (AST)
+    const consoleIssues = this.checkConsoleStatementsAST(filePath, content);
+    diagnoses.push(...consoleIssues);
+
+    // ---- Regex-based analysis (HTML-specific patterns) ----
+    for (const rule of REGEX_PERF_RULES) {
       if (rule.pattern) {
-        let match;
         const pattern = new RegExp(rule.pattern.source, rule.pattern.flags);
-        
+        let match;
         while ((match = pattern.exec(content)) !== null) {
           const line = this.getLineNumber(content, match.index);
-          
           diagnoses.push({
             id: `Perf-${generateId()}`,
             skill: this.name,
@@ -344,7 +326,7 @@ export class PerformanceSkill extends BaseSkill {
             fixSuggestion: {
               description: rule.suggestion,
               autoApplicable: rule.fixable,
-              riskLevel: rule.severity === 'warning' ? 'low' : 'low',
+              riskLevel: 'low',
             },
           });
         }
@@ -370,6 +352,97 @@ export class PerformanceSkill extends BaseSkill {
     }
 
     return diagnoses;
+  }
+
+  /**
+   * AST-based large bundle detection: finds full lodash/moment/etc imports
+   */
+  private checkLargeBundleAST(filePath: string, content: string): Diagnosis[] {
+    const astFile = parseFile(filePath, content);
+    if (!astFile) return [];
+
+    const diagnoses: Diagnosis[] = [];
+    const heavyDeps = new Set(Object.keys(HEAVY_DEPENDENCIES));
+
+    walkAST(astFile.ast, (node) => {
+      if (node.type === 'ImportDeclaration') {
+        const importNode = node as TSESTree.ImportDeclaration;
+        const source = importNode.source.value;
+
+        // Check if importing a heavy dependency as a whole (not a subpath)
+        if (heavyDeps.has(source)) {
+          // Check if it's a default import (full import) vs named import
+          const hasDefaultImport = importNode.specifiers.some(
+            (spec) => spec.type === 'ImportDefaultSpecifier',
+          );
+
+          if (hasDefaultImport) {
+            const loc = importNode.loc;
+            const line = loc?.start.line ?? 0;
+            const rule = AST_PERF_RULES['large-bundle'];
+
+            diagnoses.push({
+              id: `Perf-${generateId()}`,
+              skill: this.name,
+              type: 'performance' as DiagnosisType,
+              severity: rule.severity,
+              title: rule.title,
+              description: rule.description,
+              location: { file: filePath, line },
+              metadata: {
+                ruleId: rule.id,
+                dependency: source,
+                alternative: HEAVY_DEPENDENCIES[source]?.alternative,
+                snippet: astFile.lines[line - 1]?.trim() ?? '',
+              },
+              fixSuggestion: {
+                description: rule.suggestion,
+                autoApplicable: true,
+                riskLevel: 'low',
+              },
+            });
+          }
+        }
+      }
+    });
+
+    return diagnoses;
+  }
+
+  /**
+   * AST-based console statement detection
+   */
+  private checkConsoleStatementsAST(filePath: string, content: string): Diagnosis[] {
+    const results = detectConsoleStatements({
+      filePath,
+      ast: parseFile(filePath, content)?.ast!,
+      source: content,
+      lines: content.split('\n'),
+    });
+
+    if (!results.length) return [];
+    const astFile = parseFile(filePath, content);
+    if (!astFile) return [];
+
+    return results.map((r) => ({
+      id: `Perf-${generateId()}`,
+      skill: this.name,
+      type: 'performance' as DiagnosisType,
+      severity: 'info' as Severity,
+      title: 'Console Statements in Production',
+      description: 'Console statements should be removed in production',
+      location: { file: filePath, line: r.line },
+      metadata: {
+        ruleId: 'console-log',
+        method: r.method,
+        snippet: r.snippet,
+      },
+      fixSuggestion: {
+        description: 'Use environment variables to control log output',
+        autoApplicable: true,
+        riskLevel: 'low',
+      },
+    }));
   }
 
   private async checkLargeFiles(_projectPath: string, tools: SkillContext['tools']): Promise<Diagnosis[]> {
@@ -415,13 +488,11 @@ export class PerformanceSkill extends BaseSkill {
       for (const dep of Object.keys(pkg.dependencies || {})) {
         if (HEAVY_DEPENDENCIES[dep]) {
           const info = HEAVY_DEPENDENCIES[dep];
-          // Check if the alternative is already present - avoid false positives
           const allDeps = new Set([
             ...Object.keys(pkg.dependencies || {}),
             ...Object.keys(pkg.devDependencies || {}),
           ]);
           if (allDeps.has(info.alternative)) {
-            // Alternative is already installed, skip this warning
             continue;
           }
           diagnoses.push({

@@ -56,11 +56,9 @@ const SECURITY_RULES = [
   },
   {
     id: 'xss-risk',
-    patterns: [
-      /dangerouslySetInnerHTML\s*=\s*\{/g,
-      /innerHTML\s*=\s*[^;]+\+/g,
-      /document\.write\s*\(/g,
-    ],
+    // XSS is detected via AST (dangerouslySetInnerHTML, innerHTML, document.write).
+    // This entry is kept for metadata lookup (title/description/suggestion) only.
+    patterns: [],
     severity: 'warning' as Severity,
     title: 'XSS 风险',
     description: '检测到可能的 XSS 漏洞',
@@ -68,10 +66,8 @@ const SECURITY_RULES = [
   },
   {
     id: 'eval-usage',
-    patterns: [
-      /eval\s*\(/g,
-      /new\s+Function\s*\(/g,
-    ],
+    // eval is detected via AST. This entry is kept for metadata lookup only.
+    patterns: [],
     severity: 'warning' as Severity,
     title: 'eval 使用',
     description: '使用 eval 或 new Function 存在安全风险',
@@ -79,24 +75,20 @@ const SECURITY_RULES = [
   },
   {
     id: 'insecure-random',
-    patterns: [
-      /Math\.random\(\)/g,
-    ],
+    // Math.random is detected via AST. This entry is kept for metadata lookup only.
+    patterns: [],
     severity: 'info' as Severity,
     title: '不安全的随机数',
     description: 'Math.random() 不适用于安全敏感场景',
     suggestion: '使用 crypto.getRandomValues() 或 crypto.randomBytes()',
-    // Context-aware: skip in non-security contexts
     contextFilter: (line: string): boolean => {
-      // Skip if used in UI animations, visual effects, random IDs for React keys,
-      // test data generation, game mechanics, or random positioning
       const nonSecurityContexts = [
-        /key\s*[=:]\s*.*Math\.random/i,        // React keys
-        /Math\.random\(\)\s*\*\s*\d+\s*[+\-]/, // Visual positioning/scaling
+        /key\s*[=:]\s*.*Math\.random/i,
+        /Math\.random\(\)\s*\*\s*\d+\s*[+\-]/,
         /opacity.*Math\.random|Math\.random.*opacity/i,
         /animation.*Math\.random|Math\.random.*animation/i,
         /color.*Math\.random|Math\.random.*color/i,
-        /Math\.random\(\)\s*<\s*0?\.5/i,        // Simple boolean toggle (UI)
+        /Math\.random\(\)\s*<\s*0?\.5/i,
         /(?:mock|fixture|dummy|fake|test).*Math\.random/i,
         /Math\.random.*(?:mock|fixture|dummy|fake|test)/i,
         /className.*Math\.random|Math\.random.*className/i,
