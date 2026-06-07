@@ -292,7 +292,7 @@ qa-agent skill install @qa-agent/skill-security
 | AI Harness 评估通过率 | ≥ 85% | ✅ 评估引擎 + 质量门禁 + 回归检测 + CI 集成 |
 | Golden Set 覆盖率 | ≥ 50 用例 | ✅ 70 用例（a11y/security/performance/react/vue/nextjs/nuxt 各 10） |
 | TypeScript 编译 | 零错误 | ✅ tsc --noEmit 通过 |
-| 测试覆盖率 | 300+ tests | ✅ 338 pass, 0 fail, 856 expect(), 14 文件 |
+| 测试覆盖率 | 300+ tests | ✅ 343 pass, 0 fail, 874 expect(), 14 文件 |
 | Skill 注册一致性 | 全入口统一 | ✅ eval/diagnose/CI 三入口均注册 13 个 Skill |
 | CLI 命令 | 完整覆盖 | ✅ 14 个命令（init/diagnose/fix/audit/skill/ci/watch/dashboard/eval 等） |
 
