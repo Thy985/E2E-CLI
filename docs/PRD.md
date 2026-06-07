@@ -262,7 +262,7 @@ qa-agent skill install @qa-agent/skill-security
 ### Phase 3: 诊断精度提升
 - [x] AST 解析替代正则（Babel/ESLint/TsQuery 集成）
 - [x] React 组件级检测（JSX 解析、props 分析）
-- [ ] Vue 组件级检测
+- [x] Vue 组件级检测（SFC AST 解析、模板检测、Composition API 规则）
 - [ ] 框架感知诊断（Next.js/Nuxt 路由分析）
 
 ### Phase 4: 智能优化

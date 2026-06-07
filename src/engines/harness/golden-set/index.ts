@@ -6,6 +6,7 @@ import { a11yGoldenCases } from './a11y';
 import { securityGoldenCases } from './security';
 import { performanceGoldenCases } from './performance';
 import { reactGoldenCases } from './react';
+import { vueGoldenCases } from './vue';
 import type { GoldenTestCase, GoldenSet } from '../types';
 
 /** 全部 Golden Set 用例 */
@@ -14,6 +15,7 @@ const allCases: GoldenTestCase[] = [
   ...securityGoldenCases,
   ...performanceGoldenCases,
   ...reactGoldenCases,
+  ...vueGoldenCases,
 ];
 
 /** 按 skill 获取用例 */

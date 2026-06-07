@@ -30,6 +30,7 @@ import { A11ySkill } from '../skills/builtin/a11y';
 import { SecuritySkill } from '../skills/builtin/security';
 import { PerformanceSkill } from '../skills/builtin/performance';
 import { ReactSkill } from '../skills/builtin/react';
+import { VueSkill } from '../skills/builtin/vue';
 import type { BaseSkill } from '../skills/base-skill';
 
 import * as fs from 'fs';
@@ -43,6 +44,7 @@ const skillInstances: Record<string, BaseSkill> = {
   security: new SecuritySkill(),
   performance: new PerformanceSkill(),
   react: new ReactSkill(),
+  vue: new VueSkill(),
 };
 
 // ---------------------------------------------------------------------------

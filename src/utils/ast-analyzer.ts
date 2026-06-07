@@ -6,6 +6,7 @@
  */
 
 import * as TSESLint from '@typescript-eslint/parser';
+import * as vueParser from 'vue-eslint-parser';
 import { AST_NODE_TYPES } from '@typescript-eslint/typescript-estree';
 import type { TSESTree } from '@typescript-eslint/typescript-estree';
 
@@ -369,6 +370,620 @@ export function detectConsoleStatements(astFile: ASTFile): Array<{
       });
     }
   });
+
+  return results;
+}
+
+// ---------------------------------------------------------------------------
+// Vue SFC parsing and detection
+// ---------------------------------------------------------------------------
+
+/** Parsed Vue SFC file representation. */
+export interface VueASTFile {
+  filePath: string;
+  /** The full ESLint-style AST from vue-eslint-parser (includes templateBody) */
+  ast: ReturnType<typeof vueParser.parseForESLint>['ast'];
+  /** The template AST body (VDocumentFragment) */
+  templateBody: ReturnType<typeof vueParser.parseForESLint>['ast']['templateBody'];
+  /** The script AST (ESLint Program) */
+  scriptAST: TSESTree.Program | null;
+  source: string;
+  lines: string[];
+}
+
+/**
+ * Parse a .vue SFC file into a VueASTFile using vue-eslint-parser.
+ * Returns null if parsing fails or vue-eslint-parser is not available.
+ */
+export function parseVueFile(source: string, filePath: string): VueASTFile | null {
+  try {
+    const result = vueParser.parseForESLint(source, {
+      ecmaVersion: 2020,
+      sourceType: 'module',
+      ecmaFeatures: { jsx: true },
+      parser: '@typescript-eslint/parser',
+    });
+    return {
+      filePath,
+      ast: result.ast,
+      templateBody: result.ast.templateBody,
+      scriptAST: result.services?.program?.getProgram() ?? null,
+      source,
+      lines: source.split('\n'),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Walk the Vue template AST and collect all VElement nodes.
+ * A VElement has a `type` of 'VElement', a `name` property, `startTag` with `attributes`, and `children`.
+ */
+export function findVElements(templateBody: any): any[] {
+  const elements: any[] = [];
+
+  function walk(node: any): void {
+    if (!node) return;
+    if (node.type === 'VElement') {
+      elements.push(node);
+    }
+    if (Array.isArray(node.children)) {
+      for (const child of node.children) {
+        walk(child);
+      }
+    }
+  }
+
+  if (templateBody && Array.isArray(templateBody.children)) {
+    for (const child of templateBody.children) {
+      walk(child);
+    }
+  }
+
+  return elements;
+}
+
+/** Check if a VElement has a :key attribute bound. */
+function hasKeyBinding(element: any): boolean {
+  if (!element.startTag || !element.startTag.attributes) return false;
+  return element.startTag.attributes.some((attr: any) => {
+    // Non-directive :key attribute
+    if (!attr.directive && attr.key && attr.key.name === ':key') return true;
+    // v-bind:key
+    if (
+      attr.directive &&
+      attr.key &&
+      attr.key.name &&
+      attr.key.name.name === 'bind' &&
+      attr.key.argument &&
+      attr.key.argument.name === 'key'
+    ) {
+      return true;
+    }
+    return false;
+  });
+}
+
+/** Check if a VElement has a v-for directive. */
+function hasVForDirective(element: any): boolean {
+  if (!element.startTag || !element.startTag.attributes) return false;
+  return element.startTag.attributes.some((attr: any) => {
+    if (
+      attr.directive &&
+      attr.key &&
+      attr.key.name &&
+      attr.key.name.name === 'for'
+    ) {
+      return true;
+    }
+    return false;
+  });
+}
+
+/** Check if a VElement has a v-if directive. */
+function hasVIfDirective(element: any): boolean {
+  if (!element.startTag || !element.startTag.attributes) return false;
+  return element.startTag.attributes.some((attr: any) => {
+    if (
+      attr.directive &&
+      attr.key &&
+      attr.key.name &&
+      attr.key.name.name === 'if'
+    ) {
+      return true;
+    }
+    return false;
+  });
+}
+
+/** Get the line/column/snippet for a Vue template element. */
+function getIssueLocation(
+  element: any,
+  astFile: VueASTFile
+): { line: number; column: number; snippet: string } {
+  const loc = element.loc;
+  const line = loc?.start?.line ?? 0;
+  const column = loc?.start?.column ?? 0;
+  const snippet = astFile.lines[line - 1]?.trim() ?? '';
+  return { line, column, snippet };
+}
+
+/**
+ * Detect v-for without :key on the same element.
+ * Returns issues for each v-for element missing a :key binding.
+ */
+export function detectMissingVForKey(astFile: VueASTFile): Array<{
+  ruleId: string;
+  line: number;
+  column: number;
+  message: string;
+  snippet: string;
+}> {
+  const results: Array<{
+    ruleId: string;
+    line: number;
+    column: number;
+    message: string;
+    snippet: string;
+  }> = [];
+
+  if (!astFile.templateBody) return results;
+
+  const elements = findVElements(astFile.templateBody);
+  for (const el of elements) {
+    if (hasVForDirective(el) && !hasKeyBinding(el)) {
+      const loc = getIssueLocation(el, astFile);
+      results.push({
+        ruleId: 'vue-missing-v-for-key',
+        line: loc.line,
+        column: loc.column,
+        message: 'v-for 指令缺少 :key 绑定',
+        snippet: loc.snippet,
+      });
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Detect v-if and v-for on the same element (performance anti-pattern).
+ * Vue recommends using a computed property or wrapping v-if around a template
+ * when used with v-for.
+ */
+export function detectVIfWithVFor(astFile: VueASTFile): Array<{
+  ruleId: string;
+  line: number;
+  column: number;
+  message: string;
+  snippet: string;
+}> {
+  const results: Array<{
+    ruleId: string;
+    line: number;
+    column: number;
+    message: string;
+    snippet: string;
+  }> = [];
+
+  if (!astFile.templateBody) return results;
+
+  const elements = findVElements(astFile.templateBody);
+  for (const el of elements) {
+    if (hasVIfDirective(el) && hasVForDirective(el)) {
+      const loc = getIssueLocation(el, astFile);
+      results.push({
+        ruleId: 'vue-v-if-with-v-for',
+        line: loc.line,
+        column: loc.column,
+        message: '不建议在同一元素上同时使用 v-if 和 v-for，建议使用 computed 属性或 <template> 包裹',
+        snippet: loc.snippet,
+      });
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Detect direct DOM manipulation in Vue component script sections.
+ * Patterns: document.querySelector, document.getElementById, document.querySelectorAll,
+ * document.createElement, element.innerHTML, element.outerHTML, etc.
+ */
+export function detectDirectDomAccess(astFile: VueASTFile): Array<{
+  ruleId: string;
+  line: number;
+  column: number;
+  message: string;
+  snippet: string;
+}> {
+  const results: Array<{
+    ruleId: string;
+    line: number;
+    column: number;
+    message: string;
+    snippet: string;
+  }> = [];
+
+  if (!astFile.scriptAST) return results;
+
+  walkAST(astFile.scriptAST, (node) => {
+    // document.querySelector / getElementById / querySelectorAll / createElement / etc.
+    if (
+      node.type === AST_NODE_TYPES.CallExpression &&
+      node.callee.type === AST_NODE_TYPES.MemberExpression &&
+      node.callee.object.type === AST_NODE_TYPES.Identifier &&
+      node.callee.object.name === 'document' &&
+      node.callee.property.type === AST_NODE_TYPES.Identifier &&
+      [
+        'querySelector',
+        'querySelectorAll',
+        'getElementById',
+        'getElementsByClassName',
+        'getElementsByName',
+        'getElementsByTagName',
+        'createElement',
+        'write',
+      ].includes(node.callee.property.name)
+    ) {
+      const loc = node.loc;
+      results.push({
+        ruleId: 'vue-direct-dom-access',
+        line: loc?.start.line ?? 0,
+        column: loc?.start.column ?? 0,
+        message: `直接使用 document.${node.callee.property.name}() 违反 Vue 数据驱动理念，建议使用 ref`,
+        snippet: astFile.lines[loc!.start.line - 1]?.trim() ?? '',
+      });
+    }
+
+    // element.innerHTML / outerHTML assignments
+    if (
+      node.type === AST_NODE_TYPES.AssignmentExpression &&
+      node.left.type === AST_NODE_TYPES.MemberExpression &&
+      node.left.property.type === AST_NODE_TYPES.Identifier &&
+      ['innerHTML', 'outerHTML'].includes(node.left.property.name)
+    ) {
+      const loc = node.loc;
+      results.push({
+        ruleId: 'vue-direct-dom-access',
+        line: loc?.start.line ?? 0,
+        column: loc?.start.column ?? 0,
+        message: `直接赋值 ${node.left.property.name} 违反 Vue 数据驱动理念，建议使用 v-html 或响应式数据`,
+        snippet: astFile.lines[loc!.start.line - 1]?.trim() ?? '',
+      });
+    }
+  });
+
+  return results;
+}
+
+/**
+ * Detect <img> elements without alt attribute in Vue templates.
+ */
+export function detectImgWithoutAltVue(astFile: VueASTFile): Array<{
+  ruleId: string;
+  line: number;
+  column: number;
+  message: string;
+  snippet: string;
+}> {
+  const results: Array<{
+    ruleId: string;
+    line: number;
+    column: number;
+    message: string;
+    snippet: string;
+  }> = [];
+
+  if (!astFile.templateBody) return results;
+
+  const elements = findVElements(astFile.templateBody);
+  for (const el of elements) {
+    if (el.name === 'img') {
+      const hasAlt = (el.startTag?.attributes ?? []).some((attr: any) => {
+        if (!attr.directive && attr.key && attr.key.name === 'alt') return true;
+        if (
+          attr.directive &&
+          attr.key &&
+          attr.key.name &&
+          attr.key.name.name === 'bind' &&
+          attr.key.argument &&
+          attr.key.argument.name === 'alt'
+        ) {
+          return true;
+        }
+        return false;
+      });
+      if (!hasAlt) {
+        const loc = getIssueLocation(el, astFile);
+        results.push({
+          ruleId: 'vue-img-without-alt',
+          line: loc.line,
+          column: loc.column,
+          message: 'img 元素缺少 alt 属性，影响无障碍访问',
+          snippet: loc.snippet,
+        });
+      }
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Detect <a> elements without accessible name (text content or aria-label) in Vue templates.
+ */
+export function detectAnchorWithoutNameVue(astFile: VueASTFile): Array<{
+  ruleId: string;
+  line: number;
+  column: number;
+  message: string;
+  snippet: string;
+}> {
+  const results: Array<{
+    ruleId: string;
+    line: number;
+    column: number;
+    message: string;
+    snippet: string;
+  }> = [];
+
+  if (!astFile.templateBody) return results;
+
+  const elements = findVElements(astFile.templateBody);
+  for (const el of elements) {
+    if (el.name === 'a') {
+      const attrs = el.startTag?.attributes ?? [];
+
+      // Check for aria-label or aria-labelledby
+      const hasAriaLabel = attrs.some((attr: any) => {
+        if (!attr.directive && attr.key && ['aria-label', 'aria-labelledby'].includes(attr.key.name)) return true;
+        if (
+          attr.directive &&
+          attr.key &&
+          attr.key.name &&
+          attr.key.name.name === 'bind' &&
+          attr.key.argument &&
+          ['aria-label', 'aria-labelledby'].includes(attr.key.argument.name)
+        ) {
+          return true;
+        }
+        return false;
+      });
+
+      if (hasAriaLabel) continue;
+
+      // Check for text content in children
+      let hasTextContent = false;
+      function checkTextChildren(node: any): void {
+        if (!node || !node.children) return;
+        for (const child of node.children) {
+          if (child.type === 'VText' && child.value.trim()) {
+            hasTextContent = true;
+            return;
+          }
+          if (child.type === 'VExpressionContainer') {
+            hasTextContent = true;
+            return;
+          }
+          checkTextChildren(child);
+          if (hasTextContent) return;
+        }
+      }
+      checkTextChildren(el);
+
+      if (!hasTextContent) {
+        const loc = getIssueLocation(el, astFile);
+        results.push({
+          ruleId: 'vue-anchor-without-name',
+          line: loc.line,
+          column: loc.column,
+          message: '链接缺少可访问名称（文本内容或 aria-label）',
+          snippet: loc.snippet,
+        });
+      }
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Detect v-html directive usage (XSS risk) in Vue templates.
+ * v-html renders raw HTML and can execute scripts.
+ */
+export function detectVHtmlUsage(astFile: VueASTFile): Array<{
+  ruleId: string;
+  line: number;
+  column: number;
+  message: string;
+  snippet: string;
+}> {
+  const results: Array<{
+    ruleId: string;
+    line: number;
+    column: number;
+    message: string;
+    snippet: string;
+  }> = [];
+
+  if (!astFile.templateBody) return results;
+
+  const elements = findVElements(astFile.templateBody);
+  for (const el of elements) {
+    const attrs = el.startTag?.attributes ?? [];
+    for (const attr of attrs) {
+      if (
+        attr.directive &&
+        attr.key &&
+        attr.key.name &&
+        attr.key.name.name === 'html'
+      ) {
+        const loc = getIssueLocation(el, astFile);
+        results.push({
+          ruleId: 'vue-v-html-usage',
+          line: loc.line,
+          column: loc.column,
+          message: 'v-html 指令存在 XSS 风险，请确保渲染内容可信',
+          snippet: loc.snippet,
+        });
+        break;
+      }
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Detect props defined via defineProps() that are not used in the template or script.
+ * Supports both array syntax: defineProps(['prop1', 'prop2'])
+ * and object syntax: defineProps({ prop1: String, prop2: Number })
+ */
+export function detectUnusedPropsVue(astFile: VueASTFile): Array<{
+  ruleId: string;
+  line: number;
+  column: number;
+  message: string;
+  snippet: string;
+  propName: string;
+}> {
+  const results: Array<{
+    ruleId: string;
+    line: number;
+    column: number;
+    message: string;
+    snippet: string;
+    propName: string;
+  }> = [];
+
+  if (!astFile.scriptAST) return results;
+
+  // 1. Collect props from defineProps
+  const definedProps: Array<{ name: string; line: number; column: number }> = [];
+
+  walkAST(astFile.scriptAST, (node) => {
+    if (
+      node.type === AST_NODE_TYPES.CallExpression &&
+      node.callee.type === AST_NODE_TYPES.Identifier &&
+      node.callee.name === 'defineProps' &&
+      node.arguments.length > 0
+    ) {
+      const arg = node.arguments[0];
+      const loc = node.loc;
+
+      // Array syntax: defineProps(['prop1', 'prop2'])
+      if (arg.type === AST_NODE_TYPES.ArrayExpression) {
+        for (const elem of arg.elements) {
+          if (
+            elem &&
+            elem.type === AST_NODE_TYPES.Literal &&
+            typeof elem.value === 'string'
+          ) {
+            definedProps.push({
+              name: elem.value,
+              line: loc?.start.line ?? 0,
+              column: loc?.start.column ?? 0,
+            });
+          }
+        }
+      }
+
+      // Object syntax: defineProps({ prop1: String, prop2: Number })
+      if (arg.type === AST_NODE_TYPES.ObjectExpression) {
+        for (const prop of arg.properties) {
+          if (
+            prop.type === AST_NODE_TYPES.Property &&
+            prop.key.type === AST_NODE_TYPES.Identifier
+          ) {
+            definedProps.push({
+              name: prop.key.name,
+              line: loc?.start.line ?? 0,
+              column: loc?.start.column ?? 0,
+            });
+          }
+        }
+      }
+    }
+  });
+
+  if (definedProps.length === 0) return results;
+
+  // 2. Build a set of all identifiers used in the script (excluding prop declarations)
+  const usedInScript = new Set<string>();
+  walkAST(astFile.scriptAST, (node) => {
+    if (node.type === AST_NODE_TYPES.Identifier) {
+      usedInScript.add(node.name);
+    }
+  });
+
+  // 3. Build a set of all identifiers used in the template
+  const usedInTemplate = new Set<string>();
+  if (astFile.templateBody) {
+    function walkTemplate(node: any): void {
+      if (!node) return;
+      if (node.type === 'VExpressionContainer' && node.expression) {
+        // Collect identifiers in template expressions
+        const expr = node.expression;
+        if (expr.type === 'Identifier' && expr.name) {
+          usedInTemplate.add(expr.name);
+        }
+        // Walk expression children (simple recursive check for Identifier nodes)
+        function walkExpr(e: any): void {
+          if (!e || typeof e !== 'object') return;
+          if (e.type === 'Identifier' && e.name) {
+            usedInTemplate.add(e.name);
+          }
+          for (const k of Object.keys(e)) {
+            if (Array.isArray(e[k])) {
+              for (const item of e[k]) walkExpr(item);
+            } else if (typeof e[k] === 'object') {
+              walkExpr(e[k]);
+            }
+          }
+        }
+        walkExpr(expr);
+      }
+      // Walk element attributes for directive expressions
+      if (node.startTag && node.startTag.attributes) {
+        for (const attr of node.startTag.attributes) {
+          if (attr.directive && attr.value) {
+            walkExpr(attr.value);
+          }
+        }
+      }
+      if (Array.isArray(node.children)) {
+        for (const child of node.children) {
+          walkTemplate(child);
+        }
+      }
+    }
+    walkTemplate(astFile.templateBody);
+  }
+
+  // 4. Check each defined prop
+  for (const prop of definedProps) {
+    const usedScript = usedInScript.has(prop.name);
+    const usedTemplate = usedInTemplate.has(prop.name);
+
+    // Also check if prop appears in template as part of v-bind or interpolation
+    const templateSource = astFile.source;
+    const propInTemplateRegex = new RegExp(`\\b${prop.name}\\b`);
+    const appearsInTemplateSection =
+      astFile.templateBody && propInTemplateRegex.test(templateSource);
+
+    if (!usedScript && !usedTemplate && !appearsInTemplateSection) {
+      results.push({
+        ruleId: 'vue-unused-prop',
+        line: prop.line,
+        column: prop.column,
+        message: `Prop "${prop.name}" 在组件中未被使用`,
+        snippet: astFile.lines[prop.line - 1]?.trim() ?? '',
+        propName: prop.name,
+      });
+    }
+  }
 
   return results;
 }
