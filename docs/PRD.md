@@ -272,12 +272,12 @@ qa-agent skill install @qa-agent/skill-security
 - [x] 用户反馈回流（accept/reject 信号收集）
 
 ### Phase 5: 产品化
-- [ ] Web Dashboard（可视化报告、交互式修复）
-- [ ] 配置文件支持（config.yml）
-- [ ] Watch 监控模式
-- [ ] 真正的 CI/CD Action（不仅是 YAML 生成）
-- [ ] 文档与示例
-- [ ] 性能基准（大项目扫描优化）
+- [x] Web Dashboard（可视化报告、交互式修复）
+- [x] 配置文件支持（config.yml）
+- [x] Watch 监控模式
+- [x] 真正的 CI/CD Action（不仅是 YAML 生成）
+- [x] 文档与示例
+- [x] 性能基准（大项目扫描优化）
 
 ---
 

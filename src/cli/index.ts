@@ -16,6 +16,8 @@ import { seoCommand } from './commands/seo';
 import { dependencyCommand } from './commands/dependency';
 import { fixCommand } from './commands/fix';
 import { evalCommand } from './commands/eval';
+import { watchCommand } from './commands/watch';
+import { dashboardCommand } from './commands/dashboard';
 
 const program = new Command();
 
@@ -146,6 +148,26 @@ program.addCommand(dependencyCommand);
 
 // Eval command (AI Harness evaluation)
 program.addCommand(evalCommand);
+
+// Watch command
+program
+  .command('watch')
+  .description('Watch mode - re-diagnose on file changes')
+  .option('-p, --path <path>', 'Project path', process.cwd())
+  .option('-s, --skills <skills>', 'Specify skills to run, comma-separated')
+  .option('-i, --ignore <patterns>', 'Ignore patterns, comma-separated')
+  .option('-d, --debounce <ms>', 'Debounce delay in milliseconds', '500')
+  .action(watchCommand);
+
+// Dashboard command
+program
+  .command('dashboard')
+  .description('Start interactive web dashboard')
+  .option('-p, --path <path>', 'Project path', process.cwd())
+  .option('--port <port>', 'Server port', '3900')
+  .option('--host <host>', 'Server host', 'localhost')
+  .option('--enable-fix', 'Enable fix API')
+  .action(dashboardCommand);
 
 // Parse arguments
 program.parse();
