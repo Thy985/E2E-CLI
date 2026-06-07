@@ -197,7 +197,7 @@ function diffAST(
 }
 
 /** Extract node types from AST (without path) for pattern matching */
-function collectNodeTypes(node: unknown): string[] {
+export function collectNodeTypes(node: unknown): string[] {
   const types: string[] = [];
 
   if (node === null || node === undefined || typeof node !== 'object') {
@@ -225,7 +225,7 @@ function collectNodeTypes(node: unknown): string[] {
 }
 
 /** Collect node signatures from AST for comparison */
-function collectNodeSignatures(node: unknown, path = 'root'): string[] {
+export function collectNodeSignatures(node: unknown, path = 'root'): string[] {
   const signatures: string[] = [];
 
   if (node === null || node === undefined || typeof node !== 'object') {

@@ -994,4 +994,84 @@ describe('DashboardServer', () => {
       await server.stop();
     });
   });
+
+  describe('HTTP Basic Auth', () => {
+    it('returns 401 without credentials when auth is enabled', async () => {
+      const server = createDashboardServer({
+        port: 0,
+        projectPath: '/tmp/test-project',
+        auth: { username: 'admin', password: 'secret' },
+      });
+
+      await server.start();
+
+      const response = await fetch(`http://localhost:${server.getPort()}/api/data`);
+      expect(response.status).toBe(401);
+
+      await server.stop();
+    });
+
+    it('returns 401 with wrong credentials', async () => {
+      const server = createDashboardServer({
+        port: 0,
+        projectPath: '/tmp/test-project',
+        auth: { username: 'admin', password: 'secret' },
+      });
+
+      await server.start();
+
+      const response = await fetch(`http://localhost:${server.getPort()}/api/data`, {
+        headers: { Authorization: 'Basic ' + Buffer.from('admin:wrong').toString('base64') },
+      });
+      expect(response.status).toBe(401);
+
+      await server.stop();
+    });
+
+    it('returns 200 with correct credentials', async () => {
+      const server = createDashboardServer({
+        port: 0,
+        projectPath: '/tmp/test-project',
+        auth: { username: 'admin', password: 'secret' },
+      });
+
+      await server.start();
+
+      const response = await fetch(`http://localhost:${server.getPort()}/api/data`, {
+        headers: { Authorization: 'Basic ' + Buffer.from('admin:secret').toString('base64') },
+      });
+      expect(response.status).toBe(200);
+
+      await server.stop();
+    });
+
+    it('allows health check without auth', async () => {
+      const server = createDashboardServer({
+        port: 0,
+        projectPath: '/tmp/test-project',
+        auth: { username: 'admin', password: 'secret' },
+      });
+
+      await server.start();
+
+      const response = await fetch(`http://localhost:${server.getPort()}/api/health`);
+      expect(response.status).toBe(200);
+
+      await server.stop();
+    });
+
+    it('does not require auth when auth is not configured', async () => {
+      const server = createDashboardServer({
+        port: 0,
+        projectPath: '/tmp/test-project',
+      });
+
+      await server.start();
+
+      const response = await fetch(`http://localhost:${server.getPort()}/api/data`);
+      expect(response.status).toBe(200);
+
+      await server.stop();
+    });
+  });
 });
