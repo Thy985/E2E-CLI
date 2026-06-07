@@ -4,7 +4,7 @@
  * Covers: determineWinner, history storage (load/save/recent),
  * and ABTestRunner (runTest, determineWinner, saveResult, loadHistory, getBestConfigurations).
  *
- * Uses fs mocking (not real FS + process.chdir) for CI compatibility.
+ * Uses fs mocking (same pattern as feedback-loop.test.ts) for CI compatibility.
  */
 
 import { describe, it, expect, beforeEach, mock } from 'bun:test';
@@ -24,26 +24,15 @@ mock.module('fs', () => ({
   existsSync: (_p: string) => mockState.fileExists,
   readFileSync: (_p: string, _encoding?: string) => mockState.fileContent,
   writeFileSync: (_p: string, content: string) => {
-    mockState.writtenCalls.push({ path: _p as string, content });
-    // Update fileContent so subsequent reads see the latest data
+    mockState.writtenCalls.push({ path: _p, content });
     mockState.fileContent = content;
     mockState.fileExists = true;
   },
   mkdirSync: (_p: string, _opts?: any) => {
-    mockState.mkdirCalls.push(_p as string);
+    mockState.mkdirCalls.push(_p);
   },
   unlinkSync: (_p: string) => {},
   rmSync: (_p: string, _opts?: any) => {},
-}));
-
-// ── Mock process.cwd ────────────────────────────────────────────────────────
-
-const originalCwd = process.cwd;
-let fakeCwd = '/fake/ci/workspace';
-
-mock.module('node:process', () => ({
-  ...process,
-  cwd: () => fakeCwd,
 }));
 
 // ── Mock generateId ─────────────────────────────────────────────────────────
@@ -189,12 +178,10 @@ describe('determineWinner', () => {
 describe('History storage', () => {
   beforeEach(() => {
     resetMockState();
-    fakeCwd = '/fake/ci/workspace/ab-test';
   });
 
   describe('loadABHistory', () => {
     it('returns empty array when history file does not exist', () => {
-      // fileExists is false by default after resetMockState
       const result = loadABHistory();
       expect(result).toEqual([]);
     });
@@ -239,7 +226,6 @@ describe('History storage', () => {
       const result = makeResult('A', 0.7);
       saveABHistory(result);
 
-      // writeFileSync updates mockState.fileContent automatically
       const written = JSON.parse(mockState.fileContent);
       expect(written).toHaveLength(2);
       expect(written[1].id).toBe('test-id-001');
@@ -451,7 +437,6 @@ describe('ABTestRunner', () => {
   describe('saveResult and loadHistory', () => {
     beforeEach(() => {
       resetMockState();
-      fakeCwd = '/fake/ci/workspace/ab-runner';
     });
 
     it('round-trips a result through save and load', () => {
@@ -507,8 +492,10 @@ describe('ABTestRunner', () => {
     it('skips skills where all tests are ties', () => {
       const history: ABTestHistoryEntry[] = [
         makeHistoryEntry('h1', 'tie', 0.3, {
-          config: { name: 't1', description: '', skill: 'performance', variantA: { label: 'A' }, variantB: { label: 'B' } } }),
+          config: { name: 't1', description: '', skill: 'performance', variantA: { label: 'A' }, variantB: { label: 'B' } },
+        }),
       ];
+
       const best = runner.getBestConfigurations(history);
       expect(best).toHaveLength(0);
     });
