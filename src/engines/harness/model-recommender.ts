@@ -98,6 +98,41 @@ const skillProfiles: Record<string, SkillModelProfile> = {
     outputComplexity: 'structured',
     latencyTolerance: 'low',
   },
+  e2e: {
+    skill: 'e2e',
+    taskType: 'generation',
+    contextWindow: 'large',
+    outputComplexity: 'creative',
+    latencyTolerance: 'high',
+  },
+  seo: {
+    skill: 'seo',
+    taskType: 'analysis',
+    contextWindow: 'medium',
+    outputComplexity: 'structured',
+    latencyTolerance: 'medium',
+  },
+  api: {
+    skill: 'api',
+    taskType: 'analysis',
+    contextWindow: 'medium',
+    outputComplexity: 'structured',
+    latencyTolerance: 'low',
+  },
+  dependency: {
+    skill: 'dependency',
+    taskType: 'reasoning',
+    contextWindow: 'medium',
+    outputComplexity: 'structured',
+    latencyTolerance: 'low',
+  },
+  complexity: {
+    skill: 'complexity',
+    taskType: 'reasoning',
+    contextWindow: 'large',
+    outputComplexity: 'structured',
+    latencyTolerance: 'medium',
+  },
 };
 
 // ============================================
