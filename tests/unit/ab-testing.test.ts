@@ -3,33 +3,56 @@
  *
  * Covers: determineWinner, history storage (load/save/recent),
  * and ABTestRunner (runTest, determineWinner, saveResult, loadHistory, getBestConfigurations).
+ *
+ * Uses fs mocking (not real FS + process.chdir) for CI compatibility.
  */
 
-import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test';
-import * as fs from 'fs';
-import * as path from 'path';
+import { describe, it, expect, beforeEach, mock } from 'bun:test';
 
-// ---------- Temp directory helpers ----------
+// ── Shared mock state (mutable, referenced by mock closures) ────────────────
 
-function createTempDir(prefix: string): string {
-  const dir = path.join(
-    process.env.TMPDIR || '/tmp',
-    `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-  );
-  fs.mkdirSync(dir, { recursive: true });
-  return dir;
-}
+const mockState = {
+  fileExists: false,
+  fileContent: '',
+  writtenCalls: [] as Array<{ path: string; content: string }>,
+  mkdirCalls: [] as string[],
+};
 
-function cleanupDir(dir: string): void {
-  if (fs.existsSync(dir)) {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-}
+// ── Mock fs (MUST be before imports so the target module picks up mocks) ───
 
-// ---------- generateId mock ----------
-mock.module('../../src/utils', () => ({
-  generateId: mock(() => 'test-id-001'),
+mock.module('fs', () => ({
+  existsSync: (_p: string) => mockState.fileExists,
+  readFileSync: (_p: string, _encoding?: string) => mockState.fileContent,
+  writeFileSync: (_p: string, content: string) => {
+    mockState.writtenCalls.push({ path: _p as string, content });
+    // Update fileContent so subsequent reads see the latest data
+    mockState.fileContent = content;
+    mockState.fileExists = true;
+  },
+  mkdirSync: (_p: string, _opts?: any) => {
+    mockState.mkdirCalls.push(_p as string);
+  },
+  unlinkSync: (_p: string) => {},
+  rmSync: (_p: string, _opts?: any) => {},
 }));
+
+// ── Mock process.cwd ────────────────────────────────────────────────────────
+
+const originalCwd = process.cwd;
+let fakeCwd = '/fake/ci/workspace';
+
+mock.module('node:process', () => ({
+  ...process,
+  cwd: () => fakeCwd,
+}));
+
+// ── Mock generateId ─────────────────────────────────────────────────────────
+
+mock.module('../../src/utils', () => ({
+  generateId: () => 'test-id-001',
+}));
+
+// ── Imports (AFTER mocks are installed) ─────────────────────────────────────
 
 import {
   determineWinner,
@@ -42,7 +65,18 @@ import {
   type ABTestHistoryEntry,
 } from '../../src/engines/harness/ab-testing';
 
-// ---------- Helpers ----------
+// ── Reset helpers ──────────────────────────────────────────────────────────
+
+function resetMockState(): void {
+  mockState.fileExists = false;
+  mockState.fileContent = '';
+  mockState.writtenCalls = [];
+  mockState.mkdirCalls = [];
+}
+
+// ===========================================================================
+// Helpers
+// ===========================================================================
 
 function makeResult(
   winner: 'A' | 'B' | 'tie' = 'A',
@@ -119,9 +153,6 @@ describe('determineWinner', () => {
   });
 
   it('significance increases with more samples (sample boost)', () => {
-    // Use diff = 0.06 → base significance = 0.06/0.1 = 0.6, then capped at min(1, 0.6 + boost)
-    // With small samples (4 total): boost = min(0.2, 4/100*0.2) = 0.008 → sig = 0.608
-    // With large samples (100 total): boost = min(0.2, 100/100*0.2) = 0.2 → sig = 0.8
     const small = determineWinner(
       { f1: 0.80, passedCases: 2, totalCases: 2 },
       { f1: 0.74, passedCases: 2, totalCases: 2 },
@@ -134,9 +165,6 @@ describe('determineWinner', () => {
   });
 
   it('returns exact significance with proper rounding', () => {
-    // diff = 0.15, so base significance = min(1, 0.15/0.1) = 1.0
-    // totalSamples = 40, sampleBoost = min(0.2, 40/100*0.2) = 0.08
-    // final significance = min(1, 1.0 + 0.08) = 1.0
     const result = determineWinner(
       { f1: 0.90, passedCases: 20, totalCases: 20 },
       { f1: 0.75, passedCases: 20, totalCases: 20 },
@@ -146,7 +174,6 @@ describe('determineWinner', () => {
   });
 
   it('tie significance formula for very small diff (near 0)', () => {
-    // f1Diff = 0.001 → (1 - 0.001/0.02) * 0.5 ≈ 0.475
     const result = determineWinner(
       { f1: 0.80, passedCases: 5, totalCases: 5 },
       { f1: 0.801, passedCases: 5, totalCases: 5 },
@@ -157,58 +184,30 @@ describe('determineWinner', () => {
 });
 
 // ===========================================================================
-// describe: History storage functions (using real FS in temp dirs)
+// describe: History storage functions (mocked fs)
 // ===========================================================================
 describe('History storage', () => {
-  let tmpDir: string;
-
   beforeEach(() => {
-    tmpDir = createTempDir('ab-history');
+    resetMockState();
+    fakeCwd = '/fake/ci/workspace/ab-test';
   });
 
-  afterEach(() => {
-    cleanupDir(tmpDir);
-  });
-
-  // For history tests we use the real filesystem but in a dedicated temp dir.
-  // The module uses `.qa-ab-history` relative to process.cwd(), so we
-  // temporarily change cwd.
   describe('loadABHistory', () => {
     it('returns empty array when history file does not exist', () => {
-      // The temp dir has no .qa-ab-history/ab-test-history.json
-      const savedCwd = process.cwd();
-      process.chdir(tmpDir);
-
-      try {
-        const result = loadABHistory();
-        expect(result).toEqual([]);
-      } finally {
-        process.chdir(savedCwd);
-      }
+      // fileExists is false by default after resetMockState
+      const result = loadABHistory();
+      expect(result).toEqual([]);
     });
 
     it('returns empty array when file exists but parsing fails', () => {
-      const historyDir = path.join(tmpDir, '.qa-ab-history');
-      fs.mkdirSync(historyDir, { recursive: true });
-      fs.writeFileSync(
-        path.join(historyDir, 'ab-test-history.json'),
-        'not valid json',
-        'utf-8',
-      );
-      const savedCwd = process.cwd();
-      process.chdir(tmpDir);
+      mockState.fileExists = true;
+      mockState.fileContent = 'not valid json';
 
-      try {
-        const result = loadABHistory();
-        expect(result).toEqual([]);
-      } finally {
-        process.chdir(savedCwd);
-      }
+      const result = loadABHistory();
+      expect(result).toEqual([]);
     });
 
     it('parses valid JSON and returns history entries', () => {
-      const historyDir = path.join(tmpDir, '.qa-ab-history');
-      fs.mkdirSync(historyDir, { recursive: true });
       const historyData = [
         {
           id: 'abc123',
@@ -220,137 +219,72 @@ describe('History storage', () => {
           significance: 0.6,
         },
       ];
-      fs.writeFileSync(
-        path.join(historyDir, 'ab-test-history.json'),
-        JSON.stringify(historyData),
-        'utf-8',
-      );
-      const savedCwd = process.cwd();
-      process.chdir(tmpDir);
+      mockState.fileExists = true;
+      mockState.fileContent = JSON.stringify(historyData);
 
-      try {
-        const result = loadABHistory();
-        expect(result).toHaveLength(1);
-        expect(result[0].id).toBe('abc123');
-        expect(result[0].winner).toBe('A');
-        expect(result[0].variantA.f1).toBe(0.8);
-      } finally {
-        process.chdir(savedCwd);
-      }
+      const result = loadABHistory();
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('abc123');
+      expect(result[0].winner).toBe('A');
+      expect(result[0].variantA.f1).toBe(0.8);
     });
   });
 
   describe('saveABHistory', () => {
     it('writes a new entry to history file', () => {
-      const historyDir = path.join(tmpDir, '.qa-ab-history');
-      fs.mkdirSync(historyDir, { recursive: true });
-      // Pre-populate with one entry
       const existing = [makeHistoryEntry('prev-001')];
-      fs.writeFileSync(
-        path.join(historyDir, 'ab-test-history.json'),
-        JSON.stringify(existing),
-        'utf-8',
-      );
-      const savedCwd = process.cwd();
-      process.chdir(tmpDir);
+      mockState.fileExists = true;
+      mockState.fileContent = JSON.stringify(existing);
 
-      try {
-        const result = makeResult('A', 0.7);
-        saveABHistory(result);
+      const result = makeResult('A', 0.7);
+      saveABHistory(result);
 
-        const raw = fs.readFileSync(
-          path.join(historyDir, 'ab-test-history.json'),
-          'utf-8',
-        );
-        const written = JSON.parse(raw);
-        expect(written).toHaveLength(2);
-        expect(written[1].id).toBe('test-id-001');
-        expect(written[1].winner).toBe('A');
-      } finally {
-        process.chdir(savedCwd);
-      }
+      // writeFileSync updates mockState.fileContent automatically
+      const written = JSON.parse(mockState.fileContent);
+      expect(written).toHaveLength(2);
+      expect(written[1].id).toBe('test-id-001');
+      expect(written[1].winner).toBe('A');
     });
 
     it('creates directory if it does not exist', () => {
-      const savedCwd = process.cwd();
-      process.chdir(tmpDir);
+      const result = makeResult('B', 0.8);
+      saveABHistory(result);
 
-      try {
-        const result = makeResult('B', 0.8);
-        saveABHistory(result);
-
-        const historyDir = path.join(tmpDir, '.qa-ab-history');
-        expect(fs.existsSync(historyDir)).toBe(true);
-      } finally {
-        process.chdir(savedCwd);
-      }
+      expect(mockState.mkdirCalls.length).toBeGreaterThan(0);
     });
   });
 
   describe('getRecentABTests', () => {
     it('returns limited entries in reverse order', () => {
-      const historyDir = path.join(tmpDir, '.qa-ab-history');
-      fs.mkdirSync(historyDir, { recursive: true });
       const history = Array.from({ length: 20 }, (_, i) =>
         makeHistoryEntry(`id-${i}`, 'A', 0.5),
       );
-      fs.writeFileSync(
-        path.join(historyDir, 'ab-test-history.json'),
-        JSON.stringify(history),
-        'utf-8',
-      );
-      const savedCwd = process.cwd();
-      process.chdir(tmpDir);
+      mockState.fileExists = true;
+      mockState.fileContent = JSON.stringify(history);
 
-      try {
-        const recent = getRecentABTests(5);
-        expect(recent).toHaveLength(5);
-        expect(recent[0].id).toBe('id-19');
-        expect(recent[4].id).toBe('id-15');
-      } finally {
-        process.chdir(savedCwd);
-      }
+      const recent = getRecentABTests(5);
+      expect(recent).toHaveLength(5);
+      expect(recent[0].id).toBe('id-19');
+      expect(recent[4].id).toBe('id-15');
     });
 
     it('returns all entries reversed when count exceeds history length', () => {
-      const historyDir = path.join(tmpDir, '.qa-ab-history');
-      fs.mkdirSync(historyDir, { recursive: true });
       const history = [makeHistoryEntry('x1'), makeHistoryEntry('x2')];
-      fs.writeFileSync(
-        path.join(historyDir, 'ab-test-history.json'),
-        JSON.stringify(history),
-        'utf-8',
-      );
-      const savedCwd = process.cwd();
-      process.chdir(tmpDir);
+      mockState.fileExists = true;
+      mockState.fileContent = JSON.stringify(history);
 
-      try {
-        const recent = getRecentABTests(100);
-        expect(recent).toHaveLength(2);
-        expect(recent[0].id).toBe('x2');
-        expect(recent[1].id).toBe('x1');
-      } finally {
-        process.chdir(savedCwd);
-      }
+      const recent = getRecentABTests(100);
+      expect(recent).toHaveLength(2);
+      expect(recent[0].id).toBe('x2');
+      expect(recent[1].id).toBe('x1');
     });
 
     it('returns empty array when history is empty', () => {
-      const historyDir = path.join(tmpDir, '.qa-ab-history');
-      fs.mkdirSync(historyDir, { recursive: true });
-      fs.writeFileSync(
-        path.join(historyDir, 'ab-test-history.json'),
-        '[]',
-        'utf-8',
-      );
-      const savedCwd = process.cwd();
-      process.chdir(tmpDir);
+      mockState.fileExists = true;
+      mockState.fileContent = '[]';
 
-      try {
-        const recent = getRecentABTests(10);
-        expect(recent).toEqual([]);
-      } finally {
-        process.chdir(savedCwd);
-      }
+      const recent = getRecentABTests(10);
+      expect(recent).toEqual([]);
     });
   });
 });
@@ -419,12 +353,9 @@ describe('ABTestRunner', () => {
   // -----------------------------------------------------------------------
   describe('runTest', () => {
     it('runs both variants and determines a winner', async () => {
-      // Variant A: returns correct diagnosis for both cases → high F1
-      // Variant B: returns empty diagnoses → zero F1
       const diagnoseFn = mock(async (skill: string, variant: { prompt?: string }, testCase: { expectedDiagnosis: { issueTypes: string[] } }) => {
         const isVariantA = variant.prompt?.includes('expert');
         if (isVariantA) {
-          // Perfect match — return all expected types
           return testCase.expectedDiagnosis.issueTypes.map(type => ({
             id: 'd1',
             skill,
@@ -436,7 +367,6 @@ describe('ABTestRunner', () => {
             metadata: { ruleId: type },
           }));
         } else {
-          // Return nothing — B misses all issues
           return [];
         }
       });
@@ -516,20 +446,12 @@ describe('ABTestRunner', () => {
   });
 
   // -----------------------------------------------------------------------
-  // saveResult and loadHistory — round-trip (real FS in temp dir)
+  // saveResult and loadHistory — round-trip (mocked fs)
   // -----------------------------------------------------------------------
   describe('saveResult and loadHistory', () => {
-    let tmpDir: string;
-
     beforeEach(() => {
-      tmpDir = createTempDir('ab-runner');
-      const savedCwd = process.cwd();
-      process.chdir(tmpDir);
-    });
-
-    afterEach(() => {
-      process.chdir('/workspace');
-      cleanupDir(tmpDir);
+      resetMockState();
+      fakeCwd = '/fake/ci/workspace/ab-runner';
     });
 
     it('round-trips a result through save and load', () => {
@@ -546,7 +468,6 @@ describe('ABTestRunner', () => {
 
     it('loadHistory returns empty array when no file exists', () => {
       const runner2 = new ABTestRunner();
-      // tmpDir has no .qa-ab-history yet
       const loaded = runner2.loadHistory();
       expect(loaded).toEqual([]);
     });
@@ -586,7 +507,7 @@ describe('ABTestRunner', () => {
     it('skips skills where all tests are ties', () => {
       const history: ABTestHistoryEntry[] = [
         makeHistoryEntry('h1', 'tie', 0.3, {
-          config: { name: 't1', description: '', skill: 'performance', variantA: { label: 'A' }, variantB: { label: 'B' } },
+          config: { name: 't1', description: '', skill: 'performance', variantA: { label: 'A' }, variantB: { label: 'B' } }),
         }),
       ];
 
@@ -620,7 +541,6 @@ describe('ABTestRunner', () => {
     });
 
     it('calculates improvement as relative change when loser f1 > 0', () => {
-      // winner 0.90, loser 0.72 → improvement = (0.90-0.72)/0.72 = 0.25
       const history: ABTestHistoryEntry[] = [
         makeHistoryEntry('h1', 'A', 0.8, {
           config: { name: 't1', description: '', skill: 'a11y', variantA: { label: 'A' }, variantB: { label: 'B' } },
