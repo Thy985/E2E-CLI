@@ -40,6 +40,8 @@ import { SecuritySkill } from '../../skills/builtin/security';
 import { PerformanceSkill } from '../../skills/builtin/performance';
 import { ReactSkill } from '../../skills/builtin/react';
 import { VueSkill } from '../../skills/builtin/vue';
+import { NextJSSkill } from '../../skills/builtin/framework/nextjs';
+import { NuxtSkill } from '../../skills/builtin/framework/nuxt';
 import type { BaseSkill } from '../../skills/base-skill';
 
 const logger = createLogger();
@@ -50,6 +52,8 @@ const skillInstances: Record<string, BaseSkill> = {
   performance: new PerformanceSkill(),
   react: new ReactSkill(),
   vue: new VueSkill(),
+  nextjs: new NextJSSkill(),
+  nuxt: new NuxtSkill(),
 };
 
 // ---------------------------------------------------------------------------

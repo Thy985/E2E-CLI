@@ -263,13 +263,13 @@ qa-agent skill install @qa-agent/skill-security
 - [x] AST 解析替代正则（Babel/ESLint/TsQuery 集成）
 - [x] React 组件级检测（JSX 解析、props 分析）
 - [x] Vue 组件级检测（SFC AST 解析、模板检测、Composition API 规则）
-- [ ] 框架感知诊断（Next.js/Nuxt 路由分析）
+- [x] 框架感知诊断（Next.js/Nuxt 路由分析）
 
 ### Phase 4: 智能优化
-- [ ] Prompt 自动调优（基于评估结果优化）
-- [ ] 模型选择推荐（不同 skill 用不同模型）
-- [ ] A/B 测试框架（对比 prompt/模型效果）
-- [ ] 用户反馈回流（accept/reject 信号收集）
+- [x] Prompt 自动调优（基于评估结果优化）
+- [x] 模型选择推荐（不同 skill 用不同模型）
+- [x] A/B 测试框架（对比 prompt/模型效果）
+- [x] 用户反馈回流（accept/reject 信号收集）
 
 ### Phase 5: 产品化
 - [ ] Web Dashboard（可视化报告、交互式修复）

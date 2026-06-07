@@ -17,6 +17,8 @@ import { SEOSkill } from '../../skills/builtin/seo';
 import { APISkill } from '../../skills/builtin/api';
 import { DependencySkill } from '../../skills/builtin/dependency';
 import { ComplexitySkill } from '../../skills/builtin/complexity';
+import { NextJSSkill } from '../../skills/builtin/framework/nextjs';
+import { NuxtSkill } from '../../skills/builtin/framework/nuxt';
 import { createReportGenerator } from '../../engines/report';
 import { createModelClient, ModelProvider } from '../../models';
 import { createTools } from '../../tools';
@@ -83,6 +85,8 @@ export async function diagnoseCommand(options: any) {
     skillRegistry.register(new APISkill());
     skillRegistry.register(new DependencySkill());
     skillRegistry.register(new ComplexitySkill());
+    skillRegistry.register(new NextJSSkill());
+    skillRegistry.register(new NuxtSkill());
 
     // Filter skills (respect disabled skills from config)
     const disabledSkills = config.skills?.disabled || [];

@@ -7,6 +7,8 @@ import { securityGoldenCases } from './security';
 import { performanceGoldenCases } from './performance';
 import { reactGoldenCases } from './react';
 import { vueGoldenCases } from './vue';
+import { nextjsGoldenCases } from './framework/nextjs';
+import { nuxtGoldenCases } from './framework/nuxt';
 import type { GoldenTestCase, GoldenSet } from '../types';
 
 /** 全部 Golden Set 用例 */
@@ -16,6 +18,8 @@ const allCases: GoldenTestCase[] = [
   ...performanceGoldenCases,
   ...reactGoldenCases,
   ...vueGoldenCases,
+  ...nextjsGoldenCases,
+  ...nuxtGoldenCases,
 ];
 
 /** 按 skill 获取用例 */
