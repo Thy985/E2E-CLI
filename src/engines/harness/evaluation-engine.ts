@@ -13,7 +13,9 @@ import type {
   EvalOptions,
 } from './types';
 import { getAllCases } from './golden-set';
-import type { Diagnosis, Fix, FileChange } from '../../types';
+import type { Diagnosis, Fix, FileChange, SkillContext, FileSystemTool, Logger } from '../../types';
+import { getAllSkillInstances } from '../skill-factory';
+import type { BaseSkill } from '../../skills/base-skill';
 
 // ---------------------------------------------------------------------------
 // 评估接口
@@ -38,14 +40,85 @@ export function evaluateFix(
     };
   }
 
-  // Check recall: does fixed code contain the expected pattern?
-  const hasPattern = fixedCode.includes(codePattern);
+  // AST-based pattern matching: parse the codePattern and check if it exists structurally
+  let hasPattern = false;
+  try {
+    const parser = require('@typescript-eslint/parser');
+    const fixedAst = parser.parse(fixedCode, {
+      sourceType: 'module', ecmaVersion: 'latest', loc: false, range: false, tokens: false, comment: false,
+    });
+    // Collect flat set of node types (without path) for pattern matching
+    const fixedTypes = new Set(collectNodeTypes(fixedAst));
+
+    if (codePattern) {
+      // Try parsing the codePattern as a standalone expression/statement
+      try {
+        const patternAst = parser.parse(codePattern, {
+          sourceType: 'module', ecmaVersion: 'latest', loc: false, range: false, tokens: false, comment: false,
+        });
+        const patternTypes = collectNodeTypes(patternAst);
+        // Check if all pattern node types exist in the fixed code AST
+        hasPattern = patternTypes.every((t) => fixedTypes.has(t));
+      } catch {
+        // If codePattern cannot be parsed as standalone AST, fall back to string matching
+        hasPattern = fixedCode.includes(codePattern);
+      }
+    }
+  } catch {
+    // AST parsing failed — fall back to string matching
+    hasPattern = !!(codePattern && fixedCode.includes(codePattern));
+  }
+
+  // Fallback: if AST match didn't succeed, try string match
+  if (!hasPattern && codePattern) {
+    hasPattern = fixedCode.includes(codePattern);
+  }
+
   const expectedPatterns = codePattern ? 1 : 0;
   const foundPatterns = hasPattern ? 1 : 0;
 
   // Check precision: are all shouldNotExist patterns removed?
+  // Also try AST-based verification for shouldNotExist
   const shouldNotExistPatterns = shouldNotExist ?? [];
-  const removedCount = shouldNotExistPatterns.filter((p) => !fixedCode.includes(p)).length;
+  let removedCount = 0;
+
+  for (const pattern of shouldNotExistPatterns) {
+    let stillExists = fixedCode.includes(pattern); // default: string check
+    try {
+      const parser = require('@typescript-eslint/parser');
+      const fixedAst = parser.parse(fixedCode, {
+        sourceType: 'module', ecmaVersion: 'latest', loc: false, range: false, tokens: false, comment: false,
+      });
+      const fixedTypes = new Set(collectNodeTypes(fixedAst));
+
+      try {
+        const patternAst = parser.parse(pattern, {
+          sourceType: 'module', ecmaVersion: 'latest', loc: false, range: false, tokens: false, comment: false,
+        });
+        const patternTypes = collectNodeTypes(patternAst);
+        // If all pattern types exist in fixed AST, consider it still present
+        const astExists = patternTypes.every((t) => fixedTypes.has(t));
+        // AST existence + string presence = definitely still there
+        if (astExists && stillExists) {
+          stillExists = true;
+        } else if (!astExists && !stillExists) {
+          stillExists = false;
+        } else {
+          // Mismatch: trust string matching as the ground truth
+          stillExists = fixedCode.includes(pattern);
+        }
+      } catch {
+        // Pattern cannot be parsed as AST — trust string matching
+        stillExists = fixedCode.includes(pattern);
+      }
+    } catch {
+      // AST parsing failed — trust string matching
+      stillExists = fixedCode.includes(pattern);
+    }
+
+    if (!stillExists) removedCount++;
+  }
+
   const totalShouldNotExist = shouldNotExistPatterns.length;
 
   // Recall: ratio of expected patterns found
@@ -121,6 +194,34 @@ function diffAST(
     modifiedNodes: Math.min(modifiedNodes, addedNodes + removedNodes),
     totalChanges: addedNodes + removedNodes + modifiedNodes,
   };
+}
+
+/** Extract node types from AST (without path) for pattern matching */
+function collectNodeTypes(node: unknown): string[] {
+  const types: string[] = [];
+
+  if (node === null || node === undefined || typeof node !== 'object') {
+    return types;
+  }
+
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      types.push(...collectNodeTypes(item));
+    }
+    return types;
+  }
+
+  const obj = node as Record<string, unknown>;
+  const type = obj.type as string | undefined;
+
+  if (type) {
+    types.push(type);
+    for (const value of Object.values(obj)) {
+      types.push(...collectNodeTypes(value));
+    }
+  }
+
+  return types;
 }
 
 /** Collect node signatures from AST for comparison */
@@ -265,9 +366,8 @@ export async function evaluateCase(
 /**
  * 评估诊断结果 — 按实例匹配而非仅按类型匹配
  *
- * Note: Currently matches only by ruleId, not by line/column position.
- * A ruleId match at an unexpected location counts as TP. To add position
- * verification, extend GoldenTestCase.expectedDiagnosis with line ranges.
+ * When expectedLineRanges are provided, matches by ruleId + line position.
+ * Otherwise falls back to ruleId-only matching.
  */
 export function evaluateDiagnosis(
   testCase: GoldenTestCase,
@@ -275,6 +375,8 @@ export function evaluateDiagnosis(
 ): EvaluationMetrics['diagnosis'] {
   const expectedTypes = new Set(testCase.expectedDiagnosis.issueTypes);
   const falsePositiveTypes = new Set(testCase.expectedDiagnosis.falsePositives ?? []);
+  const expectedInstanceCount = testCase.expectedDiagnosis.issueCount;
+  const expectedLines = testCase.expectedDiagnosis.expectedLineRanges;
 
   // 实际发现的 ruleId
   const actualTypes = new Set(
@@ -283,46 +385,73 @@ export function evaluateDiagnosis(
       .filter(Boolean),
   );
 
-  // True Positives: 期望发现的类型且实际发现了
-  const tp = [...expectedTypes].filter((t) => actualTypes.has(t)).length;
+  let adjustedTp: number;
+  let adjustedFn: number;
+
+  if (expectedLines && expectedLines.length > 0) {
+    // 位置精度验证模式：按 ruleId + line 匹配
+    const LINE_TOLERANCE = 1; // 允许 ±1 行误差
+
+    // 收集实际诊断的位置信息
+    const actualPositions = actualDiagnosis.map((d) => ({
+      ruleId: d.metadata?.ruleId ?? '',
+      line: d.location?.line ?? -1,
+    }));
+
+    // 每个期望位置标记是否被匹配
+    const matchedExpected = new Set<number>();
+    const matchedActual = new Set<number>();
+
+    for (let ei = 0; ei < expectedLines.length; ei++) {
+      const exp = expectedLines[ei];
+      for (let ai = 0; ai < actualPositions.length; ai++) {
+        if (matchedActual.has(ai)) continue;
+        const act = actualPositions[ai];
+        if (act.ruleId === exp.ruleId && Math.abs(act.line - exp.line) <= LINE_TOLERANCE) {
+          matchedExpected.add(ei);
+          matchedActual.add(ai);
+          break;
+        }
+      }
+    }
+
+    adjustedTp = matchedExpected.size;
+    adjustedFn = expectedLines.length - adjustedTp;
+
+    // 未被匹配的 actual 诊断（ruleId 期望范围内但位置不对）不算 FP，
+    // 但 ruleId 不在 expectedTypes 内的算 FP
+  } else {
+    // 回退到 ruleId-only 匹配模式
+    const tp = [...expectedTypes].filter((t) => actualTypes.has(t)).length;
+    const fn = [...expectedTypes].filter((t) => !actualTypes.has(t)).length;
+
+    adjustedTp = tp;
+    adjustedFn = fn;
+
+    // 多实例模式：期望多个同类型实例时按数量调整
+    if (expectedInstanceCount > expectedTypes.size && expectedTypes.size > 0) {
+      const instancesPerType = Math.ceil(expectedInstanceCount / expectedTypes.size);
+      const detectedInstancesPerType = new Map<string, number>();
+      for (const d of actualDiagnosis) {
+        const ruleId = d.metadata?.ruleId;
+        if (ruleId) {
+          detectedInstancesPerType.set(ruleId, (detectedInstancesPerType.get(ruleId) || 0) + 1);
+        }
+      }
+
+      adjustedTp = 0;
+      for (const expectedType of expectedTypes) {
+        const found = detectedInstancesPerType.get(expectedType) || 0;
+        adjustedTp += found > 0 ? 1 + Math.min(found - 1, instancesPerType - 1) : 0;
+      }
+      adjustedFn = Math.max(0, expectedInstanceCount - adjustedTp);
+    }
+  }
 
   // False Positives: 实际发现的但不期望的类型
   const fpFromDefined = [...falsePositiveTypes].filter((t) => actualTypes.has(t)).length;
   const fpExtra = [...actualTypes].filter((t) => !expectedTypes.has(t) && !falsePositiveTypes.has(t)).length;
   const fp = fpFromDefined + fpExtra;
-
-  // False Negatives: 期望发现但实际没发现的
-  const fn = [...expectedTypes].filter((t) => !actualTypes.has(t)).length;
-
-  // 按实例数量计算更精确的指标
-  // 如果 expectedCount > issueTypes.length，说明期望多个同类型实例
-  const expectedInstanceCount = testCase.expectedDiagnosis.issueCount;
-
-  // 如果用例期望多个实例，按实例数量调整 TP/FN
-  let adjustedTp = tp;
-  let adjustedFn = fn;
-
-  if (expectedInstanceCount > expectedTypes.size && expectedTypes.size > 0) {
-    // 期望多个实例但类型数量少 — 按实例比例调整
-    // Cap per-type expected count so that finding at least 1 instance of an expected type counts as a full TP
-    const instancesPerType = Math.ceil(expectedInstanceCount / expectedTypes.size);
-    const detectedInstancesPerType = new Map<string, number>();
-    for (const d of actualDiagnosis) {
-      const ruleId = d.metadata?.ruleId;
-      if (ruleId) {
-        detectedInstancesPerType.set(ruleId, (detectedInstancesPerType.get(ruleId) || 0) + 1);
-      }
-    }
-
-    adjustedTp = 0;
-    for (const expectedType of expectedTypes) {
-      const found = detectedInstancesPerType.get(expectedType) || 0;
-      // If at least one instance found, credit a full type-level TP
-      // Additional instances capped at instancesPerType - 1
-      adjustedTp += found > 0 ? 1 + Math.min(found - 1, instancesPerType - 1) : 0;
-    }
-    adjustedFn = Math.max(0, expectedInstanceCount - adjustedTp);
-  }
 
   const precision = adjustedTp + fp > 0 ? adjustedTp / (adjustedTp + fp) : 0;
   const recall = adjustedTp + adjustedFn > 0 ? adjustedTp / (adjustedTp + adjustedFn) : 0;
@@ -579,4 +708,265 @@ export function checkQualityGate(
   }
 
   return { passed, details };
+}
+
+// ---------------------------------------------------------------------------
+// Shared evaluation runner utilities
+//
+// These are used by both the CLI eval command (src/cli/commands/eval.ts)
+// and the CI entry point (src/ci/eval-harness.ts) to eliminate duplication.
+// ---------------------------------------------------------------------------
+
+/** 虚拟文件系统 — 用于 Golden Set 评估 */
+export function createVirtualFS(
+  filePath: string,
+  content: string,
+): FileSystemTool {
+  const normalized = filePath.replace(/^\//, '');
+
+  return {
+    async readFile(p: string): Promise<string> {
+      const target = p.replace(/^\//, '');
+      if (target === normalized || target.endsWith(normalized)) {
+        return content;
+      }
+      throw new Error(`File not found in virtual FS: ${p}`);
+    },
+
+    async writeFile(): Promise<void> {
+      throw new Error('writeFile not supported in virtual FS');
+    },
+
+    async exists(p: string): Promise<boolean> {
+      const target = p.replace(/^\//, '');
+      return target === normalized || target.endsWith(normalized);
+    },
+
+    async glob(pattern: string): Promise<string[]> {
+      const ext = normalized.split('.').pop() ?? '';
+      const baseGlob = pattern.replace(/\*\*/g, '.*').replace(/\*/g, '[^/]*');
+      const re = new RegExp(`^${baseGlob}$`);
+      if (re.test(normalized)) return [normalized];
+
+      const braceMatch = pattern.match(/\{([^}]+)\}/);
+      if (braceMatch) {
+        const exts = braceMatch[1].split(',');
+        if (exts.includes(ext)) return [normalized];
+      }
+
+      if (pattern.includes('*.' + ext)) return [normalized];
+      if (pattern === `**/*.${ext}`) return [normalized];
+
+      return [];
+    },
+
+    async mkdir(): Promise<void> {
+      // no-op
+    },
+
+    async remove(): Promise<void> {
+      throw new Error('remove not supported in virtual FS');
+    },
+
+    async stat(p: string): Promise<{ size: number; isFile: boolean; isDirectory: boolean }> {
+      const target = p.replace(/^\//, '');
+      if (target === normalized || target.endsWith(normalized)) {
+        return { size: Buffer.byteLength(content), isFile: true, isDirectory: false };
+      }
+      throw new Error(`File not found: ${p}`);
+    },
+  };
+}
+
+/** 静默日志 — 评估时丢弃输出 */
+export function createSilentLogger(): Logger {
+  return {
+    debug() {},
+    info() {},
+    warn() {},
+    error() {},
+  };
+}
+
+/** 构建 Skill 上下文 — 用于 Golden Set 评估 */
+export function buildSkillContext(
+  testCase: GoldenTestCase,
+): SkillContext {
+  const { code, filePath } = testCase.input;
+
+  return {
+    project: {
+      name: `golden-${testCase.id}`,
+      path: '/tmp/qa-eval',
+      type: 'webapp',
+    },
+    config: {
+      version: 1,
+      rules: {},
+      ignore: [],
+    },
+    logger: createSilentLogger(),
+    tools: {
+      fs: createVirtualFS(filePath, code),
+      git: {
+        async getChangedFiles() { return []; },
+        async getCurrentBranch() { return 'main'; },
+        async getCommitHash() { return 'golden'; },
+      },
+      shell: {
+        async execute() {
+          return { stdout: '', stderr: '', exitCode: 0 };
+        },
+      },
+    },
+    model: {
+      async chat() {
+        return { content: '' };
+      },
+      isMock: true,
+    },
+    storage: {
+      async get() { return null; },
+      async set() {},
+      async delete() {},
+      async clear() {},
+    },
+  };
+}
+
+/** 运行 Skill 诊断 — 统一入口，含错误处理 */
+export async function runSkillDiagnosis(
+  skill: BaseSkill,
+  testCase: GoldenTestCase,
+): Promise<Diagnosis[]> {
+  const context = buildSkillContext(testCase);
+
+  try {
+    if (skill.init) {
+      await skill.init(context);
+    }
+    return await skill.diagnose(context);
+  } catch (err) {
+    return [];
+  }
+}
+
+/** 运行单条用例的完整评估流程（诊断 + 修复） */
+export async function evaluateCaseWithSkill(
+  testCase: GoldenTestCase,
+  skillInstances: Record<string, BaseSkill>,
+  options?: {
+    onLog?: (line: string) => void;
+  },
+): Promise<CaseEvaluation | null> {
+  const skill = skillInstances[testCase.skill];
+  if (!skill) {
+    if (options?.onLog) {
+      options.onLog(`Skipping ${testCase.id}: no skill for "${testCase.skill}"`);
+    }
+    return null;
+  }
+
+  const startTime = Date.now();
+  const actualDiagnosis = await runSkillDiagnosis(skill, testCase);
+  const diagMetrics = evaluateDiagnosis(testCase, actualDiagnosis);
+
+  // 运行修复（如果 skill 支持且诊断发现了问题）
+  let fixMetrics = evaluateFix(testCase, null);
+  if (skill.fix && actualDiagnosis.length > 0) {
+    try {
+      const fixes: Fix[] = [];
+      for (const d of actualDiagnosis) {
+        if (skill.canAutoFix(d)) {
+          const fixResult = await skill.fix(d, buildSkillContext(testCase));
+          fixes.push(fixResult);
+        }
+      }
+
+      if (fixes.length > 0) {
+        const allChanges = fixes.flatMap((f) => f.changes);
+        const fixedCode = applyChanges(testCase.input.code, allChanges);
+        fixMetrics = evaluateFix(testCase, fixedCode);
+      }
+    } catch {
+      // 修复失败 — 保持零指标
+    }
+  }
+
+  const duration = Date.now() - startTime;
+
+  const overallPrecision = (diagMetrics.precision + fixMetrics.precision) / 2;
+  const overallRecall = (diagMetrics.recall + fixMetrics.recall) / 2;
+  const overallF1 = overallPrecision + overallRecall > 0
+    ? (2 * overallPrecision * overallRecall) / (overallPrecision + overallRecall)
+    : 0;
+
+  return {
+    caseId: testCase.id,
+    skill: testCase.skill,
+    difficulty: testCase.difficulty,
+    diagnosis: diagMetrics,
+    fix: fixMetrics,
+    overall: {
+      precision: overallPrecision,
+      recall: overallRecall,
+      f1: overallF1,
+      passed: overallF1 >= 0.8,
+    },
+    duration,
+  };
+}
+
+/** 批量运行评估，返回整体评估结果 */
+export async function runEval(
+  options: EvalOptions & {
+    skill?: string;
+    onProgress?: (evaluation: CaseEvaluation) => void;
+    onLog?: (line: string) => void;
+    verbose?: boolean;
+  } = { threshold: 80 },
+): Promise<{
+  evaluations: CaseEvaluation[];
+  overall: OverallEvaluation;
+  skipped: number;
+}> {
+  let cases = getAllCases();
+
+  if (options.skill) {
+    const skillCases = cases.filter((c) => c.skill === options.skill);
+    if (skillCases.length === 0) {
+      throw new Error(`Unknown skill: ${options.skill}`);
+    }
+    cases = skillCases;
+  }
+
+  if (options.difficulty) {
+    cases = cases.filter((c) => c.difficulty === options.difficulty);
+  }
+
+  if (cases.length === 0) {
+    throw new Error('No cases match the filters');
+  }
+
+  const skillInstances = getAllSkillInstances();
+  const evaluations: CaseEvaluation[] = [];
+  let skipped = 0;
+
+  for (const testCase of cases) {
+    const result = await evaluateCaseWithSkill(testCase, skillInstances, { onLog: options.onLog });
+    if (!result) {
+      skipped++;
+      continue;
+    }
+
+    if (options.onProgress) {
+      options.onProgress(result);
+    }
+
+    evaluations.push(result);
+  }
+
+  const overall = computeOverallEvaluation(evaluations);
+
+  return { evaluations, overall, skipped };
 }

@@ -27,6 +27,8 @@ export interface DashboardServerOptions {
   host?: string;
   projectPath: string;
   enableFixAPI?: boolean;
+  /** HTTP Basic Auth credentials. If set, all requests require authentication. */
+  auth?: { username: string; password: string };
 }
 
 export interface DashboardData {
@@ -131,6 +133,32 @@ function parseUrl(url: string): { pathname: string; query: Record<string, string
   } catch {
     return { pathname: url.split('?')[0], query: {} };
   }
+}
+
+/** Verify HTTP Basic Auth credentials */
+function verifyBasicAuth(
+  authHeader: string | undefined,
+  credentials: { username: string; password: string },
+): boolean {
+  if (!authHeader || !authHeader.startsWith('Basic ')) {
+    return false;
+  }
+  try {
+    const decoded = Buffer.from(authHeader.slice(6), 'base64').toString('utf-8');
+    const [username, password] = decoded.split(':');
+    return username === credentials.username && password === credentials.password;
+  } catch {
+    return false;
+  }
+}
+
+/** Send 401 Unauthorized response */
+function unauthorizedResponse(res: http.ServerResponse): void {
+  res.writeHead(401, {
+    'Content-Type': 'text/plain',
+    'WWW-Authenticate': 'Basic realm="QA-Agent Dashboard"',
+  });
+  res.end('Unauthorized');
 }
 
 // ── HTML Dashboard Template ────────────────────────────────────────────────
@@ -814,11 +842,8 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
       return;
     }
 
+    // Health check is always allowed (used by load balancers / monitors)
     const { pathname, query } = parseUrl(req.url || '/');
-
-    // ── Routes ─────────────────────────────────────────────────
-
-    // Health check
     if (pathname === '/api/health') {
       return jsonResponse(res, {
         status: 'ok',
@@ -827,6 +852,15 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
         issuesCount: currentData.issues.length,
       });
     }
+
+    // Authentication check
+    if (options.auth) {
+      if (!verifyBasicAuth(req.headers.authorization, options.auth)) {
+        return unauthorizedResponse(res);
+      }
+    }
+
+    // ── Routes ─────────────────────────────────────────────────
 
     // Dashboard HTML
     if (pathname === '/' || pathname === '/index.html') {

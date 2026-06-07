@@ -2,6 +2,7 @@
  * Logger implementation
  */
 
+import chalk from 'chalk';
 
 export interface LoggerOptions {
   level: 'debug' | 'info' | 'warn' | 'error';
@@ -29,25 +30,25 @@ export class Logger {
 
   debug(message: string, data?: any): void {
     if (this.level <= LOG_LEVELS.debug && !this.quiet) {
-      console.log(`[${this.prefix}] [DEBUG] ${message}`, data || '');
+      console.log(`${chalk.gray(`[${this.prefix}]`)} ${chalk.gray('[DEBUG]')} ${message}`, data || '');
     }
   }
 
   info(message: string, data?: any): void {
     if (this.level <= LOG_LEVELS.info && !this.quiet) {
-      console.log(`[${this.prefix}] [INFO] ${message}`, data || '');
+      console.log(`${chalk.blue(`[${this.prefix}]`)} ${chalk.blue('[INFO]')} ${message}`, data || '');
     }
   }
 
   warn(message: string, data?: any): void {
     if (this.level <= LOG_LEVELS.warn && !this.quiet) {
-      console.warn(`[${this.prefix}] [WARN] ${message}`, data || '');
+      console.warn(`${chalk.yellow(`[${this.prefix}]`)} ${chalk.yellow('[WARN]')} ${message}`, data || '');
     }
   }
 
   error(message: string, data?: any): void {
     if (this.level <= LOG_LEVELS.error && !this.quiet) {
-      console.error(`[${this.prefix}] [ERROR] ${message}`, data || '');
+      console.error(`${chalk.red(`[${this.prefix}]`)} ${chalk.red('[ERROR]')} ${message}`, data || '');
     }
   }
 

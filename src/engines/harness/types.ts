@@ -33,6 +33,8 @@ export interface GoldenTestCase {
     issueTypes: string[];
     /** 不应出现的误报类型 (ruleId) */
     falsePositives?: string[];
+    /** 期望问题所在的行号（可选，用于位置精度验证） */
+    expectedLineRanges?: Array<{ ruleId: string; line: number }>;
   };
 
   /** 期望的修复结果 */

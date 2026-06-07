@@ -2,13 +2,15 @@
  * Watch Engine
  * Monitors file changes and re-runs diagnosis automatically.
  *
- * Uses fs.watch with recursive option for directory watching,
+ * Uses chokidar for cross-platform reliable file watching,
  * debounces file change events, and re-runs skill diagnosis on changes.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 import { minimatch } from 'minimatch';
+import type { FSWatcher } from 'chokidar';
+import chokidar from 'chokidar';
 
 import { createLogger } from '../utils/logger';
 import { createTools } from '../tools';
@@ -85,7 +87,7 @@ const DEFAULT_IGNORE_PATTERNS = [
 
 export class WatchEngine {
   private state: WatchState;
-  private watchers: fs.FSWatcher[];
+  private watcher: FSWatcher | null;
   private debounceTimer: ReturnType<typeof setTimeout> | null;
   private logger: ReturnType<typeof createLogger>;
 
@@ -97,7 +99,7 @@ export class WatchEngine {
       scanCount: 0,
       lastDiagnoses: [],
     };
-    this.watchers = [];
+    this.watcher = null;
     this.debounceTimer = null;
     this.logger = createLogger({ prefix: 'WatchEngine' });
   }
@@ -129,19 +131,35 @@ export class WatchEngine {
     this.state.watchedFiles = files.length;
     this.logger.info(`Discovered ${files.length} files matching watch patterns`);
 
-    // Set up fs.watch on the root directory with recursive option
-    const watcher = fs.watch(watchPath, { recursive: true }, (eventType, filename) => {
-      if (!filename) return;
+    // Set up chokidar watcher with glob patterns and ignore list
+    const ignoreList = [...(this.options.ignorePatterns ?? []), ...DEFAULT_IGNORE_PATTERNS];
 
-      const filePath = path.join(watchPath, filename);
-      this.handleFileEvent(eventType, filePath);
+    this.watcher = chokidar.watch(watchPath, {
+      ignored: ignoreList,
+      persistent: true,
+      ignoreInitial: true,
+      awaitWriteFinish: {
+        stabilityThreshold: 200,
+        pollInterval: 100,
+      },
     });
 
-    watcher.on('error', (err: Error) => {
-      this.handleError(err);
+    this.watcher.on('add', (filePath: string) => {
+      this.handleFileEvent('change', filePath);
     });
 
-    this.watchers.push(watcher);
+    this.watcher.on('change', (filePath: string) => {
+      this.handleFileEvent('change', filePath);
+    });
+
+    this.watcher.on('unlink', (filePath: string) => {
+      this.handleFileEvent('rename', filePath);
+    });
+
+    this.watcher.on('error', (err: unknown) => {
+      this.handleError(err instanceof Error ? err : new Error(String(err)));
+    });
+
     this.state.isWatching = true;
 
     // Run an initial scan
@@ -162,11 +180,12 @@ export class WatchEngine {
       this.debounceTimer = null;
     }
 
-    // Close all watchers
-    for (const watcher of this.watchers) {
-      watcher.close();
+    // Close chokidar watcher
+    if (this.watcher) {
+      void this.watcher.close();
+      this.watcher = null;
     }
-    this.watchers = [];
+
     this.state.isWatching = false;
 
     this.logger.info('File watch stopped');
@@ -186,7 +205,7 @@ export class WatchEngine {
   /**
    * Handle a file system event with debouncing.
    */
-  private handleFileEvent(eventType: 'rename' | 'change', filePath: string): void {
+  private handleFileEvent(eventType: string, filePath: string): void {
     // Skip if not watching
     if (!this.state.isWatching) return;
 
