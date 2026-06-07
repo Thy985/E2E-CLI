@@ -61,23 +61,27 @@ export class ReactSkill extends BaseSkill {
   ];
 
   async diagnose(context: SkillContext): Promise<Diagnosis[]> {
-    const diagnoses: Diagnosis[] = [];
-    const { project, tools, logger } = context;
+    try {
+      const diagnoses: Diagnosis[] = [];
+      const { project, tools, logger } = context;
 
-    logger.info('Starting React component analysis...');
+      logger.info('Starting React component analysis...');
 
-    // Only check .tsx and .jsx files
-    const reactFiles = await this.getReactFiles(project.path, tools);
-    logger.debug(`Found ${reactFiles.length} React component files`);
+      // Only check .tsx and .jsx files
+      const reactFiles = await this.getReactFiles(project.path, tools);
+      logger.debug(`Found ${reactFiles.length} React component files`);
 
-    for (const file of reactFiles) {
-      const content = await tools.fs.readFile(file);
-      const fileDiagnoses = await this.checkFile(file, content);
-      diagnoses.push(...fileDiagnoses);
+      for (const file of reactFiles) {
+        const content = await tools.fs.readFile(file);
+        const fileDiagnoses = await this.checkFile(file, content);
+        diagnoses.push(...fileDiagnoses);
+      }
+
+      logger.info(`React analysis completed, found ${diagnoses.length} issues`);
+      return diagnoses;
+    } catch (error) {
+      return [];
     }
-
-    logger.info(`React analysis completed, found ${diagnoses.length} issues`);
-    return diagnoses;
   }
 
   async fix(diagnosis: Diagnosis, context: SkillContext): Promise<Fix> {

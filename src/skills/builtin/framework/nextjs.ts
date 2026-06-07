@@ -71,49 +71,53 @@ export class NextJSSkill extends BaseSkill {
   ];
 
   async diagnose(context: SkillContext): Promise<Diagnosis[]> {
-    const diagnoses: Diagnosis[] = [];
-    const { project, tools, logger } = context;
+    try {
+      const diagnoses: Diagnosis[] = [];
+      const { project, tools, logger } = context;
 
-    logger.info('Starting Next.js framework analysis...');
+      logger.info('Starting Next.js framework analysis...');
 
-    // Detect if this is a Next.js project
-    const isNextProject = await this.isNextJsProject(project.path, tools);
-    if (!isNextProject) {
-      logger.info('Not a Next.js project, skipping analysis');
+      // Detect if this is a Next.js project
+      const isNextProject = await this.isNextJsProject(project.path, tools);
+      if (!isNextProject) {
+        logger.info('Not a Next.js project, skipping analysis');
+        return [];
+      }
+
+      logger.debug('Next.js project detected');
+
+      // Collect route files for analysis
+      const routeFiles = await this.getRouteFiles(project.path, tools);
+      logger.debug(`Found ${routeFiles.length} Next.js route files`);
+
+      // Collect all tsx/jsx files for component analysis
+      const componentFiles = await this.getComponentFiles(project.path, tools);
+      logger.debug(`Found ${componentFiles.length} component files`);
+
+      // Check structural issues (loading.tsx, error.tsx, metadata)
+      const structuralDiagnoses = await this.checkStructure(project.path, routeFiles, tools);
+      diagnoses.push(...structuralDiagnoses);
+
+      // Check component-level issues
+      for (const file of componentFiles) {
+        try {
+          const content = await tools.fs.readFile(file);
+          const fileDiagnoses = await this.checkFile(file, content);
+          diagnoses.push(...fileDiagnoses);
+        } catch {
+          // Skip files that cannot be read
+        }
+      }
+
+      // Check next.config.js
+      const configDiagnoses = await this.checkNextConfig(project.path, tools);
+      diagnoses.push(...configDiagnoses);
+
+      logger.info(`Next.js analysis completed, found ${diagnoses.length} issues`);
+      return diagnoses;
+    } catch (error) {
       return [];
     }
-
-    logger.debug('Next.js project detected');
-
-    // Collect route files for analysis
-    const routeFiles = await this.getRouteFiles(project.path, tools);
-    logger.debug(`Found ${routeFiles.length} Next.js route files`);
-
-    // Collect all tsx/jsx files for component analysis
-    const componentFiles = await this.getComponentFiles(project.path, tools);
-    logger.debug(`Found ${componentFiles.length} component files`);
-
-    // Check structural issues (loading.tsx, error.tsx, metadata)
-    const structuralDiagnoses = await this.checkStructure(project.path, routeFiles, tools);
-    diagnoses.push(...structuralDiagnoses);
-
-    // Check component-level issues
-    for (const file of componentFiles) {
-      try {
-        const content = await tools.fs.readFile(file);
-        const fileDiagnoses = await this.checkFile(file, content);
-        diagnoses.push(...fileDiagnoses);
-      } catch {
-        // Skip files that cannot be read
-      }
-    }
-
-    // Check next.config.js
-    const configDiagnoses = await this.checkNextConfig(project.path, tools);
-    diagnoses.push(...configDiagnoses);
-
-    logger.info(`Next.js analysis completed, found ${diagnoses.length} issues`);
-    return diagnoses;
   }
 
   async fix(diagnosis: Diagnosis, context: SkillContext): Promise<Fix> {
@@ -162,7 +166,20 @@ export class NextJSSkill extends BaseSkill {
     // Check for pages/ or app/ directories
     const hasPagesDir = await tools.fs.exists(path.join(projectPath, 'pages'));
     const hasAppDir = await tools.fs.exists(path.join(projectPath, 'app'));
-    return hasPagesDir || hasAppDir;
+    if (hasPagesDir || hasAppDir) return true;
+
+    // For virtual FS / single file scenarios: check if any matched files
+    // contain /pages/ or /app/ directory segments
+    const patterns = [
+      '**/pages/**/*.{tsx,jsx,ts,js}',
+      '**/app/**/*.{tsx,jsx,ts,js}',
+    ];
+    for (const pattern of patterns) {
+      const matches = await tools.fs.glob(pattern);
+      if (matches.length > 0) return true;
+    }
+
+    return false;
   }
 
   // -------------------------------------------------------------------------
@@ -171,9 +188,9 @@ export class NextJSSkill extends BaseSkill {
 
   private async getRouteFiles(_projectPath: string, tools: SkillContext['tools']): Promise<string[]> {
     const patterns = [
-      'pages/**/*.{tsx,jsx,ts,js}',
-      'app/**/page.{tsx,jsx,ts,js}',
-      'app/**/layout.{tsx,jsx,ts,js}',
+      '**/pages/**/*.{tsx,jsx,ts,js}',
+      '**/app/**/page.{tsx,jsx,ts,js}',
+      '**/app/**/layout.{tsx,jsx,ts,js}',
     ];
     const files: string[] = [];
     for (const pattern of patterns) {

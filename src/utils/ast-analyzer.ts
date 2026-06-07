@@ -535,7 +535,7 @@ export function detectMissingVForKey(astFile: VueASTFile): Array<{
     if (hasVForDirective(el) && !hasKeyBinding(el)) {
       const loc = getIssueLocation(el, astFile);
       results.push({
-        ruleId: 'vue-missing-v-for-key',
+        ruleId: 'missing-v-for-key',
         line: loc.line,
         column: loc.column,
         message: 'v-for 指令缺少 :key 绑定',
@@ -574,7 +574,7 @@ export function detectVIfWithVFor(astFile: VueASTFile): Array<{
     if (hasVIfDirective(el) && hasVForDirective(el)) {
       const loc = getIssueLocation(el, astFile);
       results.push({
-        ruleId: 'vue-v-if-with-v-for',
+        ruleId: 'v-if-with-v-for',
         line: loc.line,
         column: loc.column,
         message: '不建议在同一元素上同时使用 v-if 和 v-for，建议使用 computed 属性或 <template> 包裹',
@@ -629,7 +629,7 @@ export function detectDirectDomAccess(astFile: VueASTFile): Array<{
     ) {
       const loc = node.loc;
       results.push({
-        ruleId: 'vue-direct-dom-access',
+        ruleId: 'direct-dom-access',
         line: loc?.start.line ?? 0,
         column: loc?.start.column ?? 0,
         message: `直接使用 document.${node.callee.property.name}() 违反 Vue 数据驱动理念，建议使用 ref`,
@@ -646,7 +646,7 @@ export function detectDirectDomAccess(astFile: VueASTFile): Array<{
     ) {
       const loc = node.loc;
       results.push({
-        ruleId: 'vue-direct-dom-access',
+        ruleId: 'direct-dom-access',
         line: loc?.start.line ?? 0,
         column: loc?.start.column ?? 0,
         message: `直接赋值 ${node.left.property.name} 违反 Vue 数据驱动理念，建议使用 v-html 或响应式数据`,
@@ -698,7 +698,7 @@ export function detectImgWithoutAltVue(astFile: VueASTFile): Array<{
       if (!hasAlt) {
         const loc = getIssueLocation(el, astFile);
         results.push({
-          ruleId: 'vue-img-without-alt',
+          ruleId: 'img-without-alt-vue',
           line: loc.line,
           column: loc.column,
           message: 'img 元素缺少 alt 属性，影响无障碍访问',
@@ -776,7 +776,7 @@ export function detectAnchorWithoutNameVue(astFile: VueASTFile): Array<{
       if (!hasTextContent) {
         const loc = getIssueLocation(el, astFile);
         results.push({
-          ruleId: 'vue-anchor-without-name',
+          ruleId: 'anchor-without-name-vue',
           line: loc.line,
           column: loc.column,
           message: '链接缺少可访问名称（文本内容或 aria-label）',
@@ -822,7 +822,7 @@ export function detectVHtmlUsage(astFile: VueASTFile): Array<{
       ) {
         const loc = getIssueLocation(el, astFile);
         results.push({
-          ruleId: 'vue-v-html-usage',
+          ruleId: 'v-html-usage',
           line: loc.line,
           column: loc.column,
           message: 'v-html 指令存在 XSS 风险，请确保渲染内容可信',
@@ -975,7 +975,7 @@ export function detectUnusedPropsVue(astFile: VueASTFile): Array<{
 
     if (!usedScript && !usedTemplate && !appearsInTemplateSection) {
       results.push({
-        ruleId: 'vue-unused-prop',
+        ruleId: 'unused-prop-vue',
         line: prop.line,
         column: prop.column,
         message: `Prop "${prop.name}" 在组件中未被使用`,

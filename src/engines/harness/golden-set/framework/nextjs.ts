@@ -226,7 +226,7 @@ export default function UsersPage() {
       issueTypes: ['next-loading-missing'],
     },
     expectedFix: {
-      codePattern: '',
+      codePattern: 'loading.tsx',
       shouldNotExist: [],
     },
     tags: ['loading-state'],
@@ -261,7 +261,7 @@ export default function CheckoutPage() {
       issueTypes: ['next-error-missing'],
     },
     expectedFix: {
-      codePattern: '',
+      codePattern: 'error.tsx',
       shouldNotExist: [],
     },
     tags: ['error-boundary'],
@@ -298,7 +298,7 @@ export default function CheckoutPage() {
       issueTypes: ['next-config-missing'],
     },
     expectedFix: {
-      codePattern: '',
+      codePattern: 'next.config',
       shouldNotExist: [],
     },
     tags: ['configuration'],

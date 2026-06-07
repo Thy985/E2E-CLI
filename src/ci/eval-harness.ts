@@ -22,23 +22,9 @@ import {
   detectRegression,
 } from '../engines/harness/evaluation-engine';
 import type { Diagnosis, Fix, SkillContext, FileSystemTool, Logger } from '../types';
-import type { GoldenTestCase, OverallEvaluation, CaseEvaluation } from '../engines/harness/types';
-
-// Skill instances
-import { A11ySkill } from '../skills/builtin/a11y';
-import { SecuritySkill } from '../skills/builtin/security';
-import { PerformanceSkill } from '../skills/builtin/performance';
-import { ReactSkill } from '../skills/builtin/react';
-import { VueSkill } from '../skills/builtin/vue';
-import { NextJSSkill } from '../skills/builtin/framework/nextjs';
-import { NuxtSkill } from '../skills/builtin/framework/nuxt';
-import { E2ESkill } from '../skills/builtin/e2e';
-import { UIUXSkill } from '../skills/builtin/uiux';
-import { SEOSkill } from '../skills/builtin/seo';
-import { APISkill } from '../skills/builtin/api';
-import { DependencySkill } from '../skills/builtin/dependency';
-import { ComplexitySkill } from '../skills/builtin/complexity';
 import type { BaseSkill } from '../skills/base-skill';
+import type { GoldenTestCase, OverallEvaluation, CaseEvaluation } from '../engines/harness/types';
+import { getAllSkillInstances } from '../engines/skill-factory';
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -46,21 +32,7 @@ import * as path from 'path';
 const CACHE_DIR = '.qa-eval-cache';
 const CACHE_FILE = 'latest-eval.json';
 
-const skillInstances: Record<string, BaseSkill> = {
-  a11y: new A11ySkill(),
-  security: new SecuritySkill(),
-  performance: new PerformanceSkill(),
-  react: new ReactSkill(),
-  vue: new VueSkill(),
-  nextjs: new NextJSSkill(),
-  nuxt: new NuxtSkill(),
-  e2e: new E2ESkill(),
-  uiux: new UIUXSkill(),
-  seo: new SEOSkill(),
-  api: new APISkill(),
-  dependency: new DependencySkill(),
-  complexity: new ComplexitySkill(),
-};
+const skillInstances = getAllSkillInstances();
 
 // ---------------------------------------------------------------------------
 // Virtual filesystem for golden-case evaluation

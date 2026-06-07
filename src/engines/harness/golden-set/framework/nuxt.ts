@@ -284,7 +284,7 @@ onMounted(async () => {
       issueTypes: ['nuxt-error-missing'],
     },
     expectedFix: {
-      codePattern: '',
+      codePattern: 'error.vue',
       shouldNotExist: [],
     },
     tags: ['error-boundary'],

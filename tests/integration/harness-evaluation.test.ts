@@ -55,9 +55,24 @@ function createVirtualFS(
 
     async glob(pattern: string): Promise<string[]> {
       const ext = normalized.split('.').pop() ?? '';
-      const baseGlob = pattern.replace(/\*\*/g, '.*').replace(/\*/g, '[^/]*');
-      const re = new RegExp(`^${baseGlob}$`);
-      if (re.test(normalized)) return [normalized];
+
+      // Expand braces: {tsx,jsx,ts,js} → try each variant
+      const braceMatch = pattern.match(/\{([^}]+)\}/);
+      if (braceMatch) {
+        const alternatives = braceMatch[1].split(',');
+        for (const alt of alternatives) {
+          const expanded = pattern.replace(braceMatch[0], alt);
+          const baseGlob = expanded.replace(/\*\*/g, '.*').replace(/\*/g, '[^/]*');
+          const re = new RegExp(`^${baseGlob}$`);
+          if (re.test(normalized)) return [normalized];
+        }
+        // Fallback for brace-expanded patterns: match by extension
+        if (alternatives.includes(ext)) return [normalized];
+      } else {
+        const baseGlob = pattern.replace(/\*\*/g, '.*').replace(/\*/g, '[^/]*');
+        const re = new RegExp(`^${baseGlob}$`);
+        if (re.test(normalized)) return [normalized];
+      }
 
       // Fallback: match by extension
       if (pattern.includes('*.' + ext)) return [normalized];
@@ -498,6 +513,76 @@ describe('E2E: Golden case → skill.diagnose() → evaluateDiagnosis', () => {
 
     expect(result.truePositives).toBeGreaterThanOrEqual(1);
     expect(result.recall).toBeGreaterThan(0);
+  });
+
+  it('should detect missing-key-prop in react golden case', async () => {
+    const { ReactSkill } = await import('../../src/skills/builtin/react');
+    const skill = new ReactSkill();
+    const keyCase = getCasesBySkill('react').find((c) => c.id === 'react-missing-key-001')!;
+
+    const context = buildSkillContext(keyCase);
+    const actualDiagnosis = await skill.diagnose(context);
+    const result = evaluateDiagnosis(keyCase, actualDiagnosis);
+
+    expect(actualDiagnosis.length).toBeGreaterThanOrEqual(1);
+    expect(actualDiagnosis.some((d) => d.metadata?.ruleId === 'missing-key-prop')).toBe(true);
+    expect(result.truePositives).toBeGreaterThanOrEqual(1);
+    expect(result.recall).toBeGreaterThan(0);
+  });
+
+  it('should detect hook-misuse in react golden case', async () => {
+    const { ReactSkill } = await import('../../src/skills/builtin/react');
+    const skill = new ReactSkill();
+    const hookCase = getCasesBySkill('react').find((c) => c.id === 'react-hook-misuse-001')!;
+
+    const context = buildSkillContext(hookCase);
+    const actualDiagnosis = await skill.diagnose(context);
+    const result = evaluateDiagnosis(hookCase, actualDiagnosis);
+
+    expect(actualDiagnosis.some((d) => d.metadata?.ruleId === 'hook-misuse')).toBe(true);
+    expect(result.truePositives).toBeGreaterThanOrEqual(1);
+  });
+
+  it('should detect v-for without key in vue golden case', async () => {
+    const { VueSkill } = await import('../../src/skills/builtin/vue');
+    const skill = new VueSkill();
+    const vueCase = getCasesBySkill('vue').find((c) => c.id === 'vue-001')!;
+
+    const context = buildSkillContext(vueCase);
+    const actualDiagnosis = await skill.diagnose(context);
+    const result = evaluateDiagnosis(vueCase, actualDiagnosis);
+
+    expect(actualDiagnosis.length).toBeGreaterThanOrEqual(1);
+    expect(actualDiagnosis.some((d) => d.metadata?.ruleId === 'missing-v-for-key')).toBe(true);
+    expect(result.truePositives).toBeGreaterThanOrEqual(1);
+  });
+
+  it('should detect next-image-missing in nextjs golden case', async () => {
+    const { NextJSSkill } = await import('../../src/skills/builtin/framework/nextjs');
+    const skill = new NextJSSkill();
+    const nextCase = getCasesBySkill('nextjs').find((c) => c.id === 'nextjs-001')!;
+
+    const context = buildSkillContext(nextCase);
+    const actualDiagnosis = await skill.diagnose(context);
+    const result = evaluateDiagnosis(nextCase, actualDiagnosis);
+
+    expect(actualDiagnosis.length).toBeGreaterThanOrEqual(1);
+    expect(actualDiagnosis.some((d) => d.metadata?.ruleId === 'next-image-missing')).toBe(true);
+    expect(result.truePositives).toBeGreaterThanOrEqual(1);
+  });
+
+  it('should detect nuxt-image-missing in nuxt golden case', async () => {
+    const { NuxtSkill } = await import('../../src/skills/builtin/framework/nuxt');
+    const skill = new NuxtSkill();
+    const nuxtCase = getCasesBySkill('nuxt').find((c) => c.id === 'nuxt-001')!;
+
+    const context = buildSkillContext(nuxtCase);
+    const actualDiagnosis = await skill.diagnose(context);
+    const result = evaluateDiagnosis(nuxtCase, actualDiagnosis);
+
+    expect(actualDiagnosis.length).toBeGreaterThanOrEqual(1);
+    expect(actualDiagnosis.some((d) => d.metadata?.ruleId === 'nuxt-image-missing')).toBe(true);
+    expect(result.truePositives).toBeGreaterThanOrEqual(1);
   });
 });
 

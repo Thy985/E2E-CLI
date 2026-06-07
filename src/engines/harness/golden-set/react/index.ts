@@ -65,7 +65,7 @@ export function ConditionalHook({ showExtra }) {
       issueTypes: ['hook-misuse'],
     },
     expectedFix: {
-      codePattern: '',
+      codePattern: "'use client'",
       shouldNotExist: [],
     },
   },
@@ -122,7 +122,7 @@ export function RichText({ content }) {
       issueTypes: ['dangerous-set-inner-html'],
     },
     expectedFix: {
-      codePattern: '',
+      codePattern: 'DOMPurify',
       shouldNotExist: [],
     },
   },
@@ -209,7 +209,7 @@ export function ItemList({ items }) {
       issueTypes: ['index-as-key'],
     },
     expectedFix: {
-      codePattern: '',
+      codePattern: 'key={item.id}',
       shouldNotExist: [],
     },
   },
@@ -249,7 +249,7 @@ export function BadComponent({ items, title, unusedData, onHover }) {
       issueTypes: ['hook-misuse', 'unused-prop', 'img-without-alt', 'index-as-key', 'anchor-without-name'],
     },
     expectedFix: {
-      codePattern: '',
+      codePattern: "'use client'",
       shouldNotExist: [],
     },
   },

@@ -9,22 +9,12 @@ import { createLogger } from '../utils/logger';
 import { createTools } from '../tools';
 import { loadConfig } from '../config';
 import { createSkillRegistry } from '../skills/registry';
-import { Skill, SkillContext, Diagnosis } from '../types';
+import { SkillContext, Diagnosis } from '../types';
 import { createModelClient } from '../models';
 import { createStorage } from '../storage';
 
-// Built-in skill constructors (static imports — same pattern as diagnose.ts)
-import { A11ySkill } from '../skills/builtin/a11y';
-import { E2ESkill } from '../skills/builtin/e2e';
-import { PerformanceSkill } from '../skills/builtin/performance';
-import { SecuritySkill } from '../skills/builtin/security';
-import { UIUXSkill } from '../skills/builtin/uiux';
-import { SEOSkill } from '../skills/builtin/seo';
-import { APISkill } from '../skills/builtin/api';
-import { DependencySkill } from '../skills/builtin/dependency';
-import { ComplexitySkill } from '../skills/builtin/complexity';
-import { NextJSSkill } from '../skills/builtin/framework/nextjs';
-import { NuxtSkill } from '../skills/builtin/framework/nuxt';
+// Built-in skill factory (single source of truth for skill instances)
+import { getAllSkillInstances } from './skill-factory';
 
 // ─────────────────────────────────────────────────────────────
 // Interfaces
@@ -124,19 +114,10 @@ export function getBenchmarkTrend(
 // BenchmarkEngine
 // ─────────────────────────────────────────────────────────────
 
-const ALL_BUILTIN_SKILLS: { name: string; ctor: new () => Skill }[] = [
-  { name: 'a11y', ctor: A11ySkill },
-  { name: 'e2e', ctor: E2ESkill },
-  { name: 'performance', ctor: PerformanceSkill },
-  { name: 'security', ctor: SecuritySkill },
-  { name: 'ui-ux', ctor: UIUXSkill },
-  { name: 'seo', ctor: SEOSkill },
-  { name: 'api', ctor: APISkill },
-  { name: 'dependency', ctor: DependencySkill },
-  { name: 'complexity', ctor: ComplexitySkill },
-  { name: 'nextjs', ctor: NextJSSkill },
-  { name: 'nuxt', ctor: NuxtSkill },
-];
+/** Get all skill names available for benchmarking */
+function getBenchmarkSkillNames(): string[] {
+  return Object.keys(getAllSkillInstances());
+}
 
 export class BenchmarkEngine {
   private logger = createLogger({ level: 'info', prefix: 'Benchmark' });
@@ -162,7 +143,7 @@ export class BenchmarkEngine {
     // Resolve which skills to benchmark
     const skillNames = skillsFilter && skillsFilter.length > 0
       ? skillsFilter
-      : ALL_BUILTIN_SKILLS.map((s) => s.name);
+      : getBenchmarkSkillNames();
 
     // Build skill context once
     const context = await this.buildContext(projectPath);
@@ -403,9 +384,9 @@ export class BenchmarkEngine {
   private buildRegistry() {
     const registry = createSkillRegistry(this.logger);
 
-    for (const { ctor } of ALL_BUILTIN_SKILLS) {
+    const instances = getAllSkillInstances();
+    for (const instance of Object.values(instances)) {
       try {
-        const instance = new ctor();
         registry.register(instance);
       } catch (e) {
         this.logger.warn(`Failed to register skill: ${e}`);

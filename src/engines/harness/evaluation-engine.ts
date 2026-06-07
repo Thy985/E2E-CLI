@@ -262,7 +262,13 @@ export async function evaluateCase(
   };
 }
 
-/** 评估诊断结果 — 按实例匹配而非仅按类型匹配 */
+/**
+ * 评估诊断结果 — 按实例匹配而非仅按类型匹配
+ *
+ * Note: Currently matches only by ruleId, not by line/column position.
+ * A ruleId match at an unexpected location counts as TP. To add position
+ * verification, extend GoldenTestCase.expectedDiagnosis with line ranges.
+ */
 export function evaluateDiagnosis(
   testCase: GoldenTestCase,
   actualDiagnosis: Diagnosis[],

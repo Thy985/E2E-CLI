@@ -6,19 +6,7 @@ import { DiagnoseOptions, Diagnosis, ProjectInfo, SkillContext } from '../../typ
 import { createLogger } from '../../utils/logger';
 import { createFormatter } from '../output/formatter';
 import { createSkillRegistry } from '../../skills/registry';
-import { A11ySkill } from '../../skills/builtin/a11y';
-import { PerformanceSkill } from '../../skills/builtin/performance';
-import { SecuritySkill } from '../../skills/builtin/security';
-import { E2ESkill } from '../../skills/builtin/e2e';
-import { UIUXSkill } from '../../skills/builtin/uiux';
-import { SEOSkill } from '../../skills/builtin/seo';
-import { APISkill } from '../../skills/builtin/api';
-import { DependencySkill } from '../../skills/builtin/dependency';
-import { ComplexitySkill } from '../../skills/builtin/complexity';
-import { NextJSSkill } from '../../skills/builtin/framework/nextjs';
-import { NuxtSkill } from '../../skills/builtin/framework/nuxt';
-import { ReactSkill } from '../../skills/builtin/react';
-import { VueSkill } from '../../skills/builtin/vue';
+import { getAllSkillInstances } from '../../engines/skill-factory';
 import { createReportGenerator } from '../../engines/report';
 import { createModelClient, ModelProvider } from '../../models';
 import { createTools } from '../../tools';
@@ -75,20 +63,11 @@ export async function diagnoseCommand(options: any) {
     // Initialize skill registry
     const skillRegistry = createSkillRegistry(logger);
     
-    // Register built-in skills
-    skillRegistry.register(new A11ySkill());
-    skillRegistry.register(new E2ESkill());
-    skillRegistry.register(new PerformanceSkill());
-    skillRegistry.register(new SecuritySkill());
-    skillRegistry.register(new UIUXSkill());
-    skillRegistry.register(new SEOSkill());
-    skillRegistry.register(new APISkill());
-    skillRegistry.register(new DependencySkill());
-    skillRegistry.register(new ComplexitySkill());
-    skillRegistry.register(new NextJSSkill());
-    skillRegistry.register(new NuxtSkill());
-    skillRegistry.register(new ReactSkill());
-    skillRegistry.register(new VueSkill());
+    // Register all built-in skills from factory
+    const skillInstances = getAllSkillInstances();
+    for (const skill of Object.values(skillInstances)) {
+      skillRegistry.register(skill);
+    }
 
     // Filter skills (respect disabled skills from config)
     const disabledSkills = config.skills?.disabled || [];

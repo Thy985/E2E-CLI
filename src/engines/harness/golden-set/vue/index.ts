@@ -68,7 +68,7 @@ defineProps<{
       issueTypes: ['v-if-with-v-for'],
     },
     expectedFix: {
-      codePattern: '',
+      codePattern: 'computed',
       shouldNotExist: [],
     },
   },
@@ -97,7 +97,7 @@ defineProps<{
       issueTypes: ['v-html-usage'],
     },
     expectedFix: {
-      codePattern: '',
+      codePattern: 'v-text',
       shouldNotExist: [],
     },
   },
@@ -186,7 +186,7 @@ function update() {
       issueTypes: ['direct-dom-access'],
     },
     expectedFix: {
-      codePattern: '',
+      codePattern: 'ref',
       shouldNotExist: [],
     },
   },
@@ -337,7 +337,7 @@ defineProps<{
       issueTypes: ['missing-v-for-key', 'v-if-with-v-for', 'v-html-usage'],
     },
     expectedFix: {
-      codePattern: '',
+      codePattern: 'computed',
       shouldNotExist: [],
     },
   },

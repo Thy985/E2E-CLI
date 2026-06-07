@@ -67,81 +67,85 @@ export class NuxtSkill extends BaseSkill {
   // ---------------------------------------------------------------------------
 
   async diagnose(context: SkillContext): Promise<Diagnosis[]> {
-    const { tools, logger } = context;
-    const projectPath = context.project.path;
-    const diagnoses: Diagnosis[] = [];
+    try {
+      const { tools, logger } = context;
+      const projectPath = context.project.path;
+      const diagnoses: Diagnosis[] = [];
 
-    // 1. Check if this is a Nuxt project
-    const isNuxt = await this.isNuxtProject(projectPath, tools);
-    if (!isNuxt) {
-      logger.debug('Not a Nuxt project, skipping nuxt skill');
+      // 1. Check if this is a Nuxt project
+      const isNuxt = await this.isNuxtProject(projectPath, tools);
+      if (!isNuxt) {
+        logger.debug('Not a Nuxt project, skipping nuxt skill');
+        return [];
+      }
+
+      logger.info('Nuxt project detected, running diagnostics...');
+
+      // 2. Check for missing error.vue
+      const hasErrorVue = await tools.fs.exists(path.join(projectPath, 'app', 'error.vue'));
+      if (!hasErrorVue) {
+        diagnoses.push({
+          id: generateId(),
+          skill: this.name,
+          type: 'best-practice',
+          severity: 'info',
+          title: 'Missing error boundary',
+          description: '项目中缺少 app/error.vue 错误边界文件。建议添加全局错误处理页面以优雅处理运行时错误。',
+          location: { file: path.join(projectPath, 'app', 'error.vue') },
+          metadata: { ruleId: 'nuxt-error-missing', fixable: false },
+        });
+      }
+
+      // 3. Find all page files
+      const pageFiles = await this.findPageFiles(projectPath, tools);
+
+      for (const pageFile of pageFiles) {
+        const fullFilePath = path.join(projectPath, pageFile);
+
+        try {
+          const content = await tools.fs.readFile(fullFilePath);
+          await this.analyzePageFile(fullFilePath, content, projectPath, diagnoses, tools, logger);
+        } catch {
+          logger.warn(`Failed to read page file: ${pageFile}`);
+        }
+      }
+
+      // 4. Also scan non-page Vue files for DOM access and SSR misuse
+      const vueFiles = await tools.fs.glob('**/*.vue');
+      for (const vueFile of vueFiles) {
+        // Skip already-analyzed page files
+        if (pageFiles.includes(vueFile)) continue;
+        // Skip node_modules
+        if (vueFile.includes('node_modules')) continue;
+
+        const fullFilePath = path.join(projectPath, vueFile);
+        try {
+          const content = await tools.fs.readFile(fullFilePath);
+          await this.analyzeVueFile(fullFilePath, content, projectPath, diagnoses, tools, logger);
+        } catch {
+          logger.warn(`Failed to read Vue file: ${vueFile}`);
+        }
+      }
+
+      // 5. Scan script files for client secrets and hardcoded URLs
+      const scriptFiles = await tools.fs.glob('**/*.{ts,js,mjs}');
+      for (const scriptFile of scriptFiles) {
+        if (scriptFile.includes('node_modules')) continue;
+        if (scriptFile.includes('.nuxt')) continue;
+
+        const fullFilePath = path.join(projectPath, scriptFile);
+        try {
+          const content = await tools.fs.readFile(fullFilePath);
+          await this.analyzeScriptFile(fullFilePath, content, projectPath, diagnoses, tools, logger);
+        } catch {
+          logger.warn(`Failed to read script file: ${scriptFile}`);
+        }
+      }
+
+      return diagnoses;
+    } catch (error) {
       return [];
     }
-
-    logger.info('Nuxt project detected, running diagnostics...');
-
-    // 2. Check for missing error.vue
-    const hasErrorVue = await tools.fs.exists(path.join(projectPath, 'app', 'error.vue'));
-    if (!hasErrorVue) {
-      diagnoses.push({
-        id: generateId(),
-        skill: this.name,
-        type: 'best-practice',
-        severity: 'info',
-        title: 'Missing error boundary',
-        description: '项目中缺少 app/error.vue 错误边界文件。建议添加全局错误处理页面以优雅处理运行时错误。',
-        location: { file: path.join(projectPath, 'app', 'error.vue') },
-        metadata: { rule: 'nuxt-error-missing', fixable: false },
-      });
-    }
-
-    // 3. Find all page files
-    const pageFiles = await this.findPageFiles(projectPath, tools);
-
-    for (const pageFile of pageFiles) {
-      const fullFilePath = path.join(projectPath, pageFile);
-
-      try {
-        const content = await tools.fs.readFile(fullFilePath);
-        await this.analyzePageFile(fullFilePath, content, projectPath, diagnoses, tools, logger);
-      } catch {
-        logger.warn(`Failed to read page file: ${pageFile}`);
-      }
-    }
-
-    // 4. Also scan non-page Vue files for DOM access and SSR misuse
-    const vueFiles = await tools.fs.glob('**/*.vue');
-    for (const vueFile of vueFiles) {
-      // Skip already-analyzed page files
-      if (pageFiles.includes(vueFile)) continue;
-      // Skip node_modules
-      if (vueFile.includes('node_modules')) continue;
-
-      const fullFilePath = path.join(projectPath, vueFile);
-      try {
-        const content = await tools.fs.readFile(fullFilePath);
-        await this.analyzeVueFile(fullFilePath, content, projectPath, diagnoses, tools, logger);
-      } catch {
-        logger.warn(`Failed to read Vue file: ${vueFile}`);
-      }
-    }
-
-    // 5. Scan script files for client secrets and hardcoded URLs
-    const scriptFiles = await tools.fs.glob('**/*.{ts,js,mjs}');
-    for (const scriptFile of scriptFiles) {
-      if (scriptFile.includes('node_modules')) continue;
-      if (scriptFile.includes('.nuxt')) continue;
-
-      const fullFilePath = path.join(projectPath, scriptFile);
-      try {
-        const content = await tools.fs.readFile(fullFilePath);
-        await this.analyzeScriptFile(fullFilePath, content, projectPath, diagnoses, tools, logger);
-      } catch {
-        logger.warn(`Failed to read script file: ${scriptFile}`);
-      }
-    }
-
-    return diagnoses;
   }
 
   // ---------------------------------------------------------------------------
@@ -149,7 +153,7 @@ export class NuxtSkill extends BaseSkill {
   // ---------------------------------------------------------------------------
 
   async fix(diagnosis: Diagnosis, context: SkillContext): Promise<Fix> {
-    const rule = diagnosis.metadata?.rule as string | undefined;
+    const rule = diagnosis.metadata?.ruleId as string | undefined;
 
     switch (rule) {
       case 'nuxt-image-missing':
@@ -196,6 +200,16 @@ export class NuxtSkill extends BaseSkill {
       // glob failed
     }
 
+    // For virtual FS / single file scenarios: check for .vue files in pages/ or app/ paths
+    try {
+      const allVueFiles = await tools.fs.glob('**/*.vue');
+      if (allVueFiles.some(f => f.includes('/pages/') || f.includes('/app/') || f.startsWith('pages/') || f.startsWith('app/'))) {
+        return true;
+      }
+    } catch {
+      // glob failed
+    }
+
     return false;
   }
 
@@ -222,14 +236,11 @@ export class NuxtSkill extends BaseSkill {
   private async analyzeVueFile(
     fullFilePath: string,
     content: string,
-    projectPath: string,
+    _projectPath: string,
     diagnoses: Diagnosis[],
-    tools: SkillContext['tools'],
+    _tools: SkillContext['tools'],
     logger: SkillContext['logger'],
   ): Promise<void> {
-    // Check for @nuxt/image dependency to decide whether to flag <img> usage
-    const hasNuxtImage = await this.hasNuxtImage(projectPath, tools);
-
     const vueAst = parseVueFile(content, fullFilePath);
     if (!vueAst) {
       logger.warn(`Failed to parse Vue file: ${fullFilePath}`);
@@ -237,27 +248,25 @@ export class NuxtSkill extends BaseSkill {
     }
 
     // Check <img> without NuxtImg (when @nuxt/image is installed)
-    if (hasNuxtImage) {
-      const imgIssues = this.detectImgWithoutNuxtImg(vueAst);
-      for (const issue of imgIssues) {
-        diagnoses.push({
-          id: generateId(),
-          skill: this.name,
-          type: 'best-practice',
-          severity: 'warning',
-          title: 'Missing NuxtImage usage',
-          description: '使用了 <img> 标签而非 <NuxtImg> 组件。Nuxt Image 提供自动优化、懒加载和响应式图片支持。',
-          location: { file: fullFilePath, line: issue.line, column: issue.column },
-          evidence: { type: 'code' as const, content: issue.snippet },
-          metadata: { rule: 'nuxt-image-missing', fixable: true },
-          fixSuggestion: {
-            description: `将 <img> 替换为 <NuxtImg>`,
-            code: issue.fixCode,
-            autoApplicable: true,
-            riskLevel: 'low',
-          },
-        });
-      }
+    const imgIssues = this.detectImgWithoutNuxtImg(vueAst);
+    for (const issue of imgIssues) {
+      diagnoses.push({
+        id: generateId(),
+        skill: this.name,
+        type: 'best-practice',
+        severity: 'warning',
+        title: 'Missing NuxtImage usage',
+        description: '使用了 <img> 标签而非 <NuxtImg> 组件。Nuxt Image 提供自动优化、懒加载和响应式图片支持。',
+        location: { file: fullFilePath, line: issue.line, column: issue.column },
+        evidence: { type: 'code' as const, content: issue.snippet },
+        metadata: { ruleId: 'nuxt-image-missing', fixable: true },
+        fixSuggestion: {
+          description: `将 <img> 替换为 <NuxtImg>`,
+          code: issue.fixCode,
+          autoApplicable: true,
+          riskLevel: 'low',
+        },
+      });
     }
 
     // Check <a href="/..."> instead of <NuxtLink>
@@ -272,7 +281,7 @@ export class NuxtSkill extends BaseSkill {
         description: '使用了 <a href> 标签而非 <NuxtLink> 组件。NuxtLink 提供客户端导航和预取优化。',
         location: { file: fullFilePath, line: issue.line, column: issue.column },
         evidence: { type: 'code' as const, content: issue.snippet },
-        metadata: { rule: 'nuxt-link-missing', fixable: true },
+        metadata: { ruleId: 'nuxt-link-missing', fixable: true },
         fixSuggestion: {
           description: `将 <a href> 替换为 <NuxtLink to>`,
           code: issue.fixCode,
@@ -294,7 +303,7 @@ export class NuxtSkill extends BaseSkill {
         description: issue.message,
         location: { file: fullFilePath, line: issue.line, column: issue.column },
         evidence: { type: 'code' as const, content: issue.snippet },
-        metadata: { rule: 'nuxt-dom-access', fixable: false },
+        metadata: { ruleId: 'nuxt-dom-access', fixable: false },
       });
     }
 
@@ -310,7 +319,7 @@ export class NuxtSkill extends BaseSkill {
         description: issue.message,
         location: { file: fullFilePath, line: issue.line, column: issue.column },
         evidence: { type: 'code' as const, content: issue.snippet },
-        metadata: { rule: 'nuxt-ssr-misuse', fixable: false },
+        metadata: { ruleId: 'nuxt-ssr-misuse', fixable: false },
       });
     }
   }
@@ -341,17 +350,6 @@ export class NuxtSkill extends BaseSkill {
   // ---------------------------------------------------------------------------
   // Detection methods
   // ---------------------------------------------------------------------------
-
-  private async hasNuxtImage(projectPath: string, tools: SkillContext['tools']): Promise<boolean> {
-    try {
-      const pkgContent = await tools.fs.readFile(path.join(projectPath, 'package.json'));
-      const pkg = JSON.parse(pkgContent);
-      const deps = { ...pkg.dependencies, ...pkg.devDependencies };
-      return !!(deps['@nuxt/image'] || deps['@nuxt/image-edge']);
-    } catch {
-      return false;
-    }
-  }
 
   /** Detect <img> elements that should use <NuxtImg> */
   private detectImgWithoutNuxtImg(
@@ -514,7 +512,7 @@ export class NuxtSkill extends BaseSkill {
         description: issue.message,
         location: { file: filePath, line: issue.line, column: issue.column },
         evidence: { type: 'code' as const, content: issue.snippet },
-        metadata: { rule: 'nuxt-ssr-misuse', fixable: false },
+        metadata: { ruleId: 'nuxt-ssr-misuse', fixable: false },
       });
     }
   }
@@ -776,7 +774,7 @@ export class NuxtSkill extends BaseSkill {
             description: `检测到硬编码的 ${name}。敏感信息应通过 Nuxt 的 useRuntimeConfig 或服务端 API 访问，不应暴露在客户端代码中。`,
             location: { file: filePath, line: i + 1 },
             evidence: { type: 'code' as const, content: line.trim() },
-            metadata: { rule: 'nuxt-client-secret', fixable: false },
+            metadata: { ruleId: 'nuxt-client-secret', fixable: false },
           });
         }
       }
@@ -834,7 +832,7 @@ export class NuxtSkill extends BaseSkill {
             description: '检测到硬编码的 API URL。建议使用 useRuntimeConfig 管理 API 地址，以便在不同环境中灵活配置。',
             location: { file: filePath, line: i + 1 },
             evidence: { type: 'code' as const, content: line.trim() },
-            metadata: { rule: 'nuxt-hardcoded-url', fixable: false },
+            metadata: { ruleId: 'nuxt-hardcoded-url', fixable: false },
           });
         }
       }
@@ -866,7 +864,7 @@ export class NuxtSkill extends BaseSkill {
         title: 'Missing definePageMeta',
         description: `页面文件 ${path.relative(process.cwd(), filePath)} 缺少 definePageMeta() 调用。建议使用 definePageMeta 配置页面元数据（如 layout、middleware、meta 等）。`,
         location: { file: filePath, line: 1 },
-        metadata: { rule: 'nuxt-pagemeta-missing', fixable: false },
+        metadata: { ruleId: 'nuxt-pagemeta-missing', fixable: false },
         fixSuggestion: {
           description: '添加 definePageMeta 调用',
           code: `<script setup lang="ts">\ndefinePageMeta({\n  // 配置页面元数据\n})\n</script>`,

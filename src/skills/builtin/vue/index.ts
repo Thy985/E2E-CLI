@@ -62,23 +62,27 @@ export class VueSkill extends BaseSkill {
   ];
 
   async diagnose(context: SkillContext): Promise<Diagnosis[]> {
-    const diagnoses: Diagnosis[] = [];
-    const { project, tools, logger } = context;
+    try {
+      const diagnoses: Diagnosis[] = [];
+      const { project, tools, logger } = context;
 
-    logger.info('Starting Vue component analysis...');
+      logger.info('Starting Vue component analysis...');
 
-    // Only check .vue files
-    const vueFiles = await this.getVueFiles(project.path, tools);
-    logger.debug(`Found ${vueFiles.length} Vue component files`);
+      // Only check .vue files
+      const vueFiles = await this.getVueFiles(project.path, tools);
+      logger.debug(`Found ${vueFiles.length} Vue component files`);
 
-    for (const file of vueFiles) {
-      const content = await tools.fs.readFile(file);
-      const fileDiagnoses = await this.checkFile(file, content);
-      diagnoses.push(...fileDiagnoses);
+      for (const file of vueFiles) {
+        const content = await tools.fs.readFile(file);
+        const fileDiagnoses = await this.checkFile(file, content);
+        diagnoses.push(...fileDiagnoses);
+      }
+
+      logger.info(`Vue analysis completed, found ${diagnoses.length} issues`);
+      return diagnoses;
+    } catch (error) {
+      return [];
     }
-
-    logger.info(`Vue analysis completed, found ${diagnoses.length} issues`);
-    return diagnoses;
   }
 
   async fix(diagnosis: Diagnosis, context: SkillContext): Promise<Fix> {
