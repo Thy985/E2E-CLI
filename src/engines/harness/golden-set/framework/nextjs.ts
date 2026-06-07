@@ -4,7 +4,7 @@
  * 10 test cases for Next.js framework analysis
  */
 
-import type { GoldenTestCase } from '../types';
+import type { GoldenTestCase } from '../../types';
 
 export const nextjsGoldenCases: GoldenTestCase[] = [
   // ─── next-image-missing ─────────────────────────────────────

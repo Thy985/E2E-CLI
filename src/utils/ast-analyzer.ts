@@ -407,7 +407,7 @@ export function parseVueFile(source: string, filePath: string): VueASTFile | nul
       filePath,
       ast: result.ast,
       templateBody: result.ast.templateBody,
-      scriptAST: result.services?.program?.getProgram() ?? null,
+      scriptAST: (result.services as any)?.program?.getProgram() ?? null,
       source,
       lines: source.split('\n'),
     };
@@ -923,25 +923,25 @@ export function detectUnusedPropsVue(astFile: VueASTFile): Array<{
   if (astFile.templateBody) {
     function walkTemplate(node: any): void {
       if (!node) return;
+      // Walk expression children (simple recursive check for Identifier nodes)
+      function walkExpr(e: any): void {
+        if (!e || typeof e !== 'object') return;
+        if (e.type === 'Identifier' && e.name) {
+          usedInTemplate.add(e.name);
+        }
+        for (const k of Object.keys(e)) {
+          if (Array.isArray(e[k])) {
+            for (const item of e[k]) walkExpr(item);
+          } else if (typeof e[k] === 'object') {
+            walkExpr(e[k]);
+          }
+        }
+      }
       if (node.type === 'VExpressionContainer' && node.expression) {
         // Collect identifiers in template expressions
         const expr = node.expression;
         if (expr.type === 'Identifier' && expr.name) {
           usedInTemplate.add(expr.name);
-        }
-        // Walk expression children (simple recursive check for Identifier nodes)
-        function walkExpr(e: any): void {
-          if (!e || typeof e !== 'object') return;
-          if (e.type === 'Identifier' && e.name) {
-            usedInTemplate.add(e.name);
-          }
-          for (const k of Object.keys(e)) {
-            if (Array.isArray(e[k])) {
-              for (const item of e[k]) walkExpr(item);
-            } else if (typeof e[k] === 'object') {
-              walkExpr(e[k]);
-            }
-          }
         }
         walkExpr(expr);
       }

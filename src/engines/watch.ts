@@ -186,7 +186,7 @@ export class WatchEngine {
   /**
    * Handle a file system event with debouncing.
    */
-  private handleFileEvent(eventType: fs.EventType, filePath: string): void {
+  private handleFileEvent(eventType: 'rename' | 'change', filePath: string): void {
     // Skip if not watching
     if (!this.state.isWatching) return;
 

@@ -12,9 +12,10 @@ export const reactGoldenCases: GoldenTestCase[] = [
     id: 'react-missing-key-001',
     difficulty: 'easy',
     skill: 'react',
-    description: 'List rendering without key prop',
+    tags: ['react', 'key', 'list-rendering'],
     input: {
       filePath: 'src/components/UserList.tsx',
+      stack: ['react', 'typescript'],
       code: `import React from 'react';
 
 export function UserList({ users }) {
@@ -43,9 +44,10 @@ export function UserList({ users }) {
     id: 'react-hook-misuse-001',
     difficulty: 'medium',
     skill: 'react',
-    description: 'useState called inside conditional',
+    tags: ['react', 'hooks', 'rules-of-hooks'],
     input: {
       filePath: 'src/components/ConditionalHook.tsx',
+      stack: ['react', 'typescript'],
       code: `import React, { useState, useEffect } from 'react';
 
 export function ConditionalHook({ showExtra }) {
@@ -73,9 +75,10 @@ export function ConditionalHook({ showExtra }) {
     id: 'react-unused-prop-001',
     difficulty: 'easy',
     skill: 'react',
-    description: 'Component has unused prop',
+    tags: ['react', 'props', 'unused'],
     input: {
       filePath: 'src/components/UserCard.tsx',
+      stack: ['react', 'typescript'],
       code: `import React from 'react';
 
 export function UserCard({ name, email, unusedProp, onClick }) {
@@ -102,9 +105,10 @@ export function UserCard({ name, email, unusedProp, onClick }) {
     id: 'react-xss-001',
     difficulty: 'medium',
     skill: 'react',
-    description: 'Using dangerouslySetInnerHTML',
+    tags: ['react', 'xss', 'dangerouslySetInnerHTML'],
     input: {
       filePath: 'src/components/RichText.tsx',
+      stack: ['react', 'typescript'],
       code: `import React from 'react';
 
 export function RichText({ content }) {
@@ -128,9 +132,10 @@ export function RichText({ content }) {
     id: 'react-img-alt-001',
     difficulty: 'easy',
     skill: 'react',
-    description: 'img element without alt attribute in JSX',
+    tags: ['react', 'a11y', 'img', 'alt'],
     input: {
       filePath: 'src/components/HeroImage.tsx',
+      stack: ['react', 'typescript'],
       code: `import React from 'react';
 
 export function HeroImage() {
@@ -156,9 +161,10 @@ export function HeroImage() {
     id: 'react-anchor-name-001',
     difficulty: 'easy',
     skill: 'react',
-    description: 'Empty anchor without accessible name',
+    tags: ['react', 'a11y', 'anchor', 'aria'],
     input: {
       filePath: 'src/components/SocialLink.tsx',
+      stack: ['react', 'typescript'],
       code: `import React from 'react';
 
 export function SocialLink({ href }) {
@@ -182,9 +188,10 @@ export function SocialLink({ href }) {
     id: 'react-index-key-001',
     difficulty: 'medium',
     skill: 'react',
-    description: 'Using index as key in list rendering',
+    tags: ['react', 'key', 'anti-pattern', 'index-key'],
     input: {
       filePath: 'src/components/ItemList.tsx',
+      stack: ['react', 'typescript'],
       code: `import React from 'react';
 
 export function ItemList({ items }) {
@@ -212,9 +219,10 @@ export function ItemList({ items }) {
     id: 'react-multi-001',
     difficulty: 'hard',
     skill: 'react',
-    description: 'Multiple React issues in one component',
+    tags: ['react', 'multiple-issues'],
     input: {
       filePath: 'src/components/BadComponent.tsx',
+      stack: ['react', 'typescript'],
       code: `import React, { useState, useEffect } from 'react';
 
 export function BadComponent({ items, title, unusedData, onHover }) {
@@ -251,9 +259,10 @@ export function BadComponent({ items, title, unusedData, onHover }) {
     id: 'react-clean-001',
     difficulty: 'easy',
     skill: 'react',
-    description: 'Well-written React component with no issues',
+    tags: ['react', 'clean', 'best-practices'],
     input: {
       filePath: 'src/components/GoodComponent.tsx',
+      stack: ['react', 'typescript'],
       code: `import React, { useState, useCallback } from 'react';
 
 interface Props {
@@ -304,9 +313,10 @@ export function GoodComponent({ users, onSelect }: Props) {
     id: 'react-nested-map-001',
     difficulty: 'hard',
     skill: 'react',
-    description: 'Nested map rendering without keys',
+    tags: ['react', 'key', 'list-rendering', 'nested'],
     input: {
       filePath: 'src/components/NestedList.tsx',
+      stack: ['react', 'typescript'],
       code: `import React from 'react';
 
 export function NestedList({ categories }) {

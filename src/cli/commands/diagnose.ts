@@ -9,8 +9,6 @@ import { createSkillRegistry } from '../../skills/registry';
 import { A11ySkill } from '../../skills/builtin/a11y';
 import { PerformanceSkill } from '../../skills/builtin/performance';
 import { SecuritySkill } from '../../skills/builtin/security';
-import { ReactSkill } from '../../skills/builtin/react';
-import { VueSkill } from '../../skills/builtin/vue';
 import { E2ESkill } from '../../skills/builtin/e2e';
 import { UIUXSkill } from '../../skills/builtin/uiux';
 import { SEOSkill } from '../../skills/builtin/seo';
@@ -19,6 +17,8 @@ import { DependencySkill } from '../../skills/builtin/dependency';
 import { ComplexitySkill } from '../../skills/builtin/complexity';
 import { NextJSSkill } from '../../skills/builtin/framework/nextjs';
 import { NuxtSkill } from '../../skills/builtin/framework/nuxt';
+import { ReactSkill } from '../../skills/builtin/react';
+import { VueSkill } from '../../skills/builtin/vue';
 import { createReportGenerator } from '../../engines/report';
 import { createModelClient, ModelProvider } from '../../models';
 import { createTools } from '../../tools';
@@ -87,6 +87,8 @@ export async function diagnoseCommand(options: any) {
     skillRegistry.register(new ComplexitySkill());
     skillRegistry.register(new NextJSSkill());
     skillRegistry.register(new NuxtSkill());
+    skillRegistry.register(new ReactSkill());
+    skillRegistry.register(new VueSkill());
 
     // Filter skills (respect disabled skills from config)
     const disabledSkills = config.skills?.disabled || [];

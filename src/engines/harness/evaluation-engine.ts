@@ -57,8 +57,6 @@ export function evaluateFix(
       ? removedCount / totalShouldNotExist
       : 1; // No shouldNotExist constraints → perfect precision
 
-  const f1 = precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : 0;
-
   // AST structural validation
   let structuralChanges = { addedNodes: 0, removedNodes: 0, modifiedNodes: 0, totalChanges: 0 };
   try {

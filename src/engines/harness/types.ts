@@ -12,6 +12,9 @@ export interface GoldenTestCase {
   /** 所属 skill（a11y, security, performance, ...） */
   skill: string;
 
+  /** 用例描述 */
+  description?: string;
+
   /** 输入：有问题的源代码 */
   input: {
     /** 文件内容 */

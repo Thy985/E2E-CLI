@@ -12,10 +12,9 @@ export const nuxtGoldenCases: GoldenTestCase[] = [
     id: 'nuxt-001',
     difficulty: 'easy',
     skill: 'nuxt',
-    description: 'Page using <img> instead of <NuxtImg> (assume @nuxt/image is installed)',
     input: {
       filePath: 'pages/gallery.vue',
-      stack: ['vue'],
+      stack: ['vue', 'typescript'],
       code: `<template>
   <div>
     <h1>Photo Gallery</h1>
@@ -43,10 +42,9 @@ export const nuxtGoldenCases: GoldenTestCase[] = [
     id: 'nuxt-002',
     difficulty: 'easy',
     skill: 'nuxt',
-    description: 'Template using <a href> instead of <NuxtLink to>',
     input: {
       filePath: 'components/AppNavigation.vue',
-      stack: ['vue'],
+      stack: ['vue', 'typescript'],
       code: `<template>
   <nav>
     <a href="/">Home</a>
@@ -74,10 +72,9 @@ export const nuxtGoldenCases: GoldenTestCase[] = [
     id: 'nuxt-003',
     difficulty: 'medium',
     skill: 'nuxt',
-    description: 'Component using document.querySelector directly without SSR guard',
     input: {
       filePath: 'components/DomManipulator.vue',
-      stack: ['vue'],
+      stack: ['vue', 'typescript'],
       code: `<template>
   <div class="container">
     <p id="output"></p>
@@ -110,10 +107,9 @@ function update() {
     id: 'nuxt-004',
     difficulty: 'hard',
     skill: 'nuxt',
-    description: 'Component with hardcoded API key/secret in source',
     input: {
       filePath: 'components/AnalyticsTracker.vue',
-      stack: ['vue'],
+      stack: ['vue', 'typescript'],
       code: `<template>
   <div>
     <h1>Analytics Dashboard</h1>
@@ -153,10 +149,9 @@ async function trackEvent(event: string) {
     id: 'nuxt-005',
     difficulty: 'hard',
     skill: 'nuxt',
-    description: 'Component accessing window/document without process.client or onMounted guard',
     input: {
       filePath: 'components/ViewportTracker.vue',
-      stack: ['vue'],
+      stack: ['vue', 'typescript'],
       code: `<template>
   <div>
     <p>Window width: {{ width }}</p>
@@ -195,10 +190,9 @@ window.addEventListener('scroll', () => {
     id: 'nuxt-006',
     difficulty: 'easy',
     skill: 'nuxt',
-    description: 'Page file without definePageMeta()',
     input: {
       filePath: 'pages/about.vue',
-      stack: ['vue'],
+      stack: ['vue', 'typescript'],
       code: `<template>
   <div>
     <h1>About Us</h1>
@@ -226,10 +220,9 @@ const companyName = 'My Company'
     id: 'nuxt-007',
     difficulty: 'medium',
     skill: 'nuxt',
-    description: 'Component with hardcoded API URL string',
     input: {
       filePath: 'components/UserList.vue',
-      stack: ['vue'],
+      stack: ['vue', 'typescript'],
       code: `<template>
   <div>
     <h1>Users</h1>
@@ -269,10 +262,9 @@ onMounted(async () => {
     id: 'nuxt-008',
     difficulty: 'easy',
     skill: 'nuxt',
-    description: 'Project without app/error.vue error boundary',
     input: {
       filePath: 'pages/checkout.vue',
-      stack: ['vue'],
+      stack: ['vue', 'typescript'],
       code: `<template>
   <div>
     <h1>Checkout</h1>
@@ -303,11 +295,9 @@ onMounted(async () => {
     id: 'nuxt-009',
     difficulty: 'easy',
     skill: 'nuxt',
-    description:
-      'Well-written Nuxt 3 page with NuxtImg, NuxtLink, definePageMeta, no SSR misuse',
     input: {
       filePath: 'pages/profile.vue',
-      stack: ['vue'],
+      stack: ['vue', 'typescript'],
       code: `<template>
   <main>
     <nav>
@@ -351,11 +341,9 @@ const apiUrl = config.public.apiBase
     id: 'nuxt-010',
     difficulty: 'hard',
     skill: 'nuxt',
-    description:
-      'Page with multiple issues: img without NuxtImg + link without NuxtLink + SSR misuse',
     input: {
       filePath: 'pages/store.vue',
-      stack: ['vue'],
+      stack: ['vue', 'typescript'],
       code: `<template>
   <div>
     <a href="/">Back to Home</a>

@@ -114,7 +114,7 @@ export function getBenchmarkTrend(
   metric: string,
 ): Array<{ timestamp: string; value: number }> {
   return results.map((r) => {
-    const summary = r.summary as Record<string, number>;
+    const summary = r.summary as unknown as Record<string, number>;
     const value = summary[metric] ?? 0;
     return { timestamp: r.timestamp, value };
   });
@@ -239,8 +239,8 @@ export class BenchmarkEngine {
     ];
 
     for (const { key, lowerIsBetter } of summaryMetrics) {
-      const beforeVal = (before.summary as Record<string, number>)[key] ?? 0;
-      const afterVal = (after.summary as Record<string, number>)[key] ?? 0;
+      const beforeVal = (before.summary as unknown as Record<string, number>)[key] ?? 0;
+      const afterVal = (after.summary as unknown as Record<string, number>)[key] ?? 0;
       const change = beforeVal !== 0 ? ((afterVal - beforeVal) / beforeVal) * 100 : 0;
 
       comparison.improvements.push({

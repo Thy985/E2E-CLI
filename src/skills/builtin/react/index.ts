@@ -146,7 +146,7 @@ export class ReactSkill extends BaseSkill {
           metadata: {
             ruleId: result.ruleId,
             snippet: result.snippet,
-            ...(result.propName ? { propName: result.propName } : {}),
+            ...(result as any).propName ? { propName: (result as any).propName } : {},
           },
           fixSuggestion: {
             description: check.fixSuggestion,
@@ -170,7 +170,7 @@ export class ReactSkill extends BaseSkill {
         autoFixable: true,
       },
       'hook-misuse': {
-        severity: 'error',
+        severity: 'critical' as Severity,
         title: 'Hook 使用违反规则',
         description: 'React Hook 不应在条件语句、循环或嵌套函数中调用',
         fixSuggestion: '将 Hook 调用移到组件顶层',

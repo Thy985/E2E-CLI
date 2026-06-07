@@ -42,6 +42,12 @@ import { ReactSkill } from '../../skills/builtin/react';
 import { VueSkill } from '../../skills/builtin/vue';
 import { NextJSSkill } from '../../skills/builtin/framework/nextjs';
 import { NuxtSkill } from '../../skills/builtin/framework/nuxt';
+import { E2ESkill } from '../../skills/builtin/e2e';
+import { UIUXSkill } from '../../skills/builtin/uiux';
+import { SEOSkill } from '../../skills/builtin/seo';
+import { APISkill } from '../../skills/builtin/api';
+import { DependencySkill } from '../../skills/builtin/dependency';
+import { ComplexitySkill } from '../../skills/builtin/complexity';
 import type { BaseSkill } from '../../skills/base-skill';
 
 const logger = createLogger();
@@ -54,6 +60,12 @@ const skillInstances: Record<string, BaseSkill> = {
   vue: new VueSkill(),
   nextjs: new NextJSSkill(),
   nuxt: new NuxtSkill(),
+  e2e: new E2ESkill(),
+  uiux: new UIUXSkill(),
+  seo: new SEOSkill(),
+  api: new APISkill(),
+  dependency: new DependencySkill(),
+  complexity: new ComplexitySkill(),
 };
 
 // ---------------------------------------------------------------------------

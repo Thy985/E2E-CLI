@@ -9,14 +9,12 @@ import {
   Diagnosis,
   Fix,
   Severity,
-  DiagnosisType,
   FileChange,
   SkillTrigger,
   SkillCapability,
 } from '../../../types';
 import { generateId } from '../../../utils';
-import { parseVueFile, parseFile, walkAST, findNodesByType } from '../../../utils/ast-analyzer';
-import * as fs from 'fs/promises';
+import { parseVueFile, parseFile, walkAST } from '../../../utils/ast-analyzer';
 import * as path from 'path';
 import { AST_NODE_TYPES } from '@typescript-eslint/typescript-estree';
 import type { TSESTree } from '@typescript-eslint/typescript-estree';
@@ -201,7 +199,7 @@ export class NuxtSkill extends BaseSkill {
     return false;
   }
 
-  private async findPageFiles(projectPath: string, tools: SkillContext['tools']): Promise<string[]> {
+  private async findPageFiles(_projectPath: string, tools: SkillContext['tools']): Promise<string[]> {
     try {
       return await tools.fs.glob('pages/**/*.vue');
     } catch {
@@ -250,7 +248,7 @@ export class NuxtSkill extends BaseSkill {
           title: 'Missing NuxtImage usage',
           description: '使用了 <img> 标签而非 <NuxtImg> 组件。Nuxt Image 提供自动优化、懒加载和响应式图片支持。',
           location: { file: fullFilePath, line: issue.line, column: issue.column },
-          evidence: [{ type: 'code', content: issue.snippet }],
+          evidence: { type: 'code' as const, content: issue.snippet },
           metadata: { rule: 'nuxt-image-missing', fixable: true },
           fixSuggestion: {
             description: `将 <img> 替换为 <NuxtImg>`,
@@ -273,7 +271,7 @@ export class NuxtSkill extends BaseSkill {
         title: 'Missing NuxtLink usage',
         description: '使用了 <a href> 标签而非 <NuxtLink> 组件。NuxtLink 提供客户端导航和预取优化。',
         location: { file: fullFilePath, line: issue.line, column: issue.column },
-        evidence: [{ type: 'code', content: issue.snippet }],
+        evidence: { type: 'code' as const, content: issue.snippet },
         metadata: { rule: 'nuxt-link-missing', fixable: true },
         fixSuggestion: {
           description: `将 <a href> 替换为 <NuxtLink to>`,
@@ -295,7 +293,7 @@ export class NuxtSkill extends BaseSkill {
         title: 'Direct DOM manipulation',
         description: issue.message,
         location: { file: fullFilePath, line: issue.line, column: issue.column },
-        evidence: [{ type: 'code', content: issue.snippet }],
+        evidence: { type: 'code' as const, content: issue.snippet },
         metadata: { rule: 'nuxt-dom-access', fixable: false },
       });
     }
@@ -311,7 +309,7 @@ export class NuxtSkill extends BaseSkill {
         title: 'SSR misuse - browser API without client guard',
         description: issue.message,
         location: { file: fullFilePath, line: issue.line, column: issue.column },
-        evidence: [{ type: 'code', content: issue.snippet }],
+        evidence: { type: 'code' as const, content: issue.snippet },
         metadata: { rule: 'nuxt-ssr-misuse', fixable: false },
       });
     }
@@ -320,10 +318,10 @@ export class NuxtSkill extends BaseSkill {
   private async analyzeScriptFile(
     fullFilePath: string,
     content: string,
-    projectPath: string,
+    _projectPath: string,
     diagnoses: Diagnosis[],
-    tools: SkillContext['tools'],
-    logger: SkillContext['logger'],
+    _tools: SkillContext['tools'],
+    _logger: SkillContext['logger'],
   ): Promise<void> {
     const astFile = parseFile(fullFilePath, content);
     if (!astFile) {
@@ -515,7 +513,7 @@ export class NuxtSkill extends BaseSkill {
         title: 'SSR misuse - browser API without client guard',
         description: issue.message,
         location: { file: filePath, line: issue.line, column: issue.column },
-        evidence: [{ type: 'code', content: issue.snippet }],
+        evidence: { type: 'code' as const, content: issue.snippet },
         metadata: { rule: 'nuxt-ssr-misuse', fixable: false },
       });
     }
@@ -534,7 +532,6 @@ export class NuxtSkill extends BaseSkill {
         node.object.type === AST_NODE_TYPES.Identifier &&
         node.object.name === 'window'
       ) {
-        const parent = this.findParentNode(ast, node);
         if (!this.isInsideProcessClientCheck(ast, node)) {
           const loc = node.loc;
           results.push({
@@ -778,7 +775,7 @@ export class NuxtSkill extends BaseSkill {
             title: 'Hardcoded secret in client-side code',
             description: `检测到硬编码的 ${name}。敏感信息应通过 Nuxt 的 useRuntimeConfig 或服务端 API 访问，不应暴露在客户端代码中。`,
             location: { file: filePath, line: i + 1 },
-            evidence: [{ type: 'code', content: line.trim() }],
+            evidence: { type: 'code' as const, content: line.trim() },
             metadata: { rule: 'nuxt-client-secret', fixable: false },
           });
         }
@@ -836,7 +833,7 @@ export class NuxtSkill extends BaseSkill {
             title: 'Hardcoded API URL',
             description: '检测到硬编码的 API URL。建议使用 useRuntimeConfig 管理 API 地址，以便在不同环境中灵活配置。',
             location: { file: filePath, line: i + 1 },
-            evidence: [{ type: 'code', content: line.trim() }],
+            evidence: { type: 'code' as const, content: line.trim() },
             metadata: { rule: 'nuxt-hardcoded-url', fixable: false },
           });
         }

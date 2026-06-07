@@ -12,14 +12,10 @@
  */
 
 import * as http from 'http';
-import * as fs from 'fs';
-import * as path from 'path';
 import { createLogger } from '../utils/logger';
 import type { EvalHistoryEntry } from './harness/eval-history';
 import {
   FeedbackLoopEngine,
-  type FeedbackEntry,
-  loadFeedback,
 } from './harness/feedback-loop';
 
 const logger = createLogger({ prefix: 'Dashboard' });
@@ -135,30 +131,6 @@ function parseUrl(url: string): { pathname: string; query: Record<string, string
   } catch {
     return { pathname: url.split('?')[0], query: {} };
   }
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-function severityColor(severity: string): string {
-  switch (severity.toLowerCase()) {
-    case 'critical': return '#f87171';
-    case 'warning': return '#fbbf24';
-    case 'info': return '#60a5fa';
-    default: return '#8b90a0';
-  }
-}
-
-function severityBadge(severity: string): string {
-  const color = severityColor(severity);
-  const bg = `${color}22`;
-  return `<span class="badge" style="background:${bg};color:${color}">${escapeHtml(severity)}</span>`;
 }
 
 // ── HTML Dashboard Template ────────────────────────────────────────────────
@@ -819,7 +791,7 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
   const feedbackEngine = new FeedbackLoopEngine();
 
   function broadcastUpdate(): void {
-    const payload = JSON.stringify(currentData);
+    void JSON.stringify(currentData);
     for (const [, client] of sseClients) {
       try {
         sendSSE(client, 'update', currentData, ++sseEventId);

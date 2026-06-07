@@ -7,7 +7,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { EvalHistoryEntry, loadEvalHistory, getRecentHistory } from './eval-history';
+import { EvalHistoryEntry, loadEvalHistory } from './eval-history';
 import { generateId } from '../../utils';
 
 export interface PromptTuningResult {
@@ -22,7 +22,6 @@ export interface PromptTuningResult {
 }
 
 const F1_TUNING_THRESHOLD = 0.75;
-const F1_CRITICAL_THRESHOLD = 0.5;
 const DEFAULT_PROMPT_CONFIG_FILE = 'prompt-tuning-config.json';
 
 // Failure pattern detection keywords
@@ -109,7 +108,7 @@ function analyzeFailurePatterns(
  */
 function generateFalseNegativeImprovements(
   skill: string,
-  failurePatterns: string[],
+  _failurePatterns: string[],
 ): { additions: string[]; description: string } {
   const additions: string[] = [];
   const descriptions: string[] = [];

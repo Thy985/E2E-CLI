@@ -220,7 +220,7 @@ export const a11yGoldenCases: GoldenTestCase[] = [
       stack: ['html'],
     },
     expectedDiagnosis: {
-      issueCount: 5,
+      issueCount: 6,
       issueTypes: ['html-has-lang', 'document-title', 'link-name', 'button-name', 'img-alt', 'label'],
       falsePositives: [],
     },

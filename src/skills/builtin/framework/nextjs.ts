@@ -169,7 +169,7 @@ export class NextJSSkill extends BaseSkill {
   // File Collection
   // -------------------------------------------------------------------------
 
-  private async getRouteFiles(projectPath: string, tools: SkillContext['tools']): Promise<string[]> {
+  private async getRouteFiles(_projectPath: string, tools: SkillContext['tools']): Promise<string[]> {
     const patterns = [
       'pages/**/*.{tsx,jsx,ts,js}',
       'app/**/page.{tsx,jsx,ts,js}',
@@ -186,7 +186,7 @@ export class NextJSSkill extends BaseSkill {
     return [...new Set(files)];
   }
 
-  private async getComponentFiles(projectPath: string, tools: SkillContext['tools']): Promise<string[]> {
+  private async getComponentFiles(_projectPath: string, tools: SkillContext['tools']): Promise<string[]> {
     const patterns = [
       '**/*.tsx',
       '**/*.jsx',
@@ -431,6 +431,7 @@ export class NextJSSkill extends BaseSkill {
     snippet: string;
   }> {
     const results: Array<{ ruleId: string; line: number; column: number; snippet: string }> = [];
+    if (!astFile) return results;
     const imgNodes = findNodesByType(astFile.ast, 'JSXOpeningElement' as any);
 
     for (const node of imgNodes as any[]) {
@@ -456,6 +457,7 @@ export class NextJSSkill extends BaseSkill {
     snippet: string;
   }> {
     const results: Array<{ ruleId: string; line: number; column: number; snippet: string }> = [];
+    if (!astFile) return results;
     const anchorNodes = findNodesByType(astFile.ast, 'JSXOpeningElement' as any);
 
     for (const node of anchorNodes as any[]) {
@@ -515,6 +517,7 @@ export class NextJSSkill extends BaseSkill {
     snippet: string;
   }> {
     const results: Array<{ ruleId: string; line: number; column: number; snippet: string }> = [];
+    if (!astFile) return results;
     const clientHooks = new Set(['useState', 'useEffect', 'useLayoutEffect', 'useRef', 'useReducer']);
 
     const callExpressions = findNodesByType(astFile.ast, 'CallExpression' as any);
@@ -552,6 +555,7 @@ export class NextJSSkill extends BaseSkill {
     snippet: string;
   }> {
     const results: Array<{ ruleId: string; line: number; column: number; snippet: string }> = [];
+    if (!astFile) return results;
 
     const callExpressions = findNodesByType(astFile.ast, 'CallExpression' as any);
 
@@ -638,7 +642,7 @@ export class NextJSSkill extends BaseSkill {
         autoFixable: false,
       },
       'next-server-client-misuse': {
-        severity: 'error',
+        severity: 'critical',
         title: '服务端组件使用了客户端 Hook',
         description: '在服务端组件中使用了 useState、useEffect 等客户端 Hook，需要添加 "use client" 指令',
         fixSuggestion: '在文件顶部添加 "use client" 指令或将逻辑移至客户端组件',
