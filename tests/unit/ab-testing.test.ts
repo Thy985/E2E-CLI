@@ -507,10 +507,8 @@ describe('ABTestRunner', () => {
     it('skips skills where all tests are ties', () => {
       const history: ABTestHistoryEntry[] = [
         makeHistoryEntry('h1', 'tie', 0.3, {
-          config: { name: 't1', description: '', skill: 'performance', variantA: { label: 'A' }, variantB: { label: 'B' } }),
-        }),
+          config: { name: 't1', description: '', skill: 'performance', variantA: { label: 'A' }, variantB: { label: 'B' } } }),
       ];
-
       const best = runner.getBestConfigurations(history);
       expect(best).toHaveLength(0);
     });
