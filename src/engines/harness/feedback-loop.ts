@@ -53,24 +53,16 @@ export interface FeedbackInsight {
 const FEEDBACK_DIR = '.qa-feedback';
 const FEEDBACK_FILE = 'feedback.json';
 
-function getFeedbackDir(): string {
-  return path.join(process.cwd(), FEEDBACK_DIR);
-}
-
-function getFeedbackFile(): string {
-  return path.join(getFeedbackDir(), FEEDBACK_FILE);
-}
-
-function ensureFeedbackDir(): void {
-  const dir = getFeedbackDir();
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
+function resolveFeedbackPath(basePath?: string): { dir: string; file: string } {
+  const root = basePath || process.cwd();
+  const dir = path.join(root, FEEDBACK_DIR);
+  const file = path.join(dir, FEEDBACK_FILE);
+  return { dir, file };
 }
 
 /** Load all feedback entries */
-export function loadFeedback(): FeedbackEntry[] {
-  const filePath = getFeedbackFile();
+export function loadFeedback(basePath?: string): FeedbackEntry[] {
+  const { file: filePath } = resolveFeedbackPath(basePath);
   if (!fs.existsSync(filePath)) return [];
 
   try {
@@ -83,22 +75,25 @@ export function loadFeedback(): FeedbackEntry[] {
 }
 
 /** Save a single feedback entry */
-export function saveFeedback(entry: FeedbackEntry): void {
-  const entries = loadFeedback();
+export function saveFeedback(entry: FeedbackEntry, basePath?: string): void {
+  const { dir, file } = resolveFeedbackPath(basePath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  const entries = loadFeedback(basePath);
   entries.unshift(entry);
-  ensureFeedbackDir();
-  fs.writeFileSync(getFeedbackFile(), JSON.stringify(entries, null, 2));
+  fs.writeFileSync(file, JSON.stringify(entries, null, 2));
 }
 
 /** Get recent feedback entries */
-export function getRecentFeedback(count: number = 10): FeedbackEntry[] {
-  const entries = loadFeedback();
+export function getRecentFeedback(count: number = 10, basePath?: string): FeedbackEntry[] {
+  const entries = loadFeedback(basePath);
   return entries.slice(0, count);
 }
 
 /** Clear all feedback */
-export function clearFeedback(): void {
-  const filePath = getFeedbackFile();
+export function clearFeedback(basePath?: string): void {
+  const { file: filePath } = resolveFeedbackPath(basePath);
   if (fs.existsSync(filePath)) {
     fs.unlinkSync(filePath);
   }
@@ -107,6 +102,12 @@ export function clearFeedback(): void {
 // ── Engine ─────────────────────────────────────────────────────────────────
 
 export class FeedbackLoopEngine {
+  private storageDir: string | undefined;
+
+  constructor(opts?: { storageDir?: string }) {
+    this.storageDir = opts?.storageDir;
+  }
+
   /** Collect feedback for a diagnosis/fix */
   collectFeedback(
     skill: string,
@@ -132,13 +133,13 @@ export class FeedbackLoopEngine {
       severity: context?.severity,
       filePath: context?.filePath,
     };
-    saveFeedback(entry);
+    saveFeedback(entry, this.storageDir);
     return entry;
   }
 
   /** Analyze all collected feedback */
   analyzeFeedback(): FeedbackStats {
-    const entries = loadFeedback();
+    const entries = loadFeedback(this.storageDir);
 
     const byAction: Record<FeedbackAction, number> = {
       accept: 0,
@@ -171,15 +172,8 @@ export class FeedbackLoopEngine {
 
   /** Get insights per skill/rule */
   getInsights(): FeedbackInsight[] {
-    const entries = loadFeedback();
-
-    // Group by skill+ruleId
-    const groups: Record<string, FeedbackEntry[]> = {};
-    for (const entry of entries) {
-      const key = `${entry.skill}::${entry.ruleId}`;
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(entry);
-    }
+    const entries = loadFeedback(this.storageDir);
+    const groups = this._groupByRule(entries);
 
     const insights: FeedbackInsight[] = [];
 
@@ -190,7 +184,6 @@ export class FeedbackLoopEngine {
       const acceptCount = group.filter((e) => e.action === 'accept').length;
       const acceptRate = total > 0 ? acceptCount / total : 0;
 
-      // Confidence based on sample size
       let confidence: 'low' | 'medium' | 'high';
       if (total >= 10) confidence = 'high';
       else if (total >= 3) confidence = 'medium';
@@ -209,6 +202,17 @@ export class FeedbackLoopEngine {
     return insights.sort((a, b) => a.acceptRate - b.acceptRate);
   }
 
+  /** Group feedback entries by skill+ruleId */
+  private _groupByRule(entries: FeedbackEntry[]): Record<string, FeedbackEntry[]> {
+    const groups: Record<string, FeedbackEntry[]> = {};
+    for (const entry of entries) {
+      const key = `${entry.skill}::${entry.ruleId}`;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(entry);
+    }
+    return groups;
+  }
+
   private _generateInsightRecommendation(acceptRate: number, total: number): string {
     if (total === 0) return 'No feedback yet';
     if (acceptRate > 0.9) return 'Highly valued rule — consider promoting';
@@ -224,9 +228,8 @@ export class FeedbackLoopEngine {
     totalFeedbacks: number;
     topRejectedRules: Array<{ ruleId: string; rejectCount: number }>;
   } {
-    const entries = loadFeedback().filter((e) => e.skill === skill);
+    const entries = loadFeedback(this.storageDir).filter((e) => e.skill === skill);
 
-    // Group by ruleId for reject counts
     const ruleRejects: Record<string, number> = {};
     for (const entry of entries) {
       if (entry.action === 'reject') {
@@ -256,15 +259,8 @@ export class FeedbackLoopEngine {
     reason: string;
     priority: 'high' | 'medium' | 'low';
   }> {
-    const entries = loadFeedback();
-
-    // Group by skill+ruleId
-    const groups: Record<string, FeedbackEntry[]> = {};
-    for (const entry of entries) {
-      const key = `${entry.skill}::${entry.ruleId}`;
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(entry);
-    }
+    const entries = loadFeedback(this.storageDir);
+    const groups = this._groupByRule(entries);
 
     const recommendations: Array<{
       type: 'disable' | 'tune' | 'promote' | 'investigate';
@@ -284,7 +280,6 @@ export class FeedbackLoopEngine {
       const acceptRate = total > 0 ? acceptCount / total : 0;
       const rejectRate = total > 0 ? rejectCount / total : 0;
 
-      // 'disable' for rules with >80% reject rate and >5 feedbacks
       if (rejectRate > 0.8 && total > 5) {
         recommendations.push({
           type: 'disable',
@@ -296,7 +291,6 @@ export class FeedbackLoopEngine {
         continue;
       }
 
-      // 'promote' for rules with >90% accept rate
       if (acceptRate > 0.9 && total >= 3) {
         recommendations.push({
           type: 'promote',
@@ -308,7 +302,6 @@ export class FeedbackLoopEngine {
         continue;
       }
 
-      // 'tune' for rules with 40-60% accept rate
       if (acceptRate >= 0.4 && acceptRate <= 0.6 && total >= 3) {
         recommendations.push({
           type: 'tune',
@@ -320,14 +313,12 @@ export class FeedbackLoopEngine {
         continue;
       }
 
-      // 'investigate' for rules with mixed feedback (50% accept but high variance)
       if (total >= 5) {
         const hasAccept = acceptCount > 0;
         const hasReject = rejectCount > 0;
         const hasPartial = partialCount > 0;
         const mixedSignals = (hasAccept ? 1 : 0) + (hasReject ? 1 : 0) + (hasPartial ? 1 : 0);
 
-        // High variance: accept rate around 50% with at least 2 different action types
         if (mixedSignals >= 2 && acceptRate >= 0.3 && acceptRate <= 0.7) {
           recommendations.push({
             type: 'investigate',
@@ -340,7 +331,6 @@ export class FeedbackLoopEngine {
       }
     }
 
-    // Sort by priority
     const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
     return recommendations.sort(
       (a, b) => priorityOrder[a.priority] - priorityOrder[b.priority],

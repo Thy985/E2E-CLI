@@ -153,7 +153,7 @@ export function getSkillTrend(
   const timestamps: string[] = [];
 
   for (const entry of history) {
-    if (entry.bySkill[skill]) {
+    if (entry.bySkill?.[skill]) {
       values.push(entry.bySkill[skill].f1);
       timestamps.push(entry.timestamp);
     }
@@ -163,8 +163,12 @@ export function getSkillTrend(
     return { values, timestamps, trend: 'stable' };
   }
 
-  const recentAvg = values.slice(0, 2).reduce((s, v) => s + v, 0) / 2;
-  const olderAvg = values.slice(-2).reduce((s, v) => s + v, 0) / 2;
+  // Use up to 3 recent and 3 older entries for more reliable trend
+  const recentCount = Math.min(3, Math.floor(values.length / 2));
+  const olderCount = Math.min(3, values.length - recentCount);
+
+  const recentAvg = values.slice(0, recentCount).reduce((s, v) => s + v, 0) / recentCount;
+  const olderAvg = values.slice(-olderCount).reduce((s, v) => s + v, 0) / olderCount;
   const change = recentAvg - olderAvg;
 
   let trend: 'improving' | 'declining' | 'stable';
@@ -179,8 +183,10 @@ export function getSkillTrend(
 export function getAllSkills(history: EvalHistoryEntry[]): string[] {
   const skills = new Set<string>();
   for (const entry of history) {
-    for (const skill of Object.keys(entry.bySkill)) {
-      skills.add(skill);
+    if (entry.bySkill) {
+      for (const skill of Object.keys(entry.bySkill)) {
+        skills.add(skill);
+      }
     }
   }
   return [...skills].sort();

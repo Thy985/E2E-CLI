@@ -274,35 +274,9 @@ export class ModelRecommender {
   ): ModelRecommendation {
     const profile = skillProfiles[skill];
     if (!profile) {
-      // Fallback: return a generic balanced recommendation
       return this._fallbackRecommendation(skill, priority);
     }
-
-    const allModels = Object.keys(modelCapabilities);
-    const scored = allModels
-      .map((m) => ({ model: m, score: scoreModel(m, profile, priority) }))
-      .sort((a, b) => b.score - a.score);
-
-    const best = scored[0];
-    const cap = modelCapabilities[best.model];
-
-    const alternatives = scored
-      .slice(1, 4)
-      .map((s) => ({
-        model: s.model,
-        provider: MODEL_PROVIDERS[s.model] ?? 'unknown',
-        reason: buildReason(s.model, profile, priority),
-      }));
-
-    return {
-      skill,
-      recommendedModel: best.model,
-      provider: MODEL_PROVIDERS[best.model] ?? 'unknown',
-      reason: buildReason(best.model, profile, priority),
-      alternatives,
-      costEstimate: costLabel(cap.cost),
-      qualityEstimate: qualityLabel(cap.quality),
-    };
+    return this._recommend(skill, profile, priority);
   }
 
   /**
@@ -330,20 +304,13 @@ export class ModelRecommender {
     const perSkill: Record<string, number> = {};
     let total = 0;
 
-    const skills = Object.keys(skillProfiles);
+    const skills = Object.keys(skillProfiles).slice(0, skillCount);
     for (const skill of skills) {
       const rec = this.recommendForSkill(skill, priority);
       const cap = modelCapabilities[rec.recommendedModel];
-      const cost = cap ? cap.cost : 5; // default mid-range if unknown
+      const cost = cap ? cap.cost : 5;
       perSkill[skill] = cost;
       total += cost;
-    }
-
-    // Scale by actual skillCount if it differs from our known skills
-    const knownCount = skills.length;
-    if (skillCount !== knownCount && knownCount > 0) {
-      const avgCost = total / knownCount;
-      total = Math.round(avgCost * skillCount);
     }
 
     return { total, perSkill };
@@ -353,22 +320,10 @@ export class ModelRecommender {
   // Private Helpers
   // ============================================
 
-  private _fallbackRecommendation(
-    skill: string,
-    priority: 'cost' | 'quality' | 'balanced',
-  ): ModelRecommendation {
-    const genericProfile: SkillModelProfile = {
-      skill,
-      taskType: 'analysis',
-      contextWindow: 'medium',
-      outputComplexity: 'structured',
-      latencyTolerance: 'medium',
-    };
-
-    return this.recommendForSkillInner(skill, genericProfile, priority);
-  }
-
-  private recommendForSkillInner(
+  /**
+   * Core recommendation logic: score all models for a profile and return the best.
+   */
+  private _recommend(
     skill: string,
     profile: SkillModelProfile,
     priority: 'cost' | 'quality' | 'balanced',
@@ -398,6 +353,19 @@ export class ModelRecommender {
       costEstimate: costLabel(cap.cost),
       qualityEstimate: qualityLabel(cap.quality),
     };
+  }
+
+  private _fallbackRecommendation(
+    skill: string,
+    priority: 'cost' | 'quality' | 'balanced',
+  ): ModelRecommendation {
+    return this._recommend(skill, {
+      skill,
+      taskType: 'analysis',
+      contextWindow: 'medium',
+      outputComplexity: 'structured',
+      latencyTolerance: 'medium',
+    }, priority);
   }
 }
 

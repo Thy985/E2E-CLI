@@ -129,7 +129,7 @@ describe('determineWinner', () => {
       { f1: 0.81, passedCases: 8, totalCases: 10 },
     );
     expect(result.winner).toBe('tie');
-    expect(result.significance).toBeLessThan(0.5);
+    expect(result.significance).toBe(0.5);
   });
 
   it('returns tie with low confidence when F1 diff between 0.02 and 0.05', () => {
@@ -168,7 +168,7 @@ describe('determineWinner', () => {
       { f1: 0.801, passedCases: 5, totalCases: 5 },
     );
     expect(result.winner).toBe('tie');
-    expect(result.significance).toBeCloseTo(0.475, 2);
+    expect(result.significance).toBeCloseTo(0.95, 2);
   });
 });
 

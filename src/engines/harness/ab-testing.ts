@@ -68,20 +68,15 @@ export interface ABTestHistoryEntry extends ABTestResult {
 const AB_HISTORY_DIR = '.qa-ab-history';
 const AB_HISTORY_FILE = 'ab-test-history.json';
 
-function ensureHistoryDir(): string {
-  const dir = path.resolve(process.cwd(), AB_HISTORY_DIR);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  return dir;
+function resolveStorage(basePath?: string): { dir: string; file: string } {
+  const root = basePath || process.cwd();
+  const dir = path.join(root, AB_HISTORY_DIR);
+  const file = path.join(dir, AB_HISTORY_FILE);
+  return { dir, file };
 }
 
-function getHistoryPath(): string {
-  return path.join(ensureHistoryDir(), AB_HISTORY_FILE);
-}
-
-export function loadABHistory(): ABTestHistoryEntry[] {
-  const filePath = getHistoryPath();
+export function loadABHistory(basePath?: string): ABTestHistoryEntry[] {
+  const { file: filePath } = resolveStorage(basePath);
   if (!fs.existsSync(filePath)) {
     return [];
   }
@@ -93,19 +88,22 @@ export function loadABHistory(): ABTestHistoryEntry[] {
   }
 }
 
-export function saveABHistory(result: ABTestResult): void {
-  const history = loadABHistory();
+export function saveABHistory(result: ABTestResult, basePath?: string): void {
+  const history = loadABHistory(basePath);
   const entry: ABTestHistoryEntry = {
     ...result,
     id: generateId(),
   };
   history.push(entry);
-  const filePath = getHistoryPath();
+  const { dir, file: filePath } = resolveStorage(basePath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
   fs.writeFileSync(filePath, JSON.stringify(history, null, 2), 'utf-8');
 }
 
-export function getRecentABTests(count = 10): ABTestHistoryEntry[] {
-  const history = loadABHistory();
+export function getRecentABTests(count = 10, basePath?: string): ABTestHistoryEntry[] {
+  const history = loadABHistory(basePath);
   return history.slice(-count).reverse();
 }
 
@@ -142,7 +140,8 @@ export function determineWinner(
   }
 
   if (f1Diff < 0.02) {
-    return { winner: 'tie', significance: Math.round((1 - f1Diff / 0.02) * 0.5 * 1000) / 1000 };
+    // Tie confidence: 1.0 at perfect equality, tapering to ~0 near threshold
+    return { winner: 'tie', significance: Math.round((1 - f1Diff / 0.02) * 1000) / 1000 };
   }
 
   // 0.02 <= diff <= 0.05 → tie but low confidence
@@ -178,17 +177,20 @@ function aggregateMetrics(
     return { label, f1: 0, precision: 0, recall: 0, passedCases: 0, totalCases: 0, avgDuration: 0 };
   }
 
-  const sumF1 = caseResults.reduce((s, r) => s + r.f1, 0);
-  const sumPrecision = caseResults.reduce((s, r) => s + r.precision, 0);
-  const sumRecall = caseResults.reduce((s, r) => s + r.recall, 0);
+  const avgPrecision = caseResults.reduce((s, r) => s + r.precision, 0) / n;
+  const avgRecall = caseResults.reduce((s, r) => s + r.recall, 0) / n;
+  // F1 computed from macro-averaged precision and recall: 2*P*R/(P+R)
+  const f1 = avgPrecision + avgRecall > 0
+    ? (2 * avgPrecision * avgRecall) / (avgPrecision + avgRecall)
+    : 0;
   const passedCases = caseResults.filter((r) => r.passed).length;
   const sumDuration = caseResults.reduce((s, r) => s + r.duration, 0);
 
   return {
     label,
-    f1: Math.round((sumF1 / n) * 1000) / 1000,
-    precision: Math.round((sumPrecision / n) * 1000) / 1000,
-    recall: Math.round((sumRecall / n) * 1000) / 1000,
+    f1: Math.round(f1 * 1000) / 1000,
+    precision: Math.round(avgPrecision * 1000) / 1000,
+    recall: Math.round(avgRecall * 1000) / 1000,
     passedCases,
     totalCases: n,
     avgDuration: Math.round(sumDuration / n),
@@ -267,18 +269,24 @@ export class ABTestRunner {
     return results;
   }
 
+  private storageDir: string | undefined;
+
+  constructor(opts?: { storageDir?: string }) {
+    this.storageDir = opts?.storageDir;
+  }
+
   // ---------------------------------------------------------------------------
   // Save test result to history
   // ---------------------------------------------------------------------------
   saveResult(result: ABTestResult): void {
-    saveABHistory(result);
+    saveABHistory(result, this.storageDir);
   }
 
   // ---------------------------------------------------------------------------
   // Load test history
   // ---------------------------------------------------------------------------
   loadHistory(): ABTestHistoryEntry[] {
-    return loadABHistory();
+    return loadABHistory(this.storageDir);
   }
 
   // ---------------------------------------------------------------------------
