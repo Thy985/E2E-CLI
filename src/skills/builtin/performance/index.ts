@@ -25,33 +25,33 @@ import type { TSESTree } from '@typescript-eslint/typescript-estree';
 
 // Performance rules that use AST analysis
 const AST_PERF_RULES = {
-  'large-bundle': {
-    id: 'large-bundle',
+  'unused-import': {
+    id: 'unused-import',
     severity: 'warning' as Severity,
-    title: 'Large Bundle Import',
-    description: 'Importing entire lodash library increases bundle size',
-    suggestion: 'Use lodash-es or import specific functions',
+    title: 'Unused/Heavy Import',
+    description: 'Importing entire library increases bundle size',
+    suggestion: 'Use specific imports or tree-shakeable alternatives',
   },
 };
 
 // Performance rules that use regex (HTML-specific patterns)
 const REGEX_PERF_RULES = [
   {
-    id: 'sync-script',
+    id: 'render-blocking-resource',
     pattern: /<script\s+src=['"][^'"]+['"]\s*>\s*<\/script>/g,
     severity: 'warning' as Severity,
-    title: 'Synchronous Script Loading',
+    title: 'Render-Blocking Resource',
     description: 'Synchronous scripts block page rendering',
     suggestion: 'Add async or defer attributes',
     fixable: true,
   },
   {
-    id: 'unoptimized-image',
-    pattern: /<img[^>]*src=['"][^'"]*\.(png|jpg|jpeg)['"][^>]*>/gi,
+    id: 'img-dimensions',
+    pattern: /<img(?![^>]*\bwidth=)(?![^>]*\bheight=)[^>]*>/gi,
     severity: 'info' as Severity,
-    title: 'Unoptimized Image Format',
-    description: 'Traditional image formats may impact loading performance',
-    suggestion: 'Consider WebP or AVIF formats',
+    title: 'Missing Image Dimensions',
+    description: 'Images without width/height attributes cause layout shifts',
+    suggestion: 'Add explicit width and height attributes',
     fixable: false,
   },
   {
@@ -61,6 +61,55 @@ const REGEX_PERF_RULES = [
     title: 'Long Inline Styles',
     description: 'Long inline styles affect caching and maintainability',
     suggestion: 'Move styles to CSS files',
+    fixable: false,
+  },
+  {
+    id: 'sync-xhr',
+    pattern: /new\s+XMLHttpRequest\s*\(\s*\)/g,
+    severity: 'warning' as Severity,
+    title: 'Synchronous XMLHttpRequest',
+    description: 'Synchronous XHR blocks the main thread',
+    suggestion: 'Use async XHR or fetch API',
+    fixable: false,
+  },
+  {
+    id: 'viewport',
+    check: (content: string) => {
+      const isHtml = /<!doctype\s+html/i.test(content) || /<html/i.test(content);
+      if (!isHtml) return false;
+      return !/<meta\s[^>]*name\s*=\s*["']viewport["']/i.test(content);
+    },
+    severity: 'warning' as Severity,
+    title: 'Missing Viewport Meta',
+    description: 'Viewport meta tag is essential for mobile responsiveness',
+    suggestion: 'Add <meta name="viewport" content="width=device-width, initial-scale=1">',
+    fixable: false,
+  },
+  {
+    id: 'dom-manipulation-perf',
+    pattern: /\.(appendChild|insertBefore|replaceChild)\s*\(/g,
+    severity: 'info' as Severity,
+    title: 'Direct DOM Manipulation',
+    description: 'Frequent direct DOM manipulation impacts performance',
+    suggestion: 'Use virtual DOM or batch DOM updates',
+    fixable: false,
+  },
+  {
+    id: 'preconnect',
+    pattern: /href=['"]https:\/\/[^'"]+['"]/g,
+    severity: 'info' as Severity,
+    title: 'Missing Preconnect',
+    description: 'External resources without preconnect hint',
+    suggestion: 'Add <link rel="preconnect"> for external origins',
+    fixable: false,
+  },
+  {
+    id: 'preload-critical',
+    pattern: /<link\s+rel=['"]stylesheet['"][^>]*>/g,
+    severity: 'info' as Severity,
+    title: 'Missing Preload for Critical Resources',
+    description: 'Critical CSS/JS resources without preload hint',
+    suggestion: 'Add <link rel="preload"> for critical resources',
     fixable: false,
   },
   {
@@ -150,11 +199,11 @@ export class PerformanceSkill extends BaseSkill {
     let changes: FileChange[] = [];
 
     switch (ruleId) {
-      case 'large-bundle':
-        changes = this.fixLargeBundle(content, diagnosis);
+      case 'unused-import':
+        changes = this.fixUnusedImport(content, diagnosis);
         break;
-      case 'sync-script':
-        changes = this.fixSyncScript(content, diagnosis);
+      case 'render-blocking-resource':
+        changes = this.fixRenderBlocking(content, diagnosis);
         break;
       case 'console-log':
         changes = this.fixConsoleLog(content, diagnosis);
@@ -176,20 +225,22 @@ export class PerformanceSkill extends BaseSkill {
     };
   }
 
-  private fixLargeBundle(content: string, diagnosis: Diagnosis): FileChange[] {
+  private fixUnusedImport(content: string, diagnosis: Diagnosis): FileChange[] {
     const line = diagnosis.location.line || 1;
     const lines = content.split('\n');
     const targetLine = lines[line - 1];
 
-    // Match import statement
-    const importMatch = targetLine.match(/import\s+(\w+)\s+from\s+['"]lodash['"]/);
+    // Match import statement (supports lodash, moment, date-fns, jquery, axios)
+    const importMatch = targetLine.match(/import\s+(\w+)\s+from\s+['"](\w[\w-]*)['"]/);
     if (!importMatch) {
-      throw new Error('Could not find lodash import to fix');
+      throw new Error('Could not find import to fix');
     }
 
     const varName = importMatch[1];
+    const depName = importMatch[2];
+    const alt = HEAVY_DEPENDENCIES[depName]?.alternative;
 
-    // Find all usages of the lodash variable to determine which methods are actually used
+    // Find all usages of the imported variable to determine which methods are actually used
     const usedMethods = new Set<string>();
     const usageRegex = new RegExp(`\\b${varName}\\.(\\w+)\\b`, 'g');
     for (const match of content.matchAll(usageRegex)) {
@@ -198,11 +249,13 @@ export class PerformanceSkill extends BaseSkill {
 
     let replacement: string;
     if (usedMethods.size === 0) {
-      replacement = `// TODO: Replace 'import ${varName} from "lodash"' with specific imports` +
-        `\n// e.g. import { ${varName} } from 'lodash-es'; or import individual functions`;
+      replacement = `// TODO: Replace 'import ${varName} from "${depName}"' with specific imports` +
+        (alt ? `\n// e.g. import { ${varName} } from '${alt}'; or import individual functions` : '');
     } else {
       const methodList = Array.from(usedMethods).sort().join(', ');
-      replacement = `import { ${methodList} } from 'lodash-es';`;
+      replacement = alt
+        ? `import { ${methodList} } from '${alt}';`
+        : `import { ${methodList} } from '${depName}';`;
     }
 
     return [{
@@ -214,7 +267,7 @@ export class PerformanceSkill extends BaseSkill {
     }];
   }
 
-  private fixSyncScript(content: string, diagnosis: Diagnosis): FileChange[] {
+  private fixRenderBlocking(content: string, diagnosis: Diagnosis): FileChange[] {
     const line = diagnosis.location.line || 1;
     const lines = content.split('\n');
     const targetLine = lines[line - 1];
@@ -379,7 +432,7 @@ export class PerformanceSkill extends BaseSkill {
           if (hasDefaultImport) {
             const loc = importNode.loc;
             const line = loc?.start.line ?? 0;
-            const rule = AST_PERF_RULES['large-bundle'];
+            const rule = AST_PERF_RULES['unused-import'];
 
             diagnoses.push({
               id: `Perf-${generateId()}`,
