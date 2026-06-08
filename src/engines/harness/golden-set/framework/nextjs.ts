@@ -2,6 +2,10 @@
  * Next.js Golden Set
  *
  * 10 test cases for Next.js framework analysis
+ *
+ * NOTE: Global directory-based checks (next-config-missing, next-error-missing)
+ * are declared as falsePositives because golden cases are single-file snippets
+ * without full directory structure. These checks are legitimate for real projects.
  */
 
 import type { GoldenTestCase } from '../../types';
@@ -31,6 +35,7 @@ export default function GalleryPage() {
     expectedDiagnosis: {
       issueCount: 2,
       issueTypes: ['next-image-missing'],
+      falsePositives: ['next-config-missing', 'next-error-missing', 'next-metadata-missing'],
     },
     expectedFix: {
       codePattern: "Image from 'next/image'",
@@ -63,6 +68,7 @@ export default function Navigation() {
     expectedDiagnosis: {
       issueCount: 3,
       issueTypes: ['next-link-missing'],
+      falsePositives: ['next-config-missing', 'next-error-missing', 'next-metadata-missing'],
     },
     expectedFix: {
       codePattern: "Link from 'next/link'",
@@ -98,6 +104,7 @@ export default function DashboardPage() {
     expectedDiagnosis: {
       issueCount: 1,
       issueTypes: ['next-server-client-misuse'],
+      falsePositives: ['next-config-missing', 'next-error-missing', 'next-metadata-missing'],
     },
     expectedFix: {
       codePattern: "'use client'",
@@ -136,6 +143,7 @@ export default function RootLayout({
     expectedDiagnosis: {
       issueCount: 1,
       issueTypes: ['next-metadata-missing'],
+      falsePositives: ['next-config-missing', 'next-error-missing'],
     },
     expectedFix: {
       codePattern: 'export const metadata',
@@ -186,6 +194,7 @@ export default function UsersPage() {
     expectedDiagnosis: {
       issueCount: 2,
       issueTypes: ['next-api-client-misuse'],
+      falsePositives: ['next-config-missing', 'next-error-missing', 'next-metadata-missing'],
     },
     expectedFix: {
       codePattern: 'async function',
@@ -224,6 +233,7 @@ export default function UsersPage() {
     expectedDiagnosis: {
       issueCount: 1,
       issueTypes: ['next-loading-missing'],
+      falsePositives: ['next-config-missing', 'next-error-missing', 'next-metadata-missing'],
     },
     expectedFix: {
       codePattern: 'loading.tsx',
@@ -259,6 +269,7 @@ export default function CheckoutPage() {
     expectedDiagnosis: {
       issueCount: 1,
       issueTypes: ['next-error-missing'],
+      falsePositives: ['next-config-missing', 'next-metadata-missing'],
     },
     expectedFix: {
       codePattern: 'error.tsx',
@@ -296,6 +307,7 @@ export default function CheckoutPage() {
     expectedDiagnosis: {
       issueCount: 1,
       issueTypes: ['next-config-missing'],
+      falsePositives: ['next-error-missing', 'next-metadata-missing'],
     },
     expectedFix: {
       codePattern: 'next.config',
@@ -398,6 +410,7 @@ export default function StorePage() {
         'next-link-missing',
         'next-server-client-misuse',
       ],
+      falsePositives: ['next-config-missing', 'next-error-missing', 'next-metadata-missing'],
     },
     expectedFix: {
       codePattern: "Image from 'next/image'",

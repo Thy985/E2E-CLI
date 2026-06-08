@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QA-Agent Evaluation Dashboard</title>
+<style>
+  :root { --bg: #0f1117; --card: #1a1d27; --border: #2d3140; --text: #e1e4ed; --muted: #8b90a0; --green: #34d399; --red: #f87171; --yellow: #fbbf24; --blue: #60a5fa; --purple: #a78bfa; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; padding: 2rem; }
+  .container { max-width: 1200px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+  .subtitle { color: var(--muted); font-size: 0.875rem; margin-bottom: 2rem; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; }
+  .card h3 { font-size: 0.875rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
+  .metric { font-size: 2.5rem; font-weight: 700; }
+  .metric.green { color: var(--green); }
+  .metric.red { color: var(--red); }
+  .metric.yellow { color: var(--yellow); }
+  .trend { font-size: 0.875rem; margin-top: 0.25rem; }
+  .trend.improving { color: var(--green); }
+  .trend.declining { color: var(--red); }
+  .trend.stable { color: var(--muted); }
+  .chart { margin: 1.5rem 0; }
+  .chart svg { width: 100%; height: auto; }
+  table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+  th, td { text-align: left; padding: 0.75rem; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  td { font-size: 0.875rem; }
+  .badge { display: inline-block; padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
+  .badge.green { background: rgba(52, 211, 153, 0.15); color: var(--green); }
+  .badge.red { background: rgba(248, 113, 113, 0.15); color: var(--red); }
+  .badge.yellow { background: rgba(251, 191, 36, 0.15); color: var(--yellow); }
+  .progress-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 3px; }
+  .progress-fill.green { background: var(--green); }
+  .progress-fill.red { background: var(--red); }
+  .progress-fill.yellow { background: var(--yellow); }
+  h2 { font-size: 1.125rem; margin: 2rem 0 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); }
+  .skills-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; }
+  .skill-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }
+  .skill-card h4 { font-size: 1rem; margin-bottom: 0.5rem; }
+  .skill-card .f1 { font-size: 1.75rem; font-weight: 700; }
+  .mini-chart { margin-top: 0.5rem; }
+  .footer { text-align: center; color: var(--muted); font-size: 0.75rem; margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>QA-Agent Evaluation Dashboard</h1>
+  <p class="subtitle">Generated 2026-06-08T01:42:07.630Z · 3 evaluation runs</p>
+
+  <!-- Summary Cards -->
+  <div class="grid">
+    <div class="card">
+      <h3>Overall F1</h3>
+      <div class="metric red">56.5%</div>
+      <div class="trend stable">→ Stable</div>
+    </div>
+    <div class="card">
+      <h3>Pass Rate</h3>
+      <div class="metric red">20.0%</div>
+      <div class="trend stable">→ Stable</div>
+    </div>
+    <div class="card">
+      <h3>Total Cases</h3>
+      <div class="metric">70</div>
+      <div class="trend stable">14 passed · 56 failed</div>
+    </div>
+  </div>
+
+  <!-- F1 Trend Chart -->
+  <div class="card">
+    <h3>F1 Score Trend</h3>
+    <div class="chart">
+      <svg viewBox="0 0 800 200" xmlns="http://www.w3.org/2000/svg">
+    <line x1="50" y1="160" x2="780" y2="160" stroke="#2d3140" stroke-width="1"/><line x1="50" y1="125" x2="780" y2="125" stroke="#2d3140" stroke-width="1"/><line x1="50" y1="90" x2="780" y2="90" stroke="#2d3140" stroke-width="1"/><line x1="50" y1="55" x2="780" y2="55" stroke="#2d3140" stroke-width="1"/><line x1="50" y1="20" x2="780" y2="20" stroke="#2d3140" stroke-width="1"/>
+    <text x="42" y="164" fill="#8b90a0" font-size="10" text-anchor="end">0</text><text x="42" y="129" fill="#8b90a0" font-size="10" text-anchor="end">25</text><text x="42" y="94" fill="#8b90a0" font-size="10" text-anchor="end">50</text><text x="42" y="59" fill="#8b90a0" font-size="10" text-anchor="end">75</text><text x="42" y="24" fill="#8b90a0" font-size="10" text-anchor="end">100</text>
+    <path d="M 50 81.00317460317463 L 415 80.93174603174606 L 780 80.93174603174606" fill="none" stroke="var(--blue)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="50" cy="81.00317460317463" r="4" fill="var(--blue)" stroke="#0f1117" stroke-width="2"/><circle cx="415" cy="80.93174603174606" r="4" fill="var(--blue)" stroke="#0f1117" stroke-width="2"/><circle cx="780" cy="80.93174603174606" r="4" fill="var(--blue)" stroke="#0f1117" stroke-width="2"/>
+    <text x="50" y="192" fill="#8b90a0" font-size="9" text-anchor="middle">Jun 8, 01:36 AM</text><text x="415" y="192" fill="#8b90a0" font-size="9" text-anchor="middle">Jun 8, 01:40 AM</text><text x="780" y="192" fill="#8b90a0" font-size="9" text-anchor="middle">Jun 8, 01:42 AM</text>
+    <text x="50" y="12" fill="#8b90a0" font-size="11">F1 Score (%)</text>
+  </svg>
+    </div>
+  </div>
+
+  <!-- Pass Rate Trend Chart -->
+  <div class="card">
+    <h3>Pass Rate Trend</h3>
+    <div class="chart">
+      <svg viewBox="0 0 800 200" xmlns="http://www.w3.org/2000/svg">
+    <line x1="50" y1="160" x2="780" y2="160" stroke="#2d3140" stroke-width="1"/><line x1="50" y1="125" x2="780" y2="125" stroke="#2d3140" stroke-width="1"/><line x1="50" y1="90" x2="780" y2="90" stroke="#2d3140" stroke-width="1"/><line x1="50" y1="55" x2="780" y2="55" stroke="#2d3140" stroke-width="1"/><line x1="50" y1="20" x2="780" y2="20" stroke="#2d3140" stroke-width="1"/>
+    <text x="42" y="164" fill="#8b90a0" font-size="10" text-anchor="end">0</text><text x="42" y="129" fill="#8b90a0" font-size="10" text-anchor="end">25</text><text x="42" y="94" fill="#8b90a0" font-size="10" text-anchor="end">50</text><text x="42" y="59" fill="#8b90a0" font-size="10" text-anchor="end">75</text><text x="42" y="24" fill="#8b90a0" font-size="10" text-anchor="end">100</text>
+    <path d="M 50 132 L 415 132 L 780 132" fill="none" stroke="var(--green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="50" cy="132" r="4" fill="var(--green)" stroke="#0f1117" stroke-width="2"/><circle cx="415" cy="132" r="4" fill="var(--green)" stroke="#0f1117" stroke-width="2"/><circle cx="780" cy="132" r="4" fill="var(--green)" stroke="#0f1117" stroke-width="2"/>
+    <text x="50" y="192" fill="#8b90a0" font-size="9" text-anchor="middle">Jun 8, 01:36 AM</text><text x="415" y="192" fill="#8b90a0" font-size="9" text-anchor="middle">Jun 8, 01:40 AM</text><text x="780" y="192" fill="#8b90a0" font-size="9" text-anchor="middle">Jun 8, 01:42 AM</text>
+    <text x="50" y="12" fill="#8b90a0" font-size="11">Pass Rate (%)</text>
+  </svg>
+    </div>
+  </div>
+
+  <!-- Skill Breakdown -->
+  <h2>Skill Breakdown</h2>
+  <div class="skills-grid">
+    <div class="skill-card">
+      <h4>a11y</h4>
+      <div class="f1 red">55.2%</div>
+      <div class="trend declining">→ 10 cases · 2 passed</div>
+      <div class="mini-chart"><svg viewBox="0 0 120 30" width="120" height="30">
+    <polyline points="2,28 60,28 118,28" fill="none" stroke="#f87171" stroke-width="1.5"/>
+  </svg></div>
+    </div><div class="skill-card">
+      <h4>nextjs</h4>
+      <div class="f1 red">48.6%</div>
+      <div class="trend declining">→ 10 cases · 0 passed</div>
+      <div class="mini-chart"><svg viewBox="0 0 120 30" width="120" height="30">
+    <polyline points="2,28 60,28 118,28" fill="none" stroke="#f87171" stroke-width="1.5"/>
+  </svg></div>
+    </div><div class="skill-card">
+      <h4>nuxt</h4>
+      <div class="f1 red">33.6%</div>
+      <div class="trend declining">→ 10 cases · 0 passed</div>
+      <div class="mini-chart"><svg viewBox="0 0 120 30" width="120" height="30">
+    <polyline points="2,28 60,2 118,2" fill="none" stroke="#f87171" stroke-width="1.5"/>
+  </svg></div>
+    </div><div class="skill-card">
+      <h4>performance</h4>
+      <div class="f1 red">45.7%</div>
+      <div class="trend declining">→ 10 cases · 2 passed</div>
+      <div class="mini-chart"><svg viewBox="0 0 120 30" width="120" height="30">
+    <polyline points="2,28 60,28 118,28" fill="none" stroke="#f87171" stroke-width="1.5"/>
+  </svg></div>
+    </div><div class="skill-card">
+      <h4>react</h4>
+      <div class="f1 yellow">78.9%</div>
+      <div class="trend ">→ 10 cases · 2 passed</div>
+      <div class="mini-chart"><svg viewBox="0 0 120 30" width="120" height="30">
+    <polyline points="2,28 60,28 118,28" fill="none" stroke="#fbbf24" stroke-width="1.5"/>
+  </svg></div>
+    </div><div class="skill-card">
+      <h4>security</h4>
+      <div class="f1 yellow">76.7%</div>
+      <div class="trend ">→ 10 cases · 5 passed</div>
+      <div class="mini-chart"><svg viewBox="0 0 120 30" width="120" height="30">
+    <polyline points="2,28 60,28 118,28" fill="none" stroke="#fbbf24" stroke-width="1.5"/>
+  </svg></div>
+    </div><div class="skill-card">
+      <h4>vue</h4>
+      <div class="f1 red">56.7%</div>
+      <div class="trend declining">→ 10 cases · 3 passed</div>
+      <div class="mini-chart"><svg viewBox="0 0 120 30" width="120" height="30">
+    <polyline points="2,28 60,28 118,28" fill="none" stroke="#f87171" stroke-width="1.5"/>
+  </svg></div>
+    </div>
+  </div>
+
+  <!-- Skill Comparison Table -->
+  <h2>Skill Comparison</h2>
+  <div class="card">
+    <table>
+    <thead><tr><th>Skill</th><th>Cases</th><th>F1</th><th>Pass Rate</th><th>Passed</th></tr></thead>
+    <tbody><tr>
+      <td><strong>a11y</strong></td>
+      <td>10</td>
+      <td><span class="badge red">55.2%</span></td>
+      <td><div class="progress-bar"><div class="progress-fill red" style="width:20%"></div></div></td>
+      <td>2/10</td>
+    </tr><tr>
+      <td><strong>nextjs</strong></td>
+      <td>10</td>
+      <td><span class="badge red">48.6%</span></td>
+      <td><div class="progress-bar"><div class="progress-fill red" style="width:0%"></div></div></td>
+      <td>0/10</td>
+    </tr><tr>
+      <td><strong>nuxt</strong></td>
+      <td>10</td>
+      <td><span class="badge red">33.6%</span></td>
+      <td><div class="progress-bar"><div class="progress-fill red" style="width:0%"></div></div></td>
+      <td>0/10</td>
+    </tr><tr>
+      <td><strong>performance</strong></td>
+      <td>10</td>
+      <td><span class="badge red">45.7%</span></td>
+      <td><div class="progress-bar"><div class="progress-fill red" style="width:20%"></div></div></td>
+      <td>2/10</td>
+    </tr><tr>
+      <td><strong>react</strong></td>
+      <td>10</td>
+      <td><span class="badge yellow">78.9%</span></td>
+      <td><div class="progress-bar"><div class="progress-fill yellow" style="width:20%"></div></div></td>
+      <td>2/10</td>
+    </tr><tr>
+      <td><strong>security</strong></td>
+      <td>10</td>
+      <td><span class="badge yellow">76.7%</span></td>
+      <td><div class="progress-bar"><div class="progress-fill yellow" style="width:50%"></div></div></td>
+      <td>5/10</td>
+    </tr><tr>
+      <td><strong>vue</strong></td>
+      <td>10</td>
+      <td><span class="badge red">56.7%</span></td>
+      <td><div class="progress-bar"><div class="progress-fill red" style="width:30%"></div></div></td>
+      <td>3/10</td>
+    </tr></tbody>
+  </table>
+  </div>
+
+  <!-- Difficulty Breakdown -->
+  <h2>Difficulty Breakdown</h2>
+  <div class="card">
+    <table>
+    <thead><tr><th>Difficulty</th><th>Cases</th><th>F1</th><th>Pass Rate</th><th>Passed</th></tr></thead>
+    <tbody><tr>
+      <td><strong>easy</strong></td>
+      <td>35</td>
+      <td><span class="badge red">54.9%</span></td>
+      <td><div class="progress-bar"><div class="progress-fill red" style="width:31%"></div></div></td>
+      <td>11/35</td>
+    </tr><tr>
+      <td><strong>medium</strong></td>
+      <td>22</td>
+      <td><span class="badge yellow">66.5%</span></td>
+      <td><div class="progress-bar"><div class="progress-fill yellow" style="width:14%"></div></div></td>
+      <td>3/22</td>
+    </tr><tr>
+      <td><strong>hard</strong></td>
+      <td>13</td>
+      <td><span class="badge red">43.8%</span></td>
+      <td><div class="progress-bar"><div class="progress-fill red" style="width:0%"></div></div></td>
+      <td>0/13</td>
+    </tr></tbody>
+  </table>
+  </div>
+
+  <!-- History Table -->
+  <h2>Evaluation History</h2>
+  <div class="card">
+    <table>
+    <thead><tr><th>Date</th><th>F1</th><th>Pass Rate</th><th>Cases</th><th>Gate</th></tr></thead>
+    <tbody><tr>
+      <td>6/8/2026, 1:42:07 AM</td>
+      <td><span class="badge red">56.5%</span></td>
+      <td>20.0%</td>
+      <td>70</td>
+      <td><span class="badge red">FAILED</span></td>
+    </tr><tr>
+      <td>6/8/2026, 1:40:03 AM</td>
+      <td><span class="badge red">56.5%</span></td>
+      <td>20.0%</td>
+      <td>70</td>
+      <td><span class="badge red">FAILED</span></td>
+    </tr><tr>
+      <td>6/8/2026, 1:36:03 AM</td>
+      <td><span class="badge red">56.4%</span></td>
+      <td>20.0%</td>
+      <td>70</td>
+      <td><span class="badge red">FAILED</span></td>
+    </tr></tbody>
+  </table>
+  </div>
+
+  <div class="footer">QA-Agent AI Harness Evaluation Dashboard</div>
+</div>
+</body>
+</html>

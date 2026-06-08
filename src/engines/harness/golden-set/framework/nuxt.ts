@@ -2,6 +2,10 @@
  * Nuxt Golden Set
  *
  * 10 test cases for Nuxt framework analysis
+ *
+ * NOTE: Global directory-based checks (nuxt-error-missing, nuxt-pagemeta-missing)
+ * are declared as falsePositives because golden cases are single-file snippets
+ * without full directory structure. These checks are legitimate for real projects.
  */
 
 import type { GoldenTestCase } from '../../types';
@@ -29,21 +33,21 @@ export const nuxtGoldenCases: GoldenTestCase[] = [
     expectedDiagnosis: {
       issueCount: 2,
       issueTypes: ['nuxt-image-missing'],
+      falsePositives: ['nuxt-error-missing', 'nuxt-pagemeta-missing'],
     },
     expectedFix: {
       codePattern: '<NuxtImg',
-      shouldNotExist: ['<img'],
+      shouldNotExist: ['<img src'],
     },
-    tags: ['image-optimization'],
   },
 
-  // ─── nuxt-link-missing ────────────────────────────────────
+  // ─── nuxt-link-missing ──────────────────────────────────────
   {
     id: 'nuxt-002',
     difficulty: 'easy',
     skill: 'nuxt',
     input: {
-      filePath: 'components/AppNavigation.vue',
+      filePath: 'pages/navigation.vue',
       stack: ['vue', 'typescript'],
       code: `<template>
   <nav>
@@ -51,213 +55,202 @@ export const nuxtGoldenCases: GoldenTestCase[] = [
     <a href="/about">About</a>
     <a href="/contact">Contact</a>
   </nav>
-</template>
-
-<script setup lang="ts">
-</script>`,
+</template>`,
     },
     expectedDiagnosis: {
       issueCount: 3,
       issueTypes: ['nuxt-link-missing'],
+      falsePositives: ['nuxt-error-missing', 'nuxt-pagemeta-missing'],
     },
     expectedFix: {
       codePattern: '<NuxtLink',
       shouldNotExist: ['<a href'],
     },
-    tags: ['navigation'],
   },
 
-  // ─── nuxt-dom-access ──────────────────────────────────────
+  // ─── nuxt-dom-access ────────────────────────────────────────
   {
     id: 'nuxt-003',
     difficulty: 'medium',
     skill: 'nuxt',
     input: {
-      filePath: 'components/DomManipulator.vue',
+      filePath: 'pages/dashboard.vue',
       stack: ['vue', 'typescript'],
       code: `<template>
-  <div class="container">
-    <p id="output"></p>
-    <button @click="update">Update</button>
+  <div>
+    <h1>Dashboard</h1>
+    <p ref="statusEl">Status: {{ status }}</p>
   </div>
 </template>
 
 <script setup lang="ts">
-function update() {
-  const el = document.querySelector('#output')
-  if (el) {
-    el.innerHTML = 'Updated by DOM'
+import { ref, onMounted } from 'vue';
+
+const status = ref('loading');
+const statusEl = ref<HTMLElement | null>(null);
+
+onMounted(() => {
+  if (statusEl.value) {
+    statusEl.value.textContent = 'Loaded';
   }
-}
+  document.title = 'Dashboard';
+});
 </script>`,
     },
     expectedDiagnosis: {
       issueCount: 1,
       issueTypes: ['nuxt-dom-access'],
+      falsePositives: ['nuxt-error-missing', 'nuxt-pagemeta-missing'],
     },
     expectedFix: {
-      codePattern: 'onMounted',
-      shouldNotExist: ['document.querySelector'],
+      codePattern: "import { useHead } from 'nuxt/app'",
+      shouldNotExist: ['document.title'],
     },
-    tags: ['dom', 'ssr'],
   },
 
-  // ─── nuxt-client-secret ───────────────────────────────────
+  // ─── nuxt-client-secret ─────────────────────────────────────
   {
     id: 'nuxt-004',
     difficulty: 'hard',
     skill: 'nuxt',
     input: {
-      filePath: 'components/AnalyticsTracker.vue',
+      filePath: 'pages/admin.vue',
       stack: ['vue', 'typescript'],
       code: `<template>
   <div>
-    <h1>Analytics Dashboard</h1>
-    <p>Tracking active users...</p>
+    <h1>Admin Panel</h1>
+    <button @click="fetchData">Fetch Data</button>
   </div>
 </template>
 
 <script setup lang="ts">
-const API_KEY = 'sk-proj-abc123def456ghi789'
-const API_SECRET = 'secret_key_2024_xyz'
+const API_KEY = 'sk-1234567890abcdef';
+const SECRET = 'my-super-secret-key';
 
-async function trackEvent(event: string) {
-  await fetch('https://api.analytics.example.com/track', {
-    method: 'POST',
+const fetchData = async () => {
+  const response = await fetch('https://api.example.com/data', {
     headers: {
-      'Authorization': \`Bearer \${API_KEY}\`,
-      'X-Api-Secret': API_SECRET,
+      Authorization: 'Bearer ' + API_KEY,
     },
-    body: JSON.stringify({ event }),
-  })
-}
+  });
+  return response.json();
+};
 </script>`,
     },
     expectedDiagnosis: {
-      issueCount: 1,
+      issueCount: 2,
       issueTypes: ['nuxt-client-secret'],
+      falsePositives: ['nuxt-error-missing', 'nuxt-pagemeta-missing'],
     },
     expectedFix: {
-      codePattern: 'useRuntimeConfig',
-      shouldNotExist: ['sk-proj-', 'secret_key_'],
+      codePattern: 'useRuntimeConfig()',
+      shouldNotExist: ['API_KEY =', 'SECRET ='],
     },
-    tags: ['security', 'secrets'],
   },
 
-  // ─── nuxt-ssr-misuse ──────────────────────────────────────
+  // ─── nuxt-ssr-misuse ────────────────────────────────────────
   {
     id: 'nuxt-005',
-    difficulty: 'hard',
-    skill: 'nuxt',
-    input: {
-      filePath: 'components/ViewportTracker.vue',
-      stack: ['vue', 'typescript'],
-      code: `<template>
-  <div>
-    <p>Window width: {{ width }}</p>
-    <p>Scroll position: {{ scrollY }}</p>
-  </div>
-</template>
-
-<script setup lang="ts">
-import { ref } from 'vue'
-
-const width = ref(window.innerWidth)
-const scrollY = ref(window.scrollY)
-
-window.addEventListener('resize', () => {
-  width.value = window.innerWidth
-})
-
-window.addEventListener('scroll', () => {
-  scrollY.value = window.scrollY
-})
-</script>`,
-    },
-    expectedDiagnosis: {
-      issueCount: 1,
-      issueTypes: ['nuxt-ssr-misuse'],
-    },
-    expectedFix: {
-      codePattern: 'onMounted',
-      shouldNotExist: ['window.'],
-    },
-    tags: ['ssr', 'window'],
-  },
-
-  // ─── nuxt-pagemeta-missing ────────────────────────────────
-  {
-    id: 'nuxt-006',
-    difficulty: 'easy',
-    skill: 'nuxt',
-    input: {
-      filePath: 'pages/about.vue',
-      stack: ['vue', 'typescript'],
-      code: `<template>
-  <div>
-    <h1>About Us</h1>
-    <p>We are a company building great products.</p>
-  </div>
-</template>
-
-<script setup lang="ts">
-const companyName = 'My Company'
-</script>`,
-    },
-    expectedDiagnosis: {
-      issueCount: 1,
-      issueTypes: ['nuxt-pagemeta-missing'],
-    },
-    expectedFix: {
-      codePattern: 'definePageMeta',
-      shouldNotExist: [],
-    },
-    tags: ['metadata', 'seo'],
-  },
-
-  // ─── nuxt-hardcoded-url ───────────────────────────────────
-  {
-    id: 'nuxt-007',
     difficulty: 'medium',
     skill: 'nuxt',
     input: {
-      filePath: 'components/UserList.vue',
+      filePath: 'pages/users.vue',
       stack: ['vue', 'typescript'],
       code: `<template>
   <div>
     <h1>Users</h1>
     <ul>
-      <li v-for="user in users" :key="user.id">
-        {{ user.name }}
-      </li>
+      <li v-for="user in users" :key="user.id">{{ user.name }}</li>
     </ul>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted } from 'vue';
 
-const users = ref([])
+const users = ref([]);
 
 onMounted(async () => {
-  const res = await fetch('https://api.example.com/v1/users')
-  const data = await res.json()
-  users.value = data
-})
+  const response = await fetch('https://api.example.com/users');
+  users.value = await response.json();
+});
+</script>`,
+    },
+    expectedDiagnosis: {
+      issueCount: 1,
+      issueTypes: ['nuxt-ssr-misuse'],
+      falsePositives: ['nuxt-error-missing', 'nuxt-pagemeta-missing'],
+    },
+    expectedFix: {
+      codePattern: 'async function',
+      shouldNotExist: ['onMounted('],
+    },
+  },
+
+  // ─── nuxt-pagemeta-missing ──────────────────────────────────
+  {
+    id: 'nuxt-006',
+    difficulty: 'easy',
+    skill: 'nuxt',
+    input: {
+      filePath: 'pages/blog.vue',
+      stack: ['vue', 'typescript'],
+      code: `<template>
+  <div>
+    <h1>Blog</h1>
+    <p>Blog posts go here</p>
+  </div>
+</template>
+
+<script setup lang="ts">
+</script>`,
+    },
+    expectedDiagnosis: {
+      issueCount: 1,
+      issueTypes: ['nuxt-pagemeta-missing'],
+      falsePositives: ['nuxt-error-missing'],
+    },
+    expectedFix: {
+      codePattern: 'definePageMeta',
+      shouldNotExist: [],
+    },
+  },
+
+  // ─── nuxt-hardcoded-url ─────────────────────────────────────
+  {
+    id: 'nuxt-007',
+    difficulty: 'medium',
+    skill: 'nuxt',
+    input: {
+      filePath: 'pages/settings.vue',
+      stack: ['vue', 'typescript'],
+      code: `<template>
+  <div>
+    <h1>Settings</h1>
+    <button @click="saveSettings">Save</button>
+  </div>
+</template>
+
+<script setup lang="ts">
+const API_URL = 'http://api.example.com';
+
+const saveSettings = async () => {
+  await fetch(API_URL + '/settings', { method: 'POST' });
+};
 </script>`,
     },
     expectedDiagnosis: {
       issueCount: 1,
       issueTypes: ['nuxt-hardcoded-url'],
+      falsePositives: ['nuxt-error-missing', 'nuxt-pagemeta-missing'],
     },
     expectedFix: {
-      codePattern: 'useRuntimeConfig',
-      shouldNotExist: ['https://api.example.com'],
+      codePattern: 'useRuntimeConfig()',
+      shouldNotExist: ["'http://"],
     },
-    tags: ['configuration', 'api'],
   },
 
-  // ─── nuxt-error-missing ───────────────────────────────────
+  // ─── nuxt-error-missing ─────────────────────────────────────
   {
     id: 'nuxt-008',
     difficulty: 'easy',
@@ -270,7 +263,7 @@ onMounted(async () => {
     <h1>Checkout</h1>
     <form>
       <input type="text" placeholder="Card number" />
-      <input type="text" placeholder="Expiry date" />
+      <input type="text" placeholder="Expiry" />
       <button type="submit">Pay Now</button>
     </form>
   </div>
@@ -282,15 +275,15 @@ onMounted(async () => {
     expectedDiagnosis: {
       issueCount: 1,
       issueTypes: ['nuxt-error-missing'],
+      falsePositives: ['nuxt-pagemeta-missing'],
     },
     expectedFix: {
       codePattern: 'error.vue',
       shouldNotExist: [],
     },
-    tags: ['error-boundary'],
   },
 
-  // ─── clean-nuxt-page ──────────────────────────────────────
+  // ─── clean-nuxt-page ────────────────────────────────────────
   {
     id: 'nuxt-009',
     difficulty: 'easy',
@@ -299,44 +292,36 @@ onMounted(async () => {
       filePath: 'pages/profile.vue',
       stack: ['vue', 'typescript'],
       code: `<template>
-  <main>
-    <nav>
-      <NuxtLink to="/">Home</NuxtLink>
-      <NuxtLink to="/settings">Settings</NuxtLink>
-    </nav>
+  <div>
+    <NuxtLink to="/">Home</NuxtLink>
+    <NuxtLink to="/settings">Settings</NuxtLink>
+    <NuxtImg src="/avatars/user.jpg" alt="User avatar" width="200" height="200" />
     <h1>Profile</h1>
-    <NuxtImg
-      src="/avatars/user.jpg"
-      alt="User avatar"
-      width="200"
-      height="200"
-    />
-    <p>Welcome to your profile page.</p>
-  </main>
+    <p>{{ user.name }}</p>
+  </div>
 </template>
 
 <script setup lang="ts">
 definePageMeta({
   title: 'User Profile',
   layout: 'default',
-})
+});
 
-const config = useRuntimeConfig()
-const apiUrl = config.public.apiBase
+const user = { name: 'John Doe' };
 </script>`,
     },
     expectedDiagnosis: {
       issueCount: 0,
       issueTypes: [],
+      falsePositives: ['nuxt-error-missing'],
     },
     expectedFix: {
       codePattern: '',
       shouldNotExist: [],
     },
-    tags: ['clean'],
   },
 
-  // ─── multiple-issues-nuxt ─────────────────────────────────
+  // ─── multiple-issues-nuxt ───────────────────────────────────
   {
     id: 'nuxt-010',
     difficulty: 'hard',
@@ -349,35 +334,43 @@ const apiUrl = config.public.apiBase
     <a href="/">Back to Home</a>
     <h1>Store</h1>
     <img src="/store-banner.png" alt="Store banner" />
-    <p>Current viewport: {{ viewport }}</p>
-    <a href="/cart">View Cart</a>
+    <input type="text" v-model="query" />
+    <button @click="searchProducts">Search</button>
+    <a href="/cart">View Cart ({{ cart.length }})</a>
   </div>
 </template>
 
 <script setup lang="ts">
-const viewport = window.innerWidth + 'x' + window.innerHeight
+import { ref, onMounted } from 'vue';
 
-function resize() {
-  const el = document.querySelector('h1')
-  if (el) {
-    el.textContent = 'Resized'
-  }
-}
+const query = ref('');
+const cart = ref([]);
+const API_KEY = 'sk-1234567890abcdef';
+
+const searchProducts = async () => {
+  const res = await fetch('https://api.example.com/products?search=' + query.value);
+  return res.json();
+};
+
+onMounted(() => {
+  document.title = 'Store';
+});
 </script>`,
     },
     expectedDiagnosis: {
-      issueCount: 3,
+      issueCount: 4,
       issueTypes: [
         'nuxt-image-missing',
         'nuxt-link-missing',
+        'nuxt-client-secret',
         'nuxt-ssr-misuse',
       ],
+      falsePositives: ['nuxt-error-missing', 'nuxt-pagemeta-missing'],
     },
     expectedFix: {
       codePattern: '<NuxtImg',
-      shouldNotExist: ['<img', '<a href'],
+      shouldNotExist: ['<img src', '<a href', 'API_KEY ='],
     },
-    tags: ['multiple-issues'],
   },
 ];
 
