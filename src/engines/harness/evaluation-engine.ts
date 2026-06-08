@@ -744,16 +744,23 @@ export function createVirtualFS(
 
     async glob(pattern: string): Promise<string[]> {
       const ext = normalized.split('.').pop() ?? '';
-      const baseGlob = pattern.replace(/\*\*/g, '.*').replace(/\*/g, '[^/]*');
-      const re = new RegExp(`^${baseGlob}$`);
+
+      // Direct pattern matching with proper regex escaping
+      const escapedPattern = pattern
+        .replace(/\./g, '\\.')
+        .replace(/\*\*/g, '(.+/)?')
+        .replace(/\*/g, '[^/]*');
+      const re = new RegExp(`^${escapedPattern}$`);
       if (re.test(normalized)) return [normalized];
 
+      // Brace expansion support: **/*.{ts,tsx,js,jsx,html}
       const braceMatch = pattern.match(/\{([^}]+)\}/);
       if (braceMatch) {
         const exts = braceMatch[1].split(',');
         if (exts.includes(ext)) return [normalized];
       }
 
+      // Fallback: simple extension matching
       if (pattern.includes('*.' + ext)) return [normalized];
       if (pattern === `**/*.${ext}`) return [normalized];
 
