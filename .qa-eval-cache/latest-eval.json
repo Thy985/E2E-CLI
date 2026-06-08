@@ -1,0 +1,63 @@
+{
+  "totalCases": 70,
+  "passedCases": 14,
+  "failedCases": 56,
+  "avgPrecision": 0.5366666666666667,
+  "avgRecall": 0.6552380952380953,
+  "avgF1": 0.5647732426303853,
+  "passRate": 0.2,
+  "bySkill": {
+    "a11y": {
+      "cases": 10,
+      "passed": 2,
+      "f1": 0.5523809523809524
+    },
+    "security": {
+      "cases": 10,
+      "passed": 5,
+      "f1": 0.7666666666666667
+    },
+    "performance": {
+      "cases": 10,
+      "passed": 2,
+      "f1": 0.45714285714285713
+    },
+    "react": {
+      "cases": 10,
+      "passed": 2,
+      "f1": 0.788888888888889
+    },
+    "vue": {
+      "cases": 10,
+      "passed": 3,
+      "f1": 0.5666666666666667
+    },
+    "nextjs": {
+      "cases": 10,
+      "passed": 0,
+      "f1": 0.485952380952381
+    },
+    "nuxt": {
+      "cases": 10,
+      "passed": 0,
+      "f1": 0.3357142857142857
+    }
+  },
+  "byDifficulty": {
+    "easy": {
+      "cases": 35,
+      "passed": 11,
+      "f1": 0.548639455782313
+    },
+    "medium": {
+      "cases": 22,
+      "passed": 3,
+      "f1": 0.6653679653679654
+    },
+    "hard": {
+      "cases": 13,
+      "passed": 0,
+      "f1": 0.43797313797313797
+    }
+  }
+}

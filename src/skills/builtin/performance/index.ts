@@ -330,7 +330,7 @@ export class PerformanceSkill extends BaseSkill {
   }
 
   private async getSourceFiles(_projectPath: string, tools: SkillContext['tools']): Promise<string[]> {
-    const patterns = ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx'];
+    const patterns = ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx', '**/*.html', '**/*.htm'];
     const files: string[] = [];
 
     for (const pattern of patterns) {
