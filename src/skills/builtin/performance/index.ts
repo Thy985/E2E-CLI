@@ -56,11 +56,20 @@ const REGEX_PERF_RULES = [
   },
   {
     id: 'inline-style',
-    pattern: /style=\s*['"][^'"]{100,}['"]/g,
+    pattern: /style=\s*['"][^'"]{20,}['"]/g,
     severity: 'info' as Severity,
     title: 'Long Inline Styles',
     description: 'Long inline styles affect caching and maintainability',
     suggestion: 'Move styles to CSS files',
+    fixable: false,
+  },
+  {
+    id: 'inline-style',
+    pattern: /style=\{\{/g,
+    severity: 'info' as Severity,
+    title: 'JSX Inline Style Object',
+    description: 'JSX inline style objects bypass the stylesheet pipeline and cannot be tree-shaken',
+    suggestion: 'Extract to a CSS module, className, or styled-component',
     fixable: false,
   },
   {
@@ -105,10 +114,10 @@ const REGEX_PERF_RULES = [
   },
   {
     id: 'preload-critical',
-    pattern: /<link\s+rel=['"]stylesheet['"][^>]*>/g,
+    pattern: /<link\s+rel=['"]stylesheet['"][^>]*href=['"]https?:\/\/[^'"]+['"][^>]*>/g,
     severity: 'info' as Severity,
     title: 'Missing Preload for Critical Resources',
-    description: 'Critical CSS/JS resources without preload hint',
+    description: 'External CSS/JS resources without preload hint',
     suggestion: 'Add <link rel="preload"> for critical resources',
     fixable: false,
   },
@@ -422,8 +431,18 @@ export class PerformanceSkill extends BaseSkill {
         const importNode = node as TSESTree.ImportDeclaration;
         const source = importNode.source.value;
 
-        // Check if importing a heavy dependency as a whole (not a subpath)
-        if (heavyDeps.has(source)) {
+        // Match either a direct heavy-dep import (e.g. `import _ from 'lodash'`)
+        // or a subpath import of a heavy dep (e.g. `import debounce from 'lodash/debounce'`).
+        // Subpath imports still pull in lodash's CommonJS wrapper for the module,
+        // which is heavier than a slim alternative.
+        const directMatch = heavyDeps.has(source);
+        const subpathMatch = [...heavyDeps].some(dep =>
+          source === dep || source.startsWith(`${dep}/`),
+        );
+
+        if (directMatch || subpathMatch) {
+          const rootDep = directMatch ? source : source.split('/')[0];
+
           // Check if it's a default import (full import) vs named import
           const hasDefaultImport = importNode.specifiers.some(
             (spec) => spec.type === 'ImportDefaultSpecifier',
@@ -444,8 +463,8 @@ export class PerformanceSkill extends BaseSkill {
               location: { file: filePath, line },
               metadata: {
                 ruleId: rule.id,
-                dependency: source,
-                alternative: HEAVY_DEPENDENCIES[source]?.alternative,
+                dependency: rootDep,
+                alternative: HEAVY_DEPENDENCIES[rootDep]?.alternative,
                 snippet: astFile.lines[line - 1]?.trim() ?? '',
               },
               fixSuggestion: {
