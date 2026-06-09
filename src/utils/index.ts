@@ -79,12 +79,13 @@ export async function retry<T>(
 /**
  * Debounce function
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function debounce<T extends (...args: any[]) => any>(
   fn: T,
   delay: number
 ): (...args: Parameters<T>) => void {
   let timeoutId: NodeJS.Timeout | null = null;
-  
+
   return (...args: Parameters<T>) => {
     if (timeoutId) {
       clearTimeout(timeoutId);
@@ -96,12 +97,13 @@ export function debounce<T extends (...args: any[]) => any>(
 /**
  * Throttle function
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function throttle<T extends (...args: any[]) => any>(
   fn: T,
   limit: number
 ): (...args: Parameters<T>) => void {
   let inThrottle = false;
-  
+
   return (...args: Parameters<T>) => {
     if (!inThrottle) {
       fn(...args);
@@ -125,12 +127,13 @@ export function matchPattern(path: string, pattern: string): boolean {
 /**
  * Deep merge objects
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function deepMerge<T extends Record<string, any>>(
   target: T,
   source: Partial<T>
 ): T {
   const result = { ...target };
-  
+
   for (const key in source) {
     if (source[key] !== undefined) {
       if (
@@ -138,16 +141,21 @@ export function deepMerge<T extends Record<string, any>>(
         source[key] !== null &&
         !Array.isArray(source[key])
       ) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         result[key] = deepMerge(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           result[key] || {} as any,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           source[key] as any
-        );
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ) as any;
       } else {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         result[key] = source[key] as any;
       }
     }
   }
-  
+
   return result;
 }
 

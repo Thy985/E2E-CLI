@@ -3,7 +3,14 @@
  *
  * Provides real syntactic (and limited semantic) analysis as an
  * improvement over naive regex matching.
+ *
+ * NOTE: This module uses `any` extensively for AST node types from
+ * vue-eslint-parser and TSESTree because their public types are not
+ * ergonomic for narrow access patterns. A full type-safe refactor
+ * would require defining local AST node interfaces and type guards,
+ * which is out of scope for the current warning cleanup.
  */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import * as TSESLint from '@typescript-eslint/parser';
 import * as vueParser from 'vue-eslint-parser';
