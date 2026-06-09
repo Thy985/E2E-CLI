@@ -26,7 +26,12 @@ import { getAllSkillInstances } from '../engines/skill-factory';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const CACHE_DIR = '.qa-eval-cache';
+// 允许通过环境变量自定义 cache 目录，避免污染仓库根目录（与 SandboxManager 模式一致）
+const CACHE_DIR = process.env.QA_EVAL_CACHE_DIR
+  ? (path.isAbsolute(process.env.QA_EVAL_CACHE_DIR)
+      ? process.env.QA_EVAL_CACHE_DIR
+      : path.join(process.cwd(), process.env.QA_EVAL_CACHE_DIR))
+  : path.join(process.cwd(), '.qa-eval-cache');
 const CACHE_FILE = 'latest-eval.json';
 
 const skillInstances = getAllSkillInstances();

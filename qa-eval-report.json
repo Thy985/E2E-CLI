@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-06-08T09:45:57.136Z",
+  "timestamp": "2026-06-09T05:22:38.913Z",
   "overall": {
     "totalCases": 70,
     "passedCases": 59,
@@ -62,10 +62,6 @@
         "f1": 0.8487789987789987
       }
     }
-  },
-  "regression": {
-    "isRegression": false,
-    "details": []
   },
   "qualityGate": {
     "passed": true,

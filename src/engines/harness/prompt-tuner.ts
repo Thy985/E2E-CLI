@@ -521,6 +521,9 @@ export class PromptTuner {
       DEFAULT_PROMPT_CONFIG_FILE,
     );
 
+    console.log('[DEBUG loadTunedConfig]', { configPath, filePath, exists: fs.existsSync(filePath) });
+    console.log('[DEBUG] cwd:', process.cwd(), 'tmpDir-ls:', (() => { try { return require('fs').readdirSync('/tmp').filter(f => f.includes('prompt-tuner')); } catch { return 'N/A'; } })());
+
     if (!fs.existsSync(filePath)) {
       return {};
     }
