@@ -102,7 +102,7 @@ export class SEOSkill extends BaseSkill {
     const issues: Diagnosis[] = [];
 
     // 检查 description
-    if (!/<meta[^>]*name\s*=\s*["\']description["\'][^>]*>/i.test(content)) {
+    if (!/<meta[^>]*name\s*=\s*["']description["'][^>]*>/i.test(content)) {
       issues.push({
         id: `seo-description-${file}`,
         skill: 'seo',
@@ -120,7 +120,7 @@ export class SEOSkill extends BaseSkill {
     }
 
     // 检查 keywords（虽然现代 SEO 不太重视，但仍建议有）
-    if (!/<meta[^>]*name\s*=\s*["\']keywords["\'][^>]*>/i.test(content)) {
+    if (!/<meta[^>]*name\s*=\s*["']keywords["'][^>]*>/i.test(content)) {
       issues.push({
         id: `seo-keywords-${file}`,
         skill: 'seo',
@@ -140,7 +140,7 @@ export class SEOSkill extends BaseSkill {
     // 检查 Open Graph 标签
     const ogTags = ['og:title', 'og:description', 'og:image', 'og:url'];
     for (const tag of ogTags) {
-      if (!new RegExp(`<meta[^>]*property\s*=\s*["\']${tag}["\']`, 'i').test(content)) {
+      if (!new RegExp(`<meta[^>]*propertys*=s*["']${tag}["']`, 'i').test(content)) {
         issues.push({
           id: `seo-og-${tag}-${file}`,
           skill: 'seo',
@@ -159,7 +159,7 @@ export class SEOSkill extends BaseSkill {
     }
 
     // 检查 Twitter Card 标签
-    if (!/<meta[^>]*name\s*=\s*["\']twitter:card["\'][^>]*>/i.test(content)) {
+    if (!/<meta[^>]*name\s*=\s*["']twitter:card["'][^>]*>/i.test(content)) {
       issues.push({
         id: `seo-twitter-card-${file}`,
         skill: 'seo',
@@ -177,7 +177,7 @@ export class SEOSkill extends BaseSkill {
     }
 
     // 检查 canonical 链接
-    if (!/<link[^>]*rel\s*=\s*["\']canonical["\'][^>]*>/i.test(content)) {
+    if (!/<link[^>]*rel\s*=\s*["']canonical["'][^>]*>/i.test(content)) {
       issues.push({
         id: `seo-canonical-${file}`,
         skill: 'seo',
@@ -195,7 +195,7 @@ export class SEOSkill extends BaseSkill {
     }
 
     // 检查 robots meta
-    if (!/<meta[^>]*name\s*=\s*["\']robots["\'][^>]*>/i.test(content)) {
+    if (!/<meta[^>]*name\s*=\s*["']robots["'][^>]*>/i.test(content)) {
       issues.push({
         id: `seo-robots-${file}`,
         skill: 'seo',
@@ -219,7 +219,7 @@ export class SEOSkill extends BaseSkill {
     const issues: Diagnosis[] = [];
 
     // 检查是否有结构化数据
-    if (!/<script[^>]*type\s*=\s*["\']application\/ld\+json["\'][^>]*>/i.test(content)) {
+    if (!/<script[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>/i.test(content)) {
       issues.push({
         id: `seo-structured-data-${file}`,
         skill: 'seo',
@@ -245,13 +245,13 @@ export class SEOSkill extends BaseSkill {
 
     lines.forEach((line, index) => {
       // 检查外部链接是否有 rel="noopener noreferrer"
-      const externalLinkRegex = /<a[^>]*href\s*=\s*["\']https?:\/\/[^"\']+["\'][^>]*>/gi;
+      const externalLinkRegex = /<a[^>]*href\s*=\s*["']https?:\/\/[^"']+["'][^>]*>/gi;
       let match;
       const externalLinks: number[] = [];
       while ((match = externalLinkRegex.exec(line)) !== null) {
         const linkTag = match[0];
         externalLinks.push(match.index);
-        if (!/rel\s*=\s*["\'][^"\']*noopener/.test(linkTag)) {
+        if (!/rel\s*=\s*["'][^"']*noopener/.test(linkTag)) {
           issues.push({
             id: `seo-external-link-${file}-${index}`,
             skill: 'seo',
@@ -271,7 +271,7 @@ export class SEOSkill extends BaseSkill {
       }
 
       // 检查是否有空链接 (exclude external links and already-flagged ones)
-      const emptyLinkRegex = /<a[^>]*href\s*=\s*["\']#["\'][^>]*>/gi;
+      const emptyLinkRegex = /<a[^>]*href\s*=\s*["']#["'][^>]*>/gi;
       while ((match = emptyLinkRegex.exec(line)) !== null) {
         issues.push({
           id: `seo-empty-link-${file}-${index}`,
@@ -320,7 +320,7 @@ export class SEOSkill extends BaseSkill {
     }
 
     // 检查描述长度
-    const descMatch = content.match(/<meta[^>]*name\s*=\s*["\']description["\'][^>]*content\s*=\s*["\']([^"\']*)["\'][^>]*>/i);
+    const descMatch = content.match(/<meta[^>]*name\s*=\s*["']description["'][^>]*content\s*=\s*["']([^"']*)["'][^>]*>/i);
     if (descMatch) {
       const descLength = descMatch[1].length;
       if (descLength < 50 || descLength > 160) {
@@ -374,7 +374,7 @@ export class SEOSkill extends BaseSkill {
         const imgTag = match[0];
         
         // 检查文件名是否描述性
-        const srcMatch = imgTag.match(/src\s*=\s*["\']([^"\']+)["\']/i);
+        const srcMatch = imgTag.match(/src\s*=\s*["']([^"']+)["']/i);
         if (srcMatch) {
           const filename = srcMatch[1].split('/').pop() || '';
           if (/^\d+\.(jpg|png|gif)$/i.test(filename) || /^(image|photo|pic|img)\d*\./i.test(filename)) {
@@ -407,7 +407,7 @@ export class SEOSkill extends BaseSkill {
 
     lines.forEach((line, index) => {
       // Find all href attributes in <a> tags
-      const hrefRegex = /href\s*=\s*["\']([^"\']+)["\']/gi;
+      const hrefRegex = /href\s*=\s*["']([^"']+)["']/gi;
       let match;
       while ((match = hrefRegex.exec(line)) !== null) {
         const href = match[1];

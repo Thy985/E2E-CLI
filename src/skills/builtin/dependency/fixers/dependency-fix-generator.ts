@@ -145,7 +145,7 @@ export class DependencyFixGenerator {
     const packageJson = JSON.parse(content);
     
     // 查找当前版本
-    let currentVersion = packageJson.dependencies?.[pkg] || packageJson.devDependencies?.[pkg];
+    const currentVersion = packageJson.dependencies?.[pkg] || packageJson.devDependencies?.[pkg];
     
     // 替换为安全的版本范围
     if (currentVersion === '*' || currentVersion === 'latest') {
@@ -186,7 +186,7 @@ export class DependencyFixGenerator {
     const packageJson = JSON.parse(content);
     
     // 查找当前版本
-    let currentVersion = packageJson.dependencies?.[pkg] || packageJson.devDependencies?.[pkg];
+    const currentVersion = packageJson.dependencies?.[pkg] || packageJson.devDependencies?.[pkg];
     
     // 添加 ^ 前缀
     if (currentVersion && /^\d/.test(currentVersion)) {

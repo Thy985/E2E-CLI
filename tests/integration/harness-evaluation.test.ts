@@ -218,8 +218,8 @@ describe('Golden Set loading', () => {
     expect(stats.bySkill.nextjs).toBe(10);
     expect(stats.bySkill.nuxt).toBe(10);
     expect(stats.byDifficulty.easy).toBe(35);
-    expect(stats.byDifficulty.medium).toBe(21);
-    expect(stats.byDifficulty.hard).toBe(14);
+    expect(stats.byDifficulty.medium).toBe(22);
+    expect(stats.byDifficulty.hard).toBe(13);
   });
 });
 
@@ -243,8 +243,9 @@ describe('evaluateDiagnosis', () => {
   });
 
   it('should detect false positives', () => {
-    const testCase = getCasesBySkill('a11y')[0]; // expects img-alt (issueCount=2), falsePositives: [button-name, label]
-    const actual = makeDiagnosis(['img-alt', 'button-name']);
+    const testCase = getCasesBySkill('a11y')[0]; // expects img-alt (issueCount=2), falsePositives: [button-name, label, landmark]
+    // Add an issue type NOT in expected AND NOT in falsePositives → should be a real FP
+    const actual = makeDiagnosis(['img-alt', 'unknown-rule']);
 
     const result = evaluateDiagnosis(testCase, actual);
 

@@ -67,14 +67,10 @@ export function createFileStorage(basePath: string): Storage {
   }
 
   async function flush(): Promise<void> {
-    try {
-      await fsp.mkdir(path.dirname(storePath), { recursive: true });
-      const tmp = `${storePath}.tmp`;
-      await fsp.writeFile(tmp, JSON.stringify(cache, null, 2), 'utf-8');
-      await fsp.rename(tmp, storePath);
-    } catch (err) {
-      throw err;
-    }
+    await fsp.mkdir(path.dirname(storePath), { recursive: true });
+    const tmp = `${storePath}.tmp`;
+    await fsp.writeFile(tmp, JSON.stringify(cache, null, 2), 'utf-8');
+    await fsp.rename(tmp, storePath);
   }
 
   function enqueueWrite(): Promise<void> {

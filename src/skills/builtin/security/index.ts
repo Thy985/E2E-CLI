@@ -35,7 +35,7 @@ const SECURITY_RULES = [
     patterns: [
       /(?:password|passwd|pwd)\s*[=:]\s*['"][^'"]+['"]/gi,
       /(?:api[_-]?key|apikey)\s*[=:]\s*['"][^'"]+['"]/gi,
-      /(?:secret|token)\s*[=:]\s*['"][a-zA-Z0-9]{16,}['"]/gi,
+      /(?:secret|token)\s*[=:]\s*['"][a-zA-Z0-9_-]{16,}['"]/gi,
       /(?:private[_-]?key)\s*[=:]\s*['"][^'"]+['"]/gi,
     ],
     severity: 'critical' as Severity,
@@ -46,8 +46,14 @@ const SECURITY_RULES = [
   {
     id: 'sql-injection',
     patterns: [
-      /(?:query|execute)\s*\(\s*[`'"]\s*SELECT.*\$\{/gi,
-      /(?:query|execute)\s*\(\s*[`'"]\s*.*\+\s*\w+/gi,
+      // Direct string concatenation/queryTemplate function call with SQL-like content
+      /(?:query|execute|run|all)\s*\(\s*[`'"][^`'"]*\$\{/gi,
+      // Variable assigned with SQL-like string + concat
+      /(?:query|sql|sqlQuery)\s*=\s*[`'"]\s*SELECT[^`'"]*['"`]\s*\+/gi,
+      // Method calls like db.query() with string concat arg
+      /\.\s*(?:query|execute|run)\s*\(\s*[`'"][^`'"]*\+/gi,
+      // String concat pattern inside query() call
+      /(?:query|execute)\s*\(\s*[`'"]\s*SELECT.*['"`]\s*\+/gi,
     ],
     severity: 'critical' as Severity,
     title: 'SQL 注入风险',
@@ -84,7 +90,7 @@ const SECURITY_RULES = [
     contextFilter: (line: string): boolean => {
       const nonSecurityContexts = [
         /key\s*[=:]\s*.*Math\.random/i,
-        /Math\.random\(\)\s*\*\s*\d+\s*[+\-]/,
+        /Math\.random\(\)\s*\*\s*\d+\s*[+-]/,
         /opacity.*Math\.random|Math\.random.*opacity/i,
         /animation.*Math\.random|Math\.random.*animation/i,
         /color.*Math\.random|Math\.random.*color/i,
@@ -115,6 +121,8 @@ const SECURITY_RULES = [
       /process\.env\.NODE_TLS_REJECT_UNAUTHORIZED\s*=\s*['"]0['"]/g,
       /@ts-ignore.*security/gi,
       /eslint-disable.*security/gi,
+      // Helmet / express security config disabled
+      /(?:contentSecurityPolicy|xssFilter|noSniff|frameguard|hsts|referrerPolicy|hidePoweredBy)\s*:\s*false\b/gi,
     ],
     severity: 'critical' as Severity,
     title: '安全检查被禁用',

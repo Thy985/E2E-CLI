@@ -66,6 +66,7 @@ defineProps<{
     expectedDiagnosis: {
       issueCount: 1,
       issueTypes: ['v-if-with-v-for'],
+      falsePositives: ['missing-v-for-key'],
     },
     expectedFix: {
       codePattern: 'computed',

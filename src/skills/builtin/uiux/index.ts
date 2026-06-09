@@ -86,7 +86,7 @@ export class UIUXSkill extends BaseSkill {
   }
 
   async fix(diagnosis: Diagnosis, context: SkillContext): Promise<Fix> {
-    const { project, config: _config } = context;
+    const { project } = context;
 
     // 根据问题类型选择修复策略
     switch (diagnosis.metadata?.category) {

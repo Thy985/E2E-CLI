@@ -314,7 +314,7 @@ export function detectDocumentWrite(astFile: ASTFile): ASTSecurityIssue[] {
 function isNonSecurityContext(line: string): boolean {
   const patterns = [
     /key\s*[=:]\s*.*Math\.random/i,
-    /Math\.random\(\)\s*\*\s*\d+\s*[+\-]/,
+    /Math\.random\(\)\s*\*\s*\d+\s*[+-]/,
     /opacity.*Math\.random|Math\.random.*opacity/i,
     /animation.*Math\.random|Math\.random.*animation/i,
     /color.*Math\.random|Math\.random.*color/i,
@@ -350,6 +350,8 @@ export function detectConsoleStatements(astFile: ASTFile): Array<{
     method: string;
     snippet: string;
   }> = [];
+
+  if (!astFile?.ast) return results;
 
   walkAST(astFile.ast, (node) => {
     if (
@@ -403,11 +405,14 @@ export function parseVueFile(source: string, filePath: string): VueASTFile | nul
       ecmaFeatures: { jsx: true },
       parser: '@typescript-eslint/parser',
     });
+    // The result.ast itself is the Program node when using parseForESLint with a TS parser.
+    // For <script setup>, vue-eslint-parser's ast IS the script AST (it extracts it from the SFC).
+    const scriptAST = (result.ast as any).type === 'Program' ? (result.ast as unknown as TSESTree.Program) : null;
     return {
       filePath,
       ast: result.ast,
       templateBody: result.ast.templateBody,
-      scriptAST: (result.services as any)?.program?.getProgram() ?? null,
+      scriptAST,
       source,
       lines: source.split('\n'),
     };
@@ -755,25 +760,25 @@ export function detectAnchorWithoutNameVue(astFile: VueASTFile): Array<{
       if (hasAriaLabel) continue;
 
       // Check for text content in children
-      let hasTextContent = false;
-      function checkTextChildren(node: any): void {
+      const textCtx = { hasTextContent: false };
+      const checkTextChildren = (node: any): void => {
         if (!node || !node.children) return;
         for (const child of node.children) {
           if (child.type === 'VText' && child.value.trim()) {
-            hasTextContent = true;
+            textCtx.hasTextContent = true;
             return;
           }
           if (child.type === 'VExpressionContainer') {
-            hasTextContent = true;
+            textCtx.hasTextContent = true;
             return;
           }
           checkTextChildren(child);
-          if (hasTextContent) return;
+          if (textCtx.hasTextContent) return;
         }
-      }
+      };
       checkTextChildren(el);
 
-      if (!hasTextContent) {
+      if (!textCtx.hasTextContent) {
         const loc = getIssueLocation(el, astFile);
         results.push({
           ruleId: 'anchor-without-name-vue',
@@ -921,22 +926,21 @@ export function detectUnusedPropsVue(astFile: VueASTFile): Array<{
   // 3. Build a set of all identifiers used in the template
   const usedInTemplate = new Set<string>();
   if (astFile.templateBody) {
-    function walkTemplate(node: any): void {
-      if (!node) return;
-      // Walk expression children (simple recursive check for Identifier nodes)
-      function walkExpr(e: any): void {
-        if (!e || typeof e !== 'object') return;
-        if (e.type === 'Identifier' && e.name) {
-          usedInTemplate.add(e.name);
-        }
-        for (const k of Object.keys(e)) {
-          if (Array.isArray(e[k])) {
-            for (const item of e[k]) walkExpr(item);
-          } else if (typeof e[k] === 'object') {
-            walkExpr(e[k]);
-          }
+    const walkExpr = (e: any): void => {
+      if (!e || typeof e !== 'object') return;
+      if (e.type === 'Identifier' && e.name) {
+        usedInTemplate.add(e.name);
+      }
+      for (const k of Object.keys(e)) {
+        if (Array.isArray(e[k])) {
+          for (const item of e[k]) walkExpr(item);
+        } else if (typeof e[k] === 'object') {
+          walkExpr(e[k]);
         }
       }
+    };
+    const walkTemplate = (node: any): void => {
+      if (!node) return;
       if (node.type === 'VExpressionContainer' && node.expression) {
         // Collect identifiers in template expressions
         const expr = node.expression;

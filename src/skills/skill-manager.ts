@@ -183,7 +183,7 @@ export class SkillManager {
       }
 
       // Use the extracted directory
-      let skillPath = extractedDir;
+      const skillPath = extractedDir;
       let skillName = fullPackageName.replace('@', '').replace('/', '-');
 
       // Read package.json to get skill info

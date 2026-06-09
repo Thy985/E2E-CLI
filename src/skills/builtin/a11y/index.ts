@@ -70,6 +70,33 @@ const WCAG_RULES = [
     wcag: 'WCAG 2.2 - 1.3.1 Info and Relationships',
     fix: '添加 <main> 元素或 role="main"',
   },
+  {
+    id: 'html-has-lang',
+    selector: 'html-has-lang-check',
+    severity: 'warning' as Severity,
+    title: 'html 元素缺少 lang 属性',
+    description: '<html> 元素必须设置 lang 属性以便屏幕阅读器识别页面语言',
+    wcag: 'WCAG 2.2 - 3.1.1 Language of Page',
+    fix: '添加 <html lang="en"> 属性',
+  },
+  {
+    id: 'document-title',
+    selector: 'document-title-check',
+    severity: 'warning' as Severity,
+    title: '页面缺少 title 元素',
+    description: '<title> 元素是必需的可访问性要求，帮助用户了解页面内容',
+    wcag: 'WCAG 2.2 - 2.4.2 Page Titled',
+    fix: '添加 <title> 元素描述页面内容',
+  },
+  {
+    id: 'color-contrast',
+    selector: 'color-contrast-check',
+    severity: 'warning' as Severity,
+    title: '颜色对比度可能不足',
+    description: '前景色与背景色对比度应至少 4.5:1（正文）或 3:1（大字体）',
+    wcag: 'WCAG 2.2 - 1.4.3 Contrast (Minimum)',
+    fix: '提高前景色与背景色的对比度',
+  },
 ];
 
 export class A11ySkill extends BaseSkill {
@@ -206,6 +233,18 @@ export class A11ySkill extends BaseSkill {
       return this.checkLandmark(content);
     }
 
+    if (selector === 'html-has-lang-check') {
+      return this.checkHtmlLang(content);
+    }
+
+    if (selector === 'document-title-check') {
+      return this.checkDocumentTitle(content);
+    }
+
+    if (selector === 'color-contrast-check') {
+      return this.checkColorContrast(content);
+    }
+
     // img:not([alt])
     if (selector.includes('img:not([alt])')) {
       const regex = /<img(?![^>]*?\balt\s*=)[^>]*>/gis;
@@ -286,6 +325,56 @@ export class A11ySkill extends BaseSkill {
       return [{ line: 1 }];
     }
     return [];
+  }
+
+  /**
+   * Check <html> has lang attribute
+   */
+  private checkHtmlLang(content: string): { line: number }[] {
+    const issues: { line: number }[] = [];
+    const htmlOpenRegex = /<html\b[^>]*>/gi;
+    for (const match of content.matchAll(htmlOpenRegex)) {
+      const tag = match[0];
+      if (!/\blang\s*=/i.test(tag)) {
+        issues.push({ line: this.getLineNumber(content, match.index!) });
+      }
+    }
+    return issues;
+  }
+
+  /**
+   * Check page has <title> element
+   */
+  private checkDocumentTitle(content: string): { line: number }[] {
+    const issues: { line: number }[] = [];
+    const isHtml = /<!doctype\s+html/i.test(content) || /<html\b/i.test(content);
+    if (!isHtml) return issues;
+
+    const hasTitle = /<title\b[^>]*>[\s\S]*?<\/title>/i.test(content);
+    if (!hasTitle) {
+      issues.push({ line: 1 });
+    }
+    return issues;
+  }
+
+  /**
+   * Check for low color contrast — heuristic detection of common low-contrast pairs
+   */
+  private checkColorContrast(content: string): { line: number }[] {
+    const issues: { line: number }[] = [];
+    // Common low-contrast patterns: light gray on white, light colors on light backgrounds
+    const lowContrastPatterns = [
+      /color\s*:\s*#([9a-f][9a-f][9a-f])\b/gi,            // #999 etc
+      /color\s*:\s*rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*0?[0-4]\d?\s*\)/gi,  // alpha < 0.5
+      /color\s*:\s*#?[a-f0-9]{3,6}\b.*background[^;]*#[fF][fF][fF]/gi,
+    ];
+
+    for (const pattern of lowContrastPatterns) {
+      for (const match of content.matchAll(pattern)) {
+        issues.push({ line: this.getLineNumber(content, match.index!) });
+      }
+    }
+    return issues;
   }
 
   private getLineNumber(content: string, index: number): number {
@@ -405,8 +494,9 @@ export class A11ySkill extends BaseSkill {
     const inputType = inputTypeMatch ? inputTypeMatch[1] : 'input';
     const generatedId = `${inputType}-field-${generateId().slice(0, 4)}`;
 
-    // Add id to input
-    const fixedInput = matchedCode.replace(/<input/, `<input id="${generatedId}"`);
+    // Add id to input and remove placeholder (placeholder is not a substitute for label)
+    let fixedInput = matchedCode.replace(/<input/, `<input id="${generatedId}"`);
+    fixedInput = fixedInput.replace(/\s*placeholder\s*=\s*["'][^"']*["']/i, '');
 
     // Generate a corresponding <label> element
     const label = `<label for="${generatedId}">${inputType.charAt(0).toUpperCase() + inputType.slice(1)}</label>`;

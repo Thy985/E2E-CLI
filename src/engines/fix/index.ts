@@ -199,7 +199,7 @@ export class FixEngine {
     }
 
     // Multiple changes to same file → medium or high
-    for (const [_, changes] of fileGroups) {
+    for (const [, changes] of fileGroups) {
       if (changes.length > 1) {
         // Multiple structural changes to same file → high
         if (changes.some(isStructuralChange)) {

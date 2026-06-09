@@ -34,10 +34,23 @@ const DEFAULT_HISTORY_DIR = '.qa-history';
 const DEFAULT_HISTORY_FILE = 'eval-history.json';
 const MAX_HISTORY_ENTRIES = 100;
 
-/** 获取历史存储路径 */
+/** 获取历史存储路径。
+ * 优先级：
+ * 1. 显式传入的 basePath → 拼上 `.qa-history`（兼容既有调用方约定）
+ * 2. 环境变量 QA_HISTORY_DIR（支持相对路径与绝对路径，直接作为目录）
+ * 3. 兜底 process.cwd() + .qa-history
+ */
 export function getHistoryDir(basePath?: string): string {
-  const base = basePath || process.cwd();
-  return path.join(base, DEFAULT_HISTORY_DIR);
+  if (basePath) {
+    return path.join(basePath, DEFAULT_HISTORY_DIR);
+  }
+  const overrideDir = process.env.QA_HISTORY_DIR;
+  if (overrideDir) {
+    return path.isAbsolute(overrideDir)
+      ? overrideDir
+      : path.join(process.cwd(), overrideDir);
+  }
+  return path.join(process.cwd(), DEFAULT_HISTORY_DIR);
 }
 
 export function getHistoryFile(basePath?: string): string {

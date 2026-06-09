@@ -70,7 +70,7 @@ export class BestPracticesSkill extends BaseSkill {
 
   async diagnose(context: SkillContext): Promise<Diagnosis[]> {
     const issues: Diagnosis[] = [];
-    const { project, config: _config } = context;
+    const { project } = context;
 
     // HTML 语义化检查
     context.logger.info('Checking HTML semantics...');

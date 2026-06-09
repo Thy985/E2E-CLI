@@ -1,6 +1,6 @@
 /**
- * CSS ä¿®å¤çæå? * 
- * èªå¨çæ CSS/æ ·å¼ä¿®å¤ä»£ç 
+ * CSS Ã¤Â¿Â®Ã¥Â¤ÂÃ§Â”ÂŸÃ¦ÂˆÂÃ¥Â™? * 
+ * Ã¨Â‡ÂªÃ¥ÂŠÂ¨Ã§Â”ÂŸÃ¦ÂˆÂ CSS/Ã¦ Â·Ã¥Â¼ÂÃ¤Â¿Â®Ã¥Â¤ÂÃ¤Â»Â£Ã§ Â
  */
 
 import * as fs from 'fs';
@@ -23,7 +23,7 @@ export class CSSFixGenerator {
         return this.generateRadiusFix(fullPath, current, suggestion, diagnosis);
       
       default:
-        throw new Error(`ä¸æ¯æçä¿®å¤ç±»å: ${type}`);
+        throw new Error(`Ã¤Â¸ÂÃ¦Â”Â¯Ã¦ÂŒÂÃ§ÂšÂ„Ã¤Â¿Â®Ã¥Â¤ÂÃ§Â±Â»Ã¥ÂžÂ‹: ${type}`);
     }
   }
 
@@ -46,7 +46,7 @@ export class CSSFixGenerator {
         return this.generateDisabledStateFix(fullPath, element, suggestion, diagnosis);
       
       default:
-        throw new Error(`ä¸æ¯æçä¿®å¤ç±»å: ${type}`);
+        throw new Error(`Ã¤Â¸ÂÃ¦Â”Â¯Ã¦ÂŒÂÃ§ÂšÂ„Ã¤Â¿Â®Ã¥Â¤ÂÃ§Â±Â»Ã¥ÂžÂ‹: ${type}`);
     }
   }
 
@@ -60,7 +60,7 @@ export class CSSFixGenerator {
       id: `fix-${diagnosis.id}`,
       diagnosisId: diagnosis.id,
       autoApplicable: true,
-      description: `å°ç¡¬ç¼ç é¢è² ${current} æ¿æ¢ä¸ºè®¾è®¡ä»¤ç?${suggestion}`,
+      description: `Ã¥Â°Â†Ã§Â¡Â¬Ã§Â¼Â–Ã§ ÂÃ©Â¢ÂœÃ¨Â‰Â² ${current} Ã¦Â›Â¿Ã¦ÂÂ¢Ã¤Â¸ÂºÃ¨Â®Â¾Ã¨Â®Â¡Ã¤Â»Â¤Ã§Â‰?${suggestion}`,
       riskLevel: 'low',
       changes: [
         {
@@ -84,7 +84,7 @@ export class CSSFixGenerator {
       id: `fix-${diagnosis.id}`,
       diagnosisId: diagnosis.id,
       autoApplicable: true,
-      description: `å°é´è·?${current} è°æ´ä¸ºè§èå?${suggestion}`,
+      description: `Ã¥Â°Â†Ã©Â—Â´Ã¨Â·?${current} Ã¨Â°ÂƒÃ¦Â•Â´Ã¤Â¸ÂºÃ¨Â§Â„Ã¨ÂŒÂƒÃ¥Â€?${suggestion}`,
       riskLevel: 'low',
       changes: [
         {
@@ -108,7 +108,7 @@ export class CSSFixGenerator {
       id: `fix-${diagnosis.id}`,
       diagnosisId: diagnosis.id,
       autoApplicable: true,
-      description: `å°åè§?${current} è°æ´ä¸ºè§èå?${suggestion}`,
+      description: `Ã¥Â°Â†Ã¥ÂœÂ†Ã¨Â§?${current} Ã¨Â°ÂƒÃ¦Â•Â´Ã¤Â¸ÂºÃ¨Â§Â„Ã¨ÂŒÂƒÃ¥Â€?${suggestion}`,
       riskLevel: 'low',
       changes: [
         {
@@ -128,11 +128,11 @@ export class CSSFixGenerator {
     suggestion: string,
     diagnosis: Diagnosis
   ): Fix {
-    // è¯»åæä»¶åå®¹ä»¥æ¾å°åéçæå¥ä½ç½®
+    // 读取文件内容以找到合适的插入位置
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
-    
-    // æ¾å°åç´ éæ©å¨çç»æä½ç½®
+
+    // 找到元素选择器的结束位置
     let insertLine = diagnosis.location.line || 0;
     for (let i = (diagnosis.location.line || 0); i < lines.length; i++) {
       if (lines[i].trim() === '}' || lines[i].includes('}')) {
@@ -145,7 +145,7 @@ export class CSSFixGenerator {
       id: `fix-${diagnosis.id}`,
       diagnosisId: diagnosis.id,
       autoApplicable: true,
-      description: `ä¸?${element} æ·»å  hover ç¶æ`,
+      description: `Ã¤Â¸?${element} Ã¦Â·Â»Ã¥ÂŠ  hover Ã§ÂŠÂ¶Ã¦Â€Â`,
       riskLevel: 'low',
       changes: [
         {
@@ -179,7 +179,7 @@ export class CSSFixGenerator {
       id: `fix-${diagnosis.id}`,
       diagnosisId: diagnosis.id,
       autoApplicable: true,
-      description: `ä¸?${element} æ·»å  focus ç¶æ`,
+      description: `Ã¤Â¸?${element} Ã¦Â·Â»Ã¥ÂŠ  focus Ã§ÂŠÂ¶Ã¦Â€Â`,
       riskLevel: 'low',
       changes: [
         {
@@ -213,7 +213,7 @@ export class CSSFixGenerator {
       id: `fix-${diagnosis.id}`,
       diagnosisId: diagnosis.id,
       autoApplicable: true,
-      description: `ä¸?${element} æ·»å  active ç¶æ`,
+      description: `Ã¤Â¸?${element} Ã¦Â·Â»Ã¥ÂŠ  active Ã§ÂŠÂ¶Ã¦Â€Â`,
       riskLevel: 'low',
       changes: [
         {
@@ -247,7 +247,7 @@ export class CSSFixGenerator {
       id: `fix-${diagnosis.id}`,
       diagnosisId: diagnosis.id,
       autoApplicable: true,
-      description: `ä¸?${element} æ·»å  disabled ç¶æ`,
+      description: `Ã¤Â¸?${element} Ã¦Â·Â»Ã¥ÂŠ  disabled Ã§ÂŠÂ¶Ã¦Â€Â`,
       riskLevel: 'low',
       changes: [
         {

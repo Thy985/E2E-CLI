@@ -466,16 +466,17 @@ export class PerformanceSkill extends BaseSkill {
    * AST-based console statement detection
    */
   private checkConsoleStatementsAST(filePath: string, content: string): Diagnosis[] {
+    const astFile = parseFile(filePath, content);
+    if (!astFile) return [];
+
     const results = detectConsoleStatements({
       filePath,
-      ast: parseFile(filePath, content)?.ast!,
+      ast: astFile.ast,
       source: content,
       lines: content.split('\n'),
     });
 
     if (!results.length) return [];
-    const astFile = parseFile(filePath, content);
-    if (!astFile) return [];
 
     return results.map((r) => ({
       id: `Perf-${generateId()}`,

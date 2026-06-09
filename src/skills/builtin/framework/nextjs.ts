@@ -732,7 +732,7 @@ export class NextJSSkill extends BaseSkill {
 
     // Transform <img src="..." alt="..." ...> to <Image src="..." alt="..." ... />
     // Also add width and height if missing (required by next/image for static images)
-    let fixedLine = targetLine
+    const fixedLine = targetLine
       // Replace <img with <Image
       .replace(/<img\b/, '<Image')
       // Ensure proper self-closing or closing tag is maintained
@@ -786,7 +786,7 @@ export class NextJSSkill extends BaseSkill {
 
     // Transform <a href="..."> to <Link href="...">
     // And </a> to </Link>
-    let fixedLine = targetLine
+    const fixedLine = targetLine
       .replace(/<a\b/, '<Link')
       .replace(/<\/a>/g, '</Link>');
 

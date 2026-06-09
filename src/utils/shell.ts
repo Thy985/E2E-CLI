@@ -147,8 +147,8 @@ export async function execAsync(
 
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
-    let stdoutLen = 0;
-    let stderrLen = 0;
+    const stdoutLen = 0;
+    const stderrLen = 0;
     let killedByTimeout = false;
     let killedByBuffer = false;
 

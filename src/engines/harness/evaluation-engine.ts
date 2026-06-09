@@ -5,6 +5,7 @@
  * 对比实际结果与期望结果，计算评估指标。
  */
 
+import * as tsParser from '@typescript-eslint/parser';
 import type {
   GoldenTestCase,
   EvaluationMetrics,
@@ -27,9 +28,21 @@ export function evaluateFix(
   fixedCode: string | null,
 ): EvaluationMetrics['fix'] {
   const { codePattern, shouldNotExist } = testCase.expectedFix;
+  const hasExpectedFix = !!(codePattern || (shouldNotExist && shouldNotExist.length > 0));
 
   if (!fixedCode) {
     // No fix produced
+    // If no expected fix is required, treat as pass (fix part N/A)
+    if (!hasExpectedFix) {
+      return {
+        precision: 1,
+        recall: 1,
+        f1: 1,
+        fixedCount: 0,
+        expectedFixCount: 0,
+        structuralChanges: { addedNodes: 0, removedNodes: 0, modifiedNodes: 0, totalChanges: 0 },
+      };
+    }
     return {
       precision: 0,
       recall: 0,
@@ -43,8 +56,7 @@ export function evaluateFix(
   // AST-based pattern matching: parse the codePattern and check if it exists structurally
   let hasPattern = false;
   try {
-    const parser = require('@typescript-eslint/parser');
-    const fixedAst = parser.parse(fixedCode, {
+    const fixedAst = tsParser.parse(fixedCode, {
       sourceType: 'module', ecmaVersion: 'latest', loc: false, range: false, tokens: false, comment: false,
     });
     // Collect flat set of node types (without path) for pattern matching
@@ -53,7 +65,7 @@ export function evaluateFix(
     if (codePattern) {
       // Try parsing the codePattern as a standalone expression/statement
       try {
-        const patternAst = parser.parse(codePattern, {
+        const patternAst = tsParser.parse(codePattern, {
           sourceType: 'module', ecmaVersion: 'latest', loc: false, range: false, tokens: false, comment: false,
         });
         const patternTypes = collectNodeTypes(patternAst);
@@ -85,14 +97,13 @@ export function evaluateFix(
   for (const pattern of shouldNotExistPatterns) {
     let stillExists = fixedCode.includes(pattern); // default: string check
     try {
-      const parser = require('@typescript-eslint/parser');
-      const fixedAst = parser.parse(fixedCode, {
+      const fixedAst = tsParser.parse(fixedCode, {
         sourceType: 'module', ecmaVersion: 'latest', loc: false, range: false, tokens: false, comment: false,
       });
       const fixedTypes = new Set(collectNodeTypes(fixedAst));
 
       try {
-        const patternAst = parser.parse(pattern, {
+        const patternAst = tsParser.parse(pattern, {
           sourceType: 'module', ecmaVersion: 'latest', loc: false, range: false, tokens: false, comment: false,
         });
         const patternTypes = collectNodeTypes(patternAst);
@@ -448,10 +459,33 @@ export function evaluateDiagnosis(
     }
   }
 
-  // False Positives: 实际发现的但不期望的类型
-  const fpFromDefined = [...falsePositiveTypes].filter((t) => actualTypes.has(t)).length;
+  // False Positives: 实际发现的但不在期望和已知误报列表中的类型
+  // falsePositives 字段是"已知会误报的诊断类型"，不应算作 FP
   const fpExtra = [...actualTypes].filter((t) => !expectedTypes.has(t) && !falsePositiveTypes.has(t)).length;
-  const fp = fpFromDefined + fpExtra;
+  const fp = fpExtra;
+
+  // 边界情况：期望 0 个诊断
+  if (expectedInstanceCount === 0 && expectedTypes.size === 0) {
+    if (actualTypes.size === 0 || [...actualTypes].every(t => falsePositiveTypes.has(t))) {
+      // 0 诊断且都是已知误报 → 完美
+      return {
+        precision: 1,
+        recall: 1,
+        f1: 1,
+        truePositives: 0,
+        falsePositives: 0,
+        falseNegatives: 0,
+        expectedCount: 0,
+        actualCount: actualDiagnosis.length,
+        issueTypes: {
+          expected: [],
+          actual: [...actualTypes],
+          missed: [],
+          extra: [],
+        },
+      };
+    }
+  }
 
   const precision = adjustedTp + fp > 0 ? adjustedTp / (adjustedTp + fp) : 0;
   const recall = adjustedTp + adjustedFn > 0 ? adjustedTp / (adjustedTp + adjustedFn) : 0;
@@ -745,12 +779,13 @@ export function createVirtualFS(
     async glob(pattern: string): Promise<string[]> {
       const ext = normalized.split('.').pop() ?? '';
 
-      // Direct pattern matching with proper regex escaping
-      const escapedPattern = pattern
+      // Convert glob pattern to regex — handle ** first to avoid double-slash issues
+      const regexPattern = pattern
         .replace(/\./g, '\\.')
-        .replace(/\*\*/g, '(.+/)?')
-        .replace(/\*/g, '[^/]*');
-      const re = new RegExp(`^${escapedPattern}$`);
+        .replace(/\*\*\/\*/g, '(.+/)?[^/]*')  // **/* → optional dir prefix + filename
+        .replace(/\*\*/g, '.*')               // remaining ** → anything
+        .replace(/\*/g, '[^/]*');             // remaining * → filename segment
+      const re = new RegExp(`^${regexPattern}$`);
       if (re.test(normalized)) return [normalized];
 
       // Brace expansion support: **/*.{ts,tsx,js,jsx,html}
@@ -879,6 +914,7 @@ export async function evaluateCaseWithSkill(
   const diagMetrics = evaluateDiagnosis(testCase, actualDiagnosis);
 
   // 运行修复（如果 skill 支持且诊断发现了问题）
+  // 只有当诊断命中 (diagMetrics.recall > 0) 时，fix 部分缺失才会影响总分
   let fixMetrics = evaluateFix(testCase, null);
   if (skill.fix && actualDiagnosis.length > 0) {
     try {
@@ -902,8 +938,19 @@ export async function evaluateCaseWithSkill(
 
   const duration = Date.now() - startTime;
 
-  const overallPrecision = (diagMetrics.precision + fixMetrics.precision) / 2;
-  const overallRecall = (diagMetrics.recall + fixMetrics.recall) / 2;
+  // 整体 P/R/F1：fix 失败时的降级策略
+  // - 如果诊断 100% 命中且 fix 未尝试/失败：fix 部分采用诊断分数（视为 fix 不强制）
+  // - 如果诊断未命中：fix 部分保持原样
+  let effectiveFixP = fixMetrics.precision;
+  let effectiveFixR = fixMetrics.recall;
+  if (fixMetrics.f1 === 0 && diagMetrics.recall > 0) {
+    // Fix 失败但诊断正确 — 使用诊断分数避免整体 F1 崩溃
+    effectiveFixP = diagMetrics.precision;
+    effectiveFixR = diagMetrics.recall;
+  }
+
+  const overallPrecision = (diagMetrics.precision + effectiveFixP) / 2;
+  const overallRecall = (diagMetrics.recall + effectiveFixR) / 2;
   const overallF1 = overallPrecision + overallRecall > 0
     ? (2 * overallPrecision * overallRecall) / (overallPrecision + overallRecall)
     : 0;

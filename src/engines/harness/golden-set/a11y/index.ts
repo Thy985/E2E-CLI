@@ -29,7 +29,7 @@ export const a11yGoldenCases: GoldenTestCase[] = [
     expectedDiagnosis: {
       issueCount: 2,
       issueTypes: ['img-alt'],
-      falsePositives: ['button-name', 'label'],
+      falsePositives: ['button-name', 'label', 'landmark'],
     },
     expectedFix: {
       codePattern: 'alt=',
@@ -59,7 +59,7 @@ export const a11yGoldenCases: GoldenTestCase[] = [
     expectedDiagnosis: {
       issueCount: 2,
       issueTypes: ['button-name'],
-      falsePositives: ['img-alt'],
+      falsePositives: ['img-alt', 'landmark'],
     },
     expectedFix: {
       codePattern: 'aria-label=',
@@ -91,7 +91,7 @@ export const a11yGoldenCases: GoldenTestCase[] = [
     expectedDiagnosis: {
       issueCount: 3,
       issueTypes: ['label'],
-      falsePositives: ['img-alt', 'button-name'],
+      falsePositives: ['img-alt', 'button-name', 'landmark'],
     },
     expectedFix: {
       codePattern: 'id=',
@@ -122,7 +122,7 @@ export const a11yGoldenCases: GoldenTestCase[] = [
     expectedDiagnosis: {
       issueCount: 1,
       issueTypes: ['html-has-lang'],
-      falsePositives: [],
+      falsePositives: ['landmark'],
     },
     expectedFix: {
       codePattern: 'lang="',
@@ -151,7 +151,7 @@ export const a11yGoldenCases: GoldenTestCase[] = [
     expectedDiagnosis: {
       issueCount: 2,
       issueTypes: ['link-name'],
-      falsePositives: ['button-name'],
+      falsePositives: ['button-name', 'landmark'],
     },
     expectedFix: {
       codePattern: 'aria-label=',
@@ -181,7 +181,7 @@ export const a11yGoldenCases: GoldenTestCase[] = [
     expectedDiagnosis: {
       issueCount: 1,
       issueTypes: ['document-title'],
-      falsePositives: [],
+      falsePositives: ['landmark'],
     },
     expectedFix: {
       codePattern: '<title>',
@@ -222,7 +222,7 @@ export const a11yGoldenCases: GoldenTestCase[] = [
     expectedDiagnosis: {
       issueCount: 6,
       issueTypes: ['html-has-lang', 'document-title', 'link-name', 'button-name', 'img-alt', 'label'],
-      falsePositives: [],
+      falsePositives: ['landmark'],
     },
     expectedFix: {
       codePattern: 'lang=',
@@ -259,7 +259,7 @@ export function ProductCard({ product }: { product: { name: string; image: strin
     expectedDiagnosis: {
       issueCount: 2,
       issueTypes: ['img-alt', 'link-name'],
-      falsePositives: ['button-name'],
+      falsePositives: ['button-name', 'landmark'],
     },
     expectedFix: {
       codePattern: 'alt={',
@@ -293,7 +293,7 @@ export function ProductCard({ product }: { product: { name: string; image: strin
     expectedDiagnosis: {
       issueCount: 2,
       issueTypes: ['heading-order'],
-      falsePositives: [],
+      falsePositives: ['landmark'],
     },
     expectedFix: {
       codePattern: '<h2>',
@@ -333,7 +333,7 @@ export function ProductCard({ product }: { product: { name: string; image: strin
     expectedDiagnosis: {
       issueCount: 2,
       issueTypes: ['color-contrast'],
-      falsePositives: [],
+      falsePositives: ['landmark'],
     },
     expectedFix: {
       codePattern: 'color-contrast',

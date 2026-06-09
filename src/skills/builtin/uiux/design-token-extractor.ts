@@ -166,7 +166,7 @@ export class DesignTokenExtractor {
     while ((match = textVarRegex.exec(content)) !== null) {
       const [, name, value] = match;
       // 解析类似 "0.75rem/1rem" 或 "0.75rem 400 Inter" 的格式
-      const parts = value.split(/[\/\s]+/).filter(Boolean);
+      const parts = value.split(/[/\s]+/).filter(Boolean);
       if (parts.length > 0) {
         if (!tokens.typography) {
           tokens.typography = {};
@@ -308,7 +308,7 @@ export class DesignTokenExtractor {
     const tailwindConfigPath = path.join(projectPath, 'tailwind.config.js');
     const tailwindConfigTsPath = path.join(projectPath, 'tailwind.config.ts');
     
-    let configPath = fs.existsSync(tailwindConfigPath) ? tailwindConfigPath 
+    const configPath = fs.existsSync(tailwindConfigPath) ? tailwindConfigPath 
                    : fs.existsSync(tailwindConfigTsPath) ? tailwindConfigTsPath 
                    : null;
     
@@ -570,7 +570,7 @@ export class DesignTokenExtractor {
   private sanitizeFigmaName(name: string): string {
     return name
       .toLowerCase()
-      .replace(/[\/\\]/g, '-')
+      .replace(/[/\\]/g, '-')
       .replace(/\s+/g, '-')
       .replace(/[^a-z0-9-]/g, '');
   }

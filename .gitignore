@@ -33,6 +33,8 @@ Thumbs.db
 .mavis/
 .opencode/
 .qa-agent/
+.qa-eval-cache/
+.qa-history/
 
 # Temporary test scripts
 test-shell.ts

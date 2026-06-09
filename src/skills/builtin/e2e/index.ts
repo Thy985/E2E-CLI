@@ -220,7 +220,7 @@ export class E2ESkill extends BaseSkill {
       }
 
       const xpathMatch = cleaned.match(/['"`](\/\/[^'"`]+|\/[a-zA-Z][^'"`]*)['"`]/);
-      if (xpathMatch && /^\/{1,2}[a-zA-Z\[\]]/.test(xpathMatch[1])) {
+      if (xpathMatch && /^\/{1,2}[a-zA-Z[\]]/.test(xpathMatch[1])) {
         issues.push({
           selector: xpathMatch[1],
           line: index + 1,
@@ -237,8 +237,8 @@ export class E2ESkill extends BaseSkill {
         });
       }
 
-      const deepMatch = cleaned.match(/['"`]([^'"`]*[\s>+~]+[#.\[]a-zA-Z\d_-?[^'"`]*)['"`]/);
-      if (deepMatch && /[\s>+~]/.test(deepMatch[1]) && /[#.\[]/.test(deepMatch[1])) {
+      const deepMatch = cleaned.match(/['"`]([^'"`]*[\s>+~]+[#.[]a-zA-Z\d_-?[^'"`]*)['"`]/);
+      if (deepMatch && /[\s>+~]/.test(deepMatch[1]) && /[#.[]/.test(deepMatch[1])) {
         issues.push({
           selector: deepMatch[1],
           line: index + 1,

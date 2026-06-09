@@ -352,7 +352,7 @@ export class VerifyEngine {
     const closers = new Set([')', ']', '}']);
 
     // Remove strings and comments to avoid false positives
-    let cleaned = code
+    const cleaned = code
       .replace(/\/\/.*$/gm, '')
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/`(?:[^`\\]|\\.)*`/g, '""')

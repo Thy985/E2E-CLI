@@ -118,7 +118,7 @@ export class SEOFixGenerator {
   private fixMissingTwitterCard(filePath: string, diagnosis: Diagnosis): Fix {
     const content = fs.readFileSync(filePath, 'utf-8');
     const titleMatch = content.match(/<title>([^<]*)<\/title>/i);
-    const descMatch = content.match(/<meta[^>]*name\s*=\s*["']description["'][^>]*content\s*=\s*["']([^"']*)["\']/i);
+    const descMatch = content.match(/<meta[^>]*name\s*=\s*["']description["'][^>]*content\s*=\s*["']([^"']*)["']/i);
     
     const title = titleMatch ? titleMatch[1].trim() : 'Page Title';
     const desc = descMatch ? descMatch[1].trim() : 'Page description';
@@ -250,11 +250,11 @@ export class SEOFixGenerator {
         return titleMatch ? titleMatch[1].trim() : defaults.title;
       }
       case 'description': {
-        const descMatch = content.match(/<meta[^>]*name\s*=\s*["']description["'][^>]*content\s*=\s*["']([^"']*)["\']/i);
+        const descMatch = content.match(/<meta[^>]*name\s*=\s*["']description["'][^>]*content\s*=\s*["']([^"']*)["']/i);
         return descMatch ? descMatch[1].trim() : defaults.description;
       }
       case 'url': {
-        const canonicalMatch = content.match(/<link[^>]*rel\s*=\s*["']canonical["\'][^>]*href\s*=\s*["']([^"']*)["\']/i);
+        const canonicalMatch = content.match(/<link[^>]*rel\s*=\s*["']canonical["'][^>]*href\s*=\s*["']([^"']*)["']/i);
         return canonicalMatch ? canonicalMatch[1].trim() : defaults.url;
       }
       default:

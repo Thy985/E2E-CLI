@@ -16,6 +16,7 @@ export const nuxtGoldenCases: GoldenTestCase[] = [
     id: 'nuxt-001',
     difficulty: 'easy',
     skill: 'nuxt',
+    tags: ['image', 'optimization'],
     input: {
       filePath: 'pages/gallery.vue',
       stack: ['vue', 'typescript'],
@@ -46,6 +47,7 @@ export const nuxtGoldenCases: GoldenTestCase[] = [
     id: 'nuxt-002',
     difficulty: 'easy',
     skill: 'nuxt',
+    tags: ['navigation', 'routing'],
     input: {
       filePath: 'pages/navigation.vue',
       stack: ['vue', 'typescript'],
@@ -73,6 +75,7 @@ export const nuxtGoldenCases: GoldenTestCase[] = [
     id: 'nuxt-003',
     difficulty: 'medium',
     skill: 'nuxt',
+    tags: ['ssr', 'dom-access'],
     input: {
       filePath: 'pages/dashboard.vue',
       stack: ['vue', 'typescript'],
@@ -113,6 +116,7 @@ onMounted(() => {
     id: 'nuxt-004',
     difficulty: 'hard',
     skill: 'nuxt',
+    tags: ['security', 'config'],
     input: {
       filePath: 'pages/admin.vue',
       stack: ['vue', 'typescript'],
@@ -153,6 +157,7 @@ const fetchData = async () => {
     id: 'nuxt-005',
     difficulty: 'medium',
     skill: 'nuxt',
+    tags: ['ssr', 'data-fetching'],
     input: {
       filePath: 'pages/users.vue',
       stack: ['vue', 'typescript'],
@@ -192,6 +197,7 @@ onMounted(async () => {
     id: 'nuxt-006',
     difficulty: 'easy',
     skill: 'nuxt',
+    tags: ['seo', 'meta'],
     input: {
       filePath: 'pages/blog.vue',
       stack: ['vue', 'typescript'],
@@ -221,6 +227,7 @@ onMounted(async () => {
     id: 'nuxt-007',
     difficulty: 'medium',
     skill: 'nuxt',
+    tags: ['config', 'env'],
     input: {
       filePath: 'pages/settings.vue',
       stack: ['vue', 'typescript'],
@@ -255,6 +262,7 @@ const saveSettings = async () => {
     id: 'nuxt-008',
     difficulty: 'easy',
     skill: 'nuxt',
+    tags: ['error-handling'],
     input: {
       filePath: 'pages/checkout.vue',
       stack: ['vue', 'typescript'],
@@ -288,6 +296,7 @@ const saveSettings = async () => {
     id: 'nuxt-009',
     difficulty: 'easy',
     skill: 'nuxt',
+    tags: ['clean', 'best-practices'],
     input: {
       filePath: 'pages/profile.vue',
       stack: ['vue', 'typescript'],
@@ -326,6 +335,7 @@ const user = { name: 'John Doe' };
     id: 'nuxt-010',
     difficulty: 'hard',
     skill: 'nuxt',
+    tags: ['multiple-issues', 'comprehensive'],
     input: {
       filePath: 'pages/store.vue',
       stack: ['vue', 'typescript'],

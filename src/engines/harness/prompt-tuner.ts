@@ -452,6 +452,25 @@ export class PromptTuner {
   }
 
   /**
+   * Resolve the directory used to store tuned-prompt config.
+   * Priority: constructor-injected historyDir → <historyDir>/.qa-history
+   *           env QA_HISTORY_DIR → 直接作为目录
+   *           cwd + .qa-history（兜底）
+   */
+  private resolveHistoryDir(): string {
+    if (this.historyDir) {
+      return path.join(this.historyDir, '.qa-history');
+    }
+    const overrideDir = process.env.QA_HISTORY_DIR;
+    if (overrideDir) {
+      return path.isAbsolute(overrideDir)
+        ? overrideDir
+        : path.join(process.cwd(), overrideDir);
+    }
+    return path.join(process.cwd(), '.qa-history');
+  }
+
+  /**
    * Save tuned prompts configuration to a file.
    *
    * @param results - Array of tuning results
@@ -462,8 +481,7 @@ export class PromptTuner {
     outputPath?: string,
   ): string {
     const filePath = outputPath || path.join(
-      process.cwd(),
-      '.qa-history',
+      this.resolveHistoryDir(),
       DEFAULT_PROMPT_CONFIG_FILE,
     );
 
@@ -499,8 +517,7 @@ export class PromptTuner {
    */
   loadTunedConfig(configPath?: string): Record<string, string> {
     const filePath = configPath || path.join(
-      process.cwd(),
-      '.qa-history',
+      this.resolveHistoryDir(),
       DEFAULT_PROMPT_CONFIG_FILE,
     );
 

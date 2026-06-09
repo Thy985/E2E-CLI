@@ -97,9 +97,10 @@ describe('evaluateDiagnosis', () => {
       { id: 'd2', severity: 'info', title: '', description: '', ruleId: 'extra-rule', metadata: { ruleId: 'extra-rule' }, location: { file: 'test.html' } },
     ]);
 
-    // extra-rule is in falsePositives, so it should NOT count as a new FP
-    // But it IS defined in falsePositives, so it counts as fpFromDefined
-    expect(result.falsePositives).toBe(1); // 1 from falsePositives
+    // extra-rule is in falsePositives (whitelist of known mis-fires), so it should NOT count as a FP
+    expect(result.falsePositives).toBe(0); // falsePositives whitelist excludes the rule from FP counting
+    // precision should be 1.0 (perfect) because extra-rule is whitelisted
+    expect(result.precision).toBe(1);
   });
 
   it('handles empty diagnosis (all missed)', () => {

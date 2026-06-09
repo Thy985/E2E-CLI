@@ -61,7 +61,7 @@ export class PerformanceChecker {
       // 检查同步 script 标签
       if (/<script[^>]*src[^>]*>/.test(line) && 
           !/async|defer/.test(line) &&
-          !/<script[^>]*type\s*=\s*["\']module["\']/.test(line)) {
+          !/<script[^>]*type\s*=\s*["']module["']/.test(line)) {
         issues.push({
           id: `perf-blocking-script-${file}-${index}`,
           skill: 'best-practices',
@@ -80,7 +80,7 @@ export class PerformanceChecker {
       }
 
       // 检查 CSS 在 body 中
-      if (/<link[^>]*rel\s*=\s*["\']stylesheet["\'][^>]*>/.test(line)) {
+      if (/<link[^>]*rel\s*=\s*["']stylesheet["'][^>]*>/.test(line)) {
         const bodyIndex = content.substring(0, content.indexOf(line)).lastIndexOf('<body');
         if (bodyIndex !== -1) {
           issues.push({

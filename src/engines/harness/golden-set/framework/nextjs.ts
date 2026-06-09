@@ -358,6 +358,7 @@ export default function ProfilePage() {
     expectedDiagnosis: {
       issueCount: 0,
       issueTypes: [],
+      falsePositives: ['next-config-missing', 'next-error-missing', 'next-metadata-missing'],
     },
     expectedFix: {
       codePattern: '',

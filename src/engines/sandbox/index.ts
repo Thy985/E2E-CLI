@@ -12,6 +12,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import * as net from 'net';
 import { spawn, ChildProcess } from 'child_process';
 import { Fix } from '../../types';
 import { replaceInFile, insertInFile, copyDir, removeDir } from '../../utils/file-ops';
@@ -54,7 +55,15 @@ export class SandboxManager {
   private puppeteer: Puppeteer | null = null;
 
   constructor() {
-    this.tempDir = path.join(process.cwd(), '.qa-agent', 'sandbox');
+    // 允许通过环境变量自定义临时目录，避免污染仓库根目录
+    const overrideDir = process.env.QA_SANDBOX_DIR;
+    if (overrideDir) {
+      this.tempDir = path.isAbsolute(overrideDir)
+        ? overrideDir
+        : path.join(process.cwd(), overrideDir);
+    } else {
+      this.tempDir = path.join(process.cwd(), '.qa-agent', 'sandbox');
+    }
     this.ensureTempDir();
   }
 
@@ -475,7 +484,7 @@ export class SandboxManager {
    */
   private async isPortInUse(port: number): Promise<boolean> {
     return new Promise((resolve) => {
-      const server = require('net').createServer();
+      const server = net.createServer();
       server.unref();
       server.on('error', () => resolve(true));
       server.listen(port, '127.0.0.1', () => {

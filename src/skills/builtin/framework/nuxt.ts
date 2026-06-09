@@ -14,7 +14,7 @@ import {
   SkillCapability,
 } from '../../../types';
 import { generateId } from '../../../utils';
-import { parseVueFile, parseFile, walkAST } from '../../../utils/ast-analyzer';
+import { parseVueFile, parseFile, walkAST, findVElements } from '../../../utils/ast-analyzer';
 import * as path from 'path';
 import { AST_NODE_TYPES } from '@typescript-eslint/typescript-estree';
 import type { TSESTree } from '@typescript-eslint/typescript-estree';
@@ -322,6 +322,18 @@ export class NuxtSkill extends BaseSkill {
         metadata: { ruleId: 'nuxt-ssr-misuse', fixable: false },
       });
     }
+
+    // Check for client-side secrets in Vue script
+    if (vueAst.scriptAST) {
+      const astFile = {
+        ast: vueAst.scriptAST,
+        lines: vueAst.lines,
+        source: content,
+        filePath: fullFilePath,
+      };
+      this.detectClientSecrets(astFile as any, fullFilePath, diagnoses);
+      this.detectHardcodedUrls(astFile as any, fullFilePath, diagnoses);
+    }
   }
 
   private async analyzeScriptFile(
@@ -359,7 +371,6 @@ export class NuxtSkill extends BaseSkill {
 
     if (!vueAst || !vueAst.templateBody) return results;
 
-    const { findVElements } = require('../../../utils/ast-analyzer');
     const elements = findVElements(vueAst.templateBody);
 
     for (const el of elements) {
@@ -396,7 +407,6 @@ export class NuxtSkill extends BaseSkill {
 
     if (!vueAst || !vueAst.templateBody) return results;
 
-    const { findVElements } = require('../../../utils/ast-analyzer');
     const elements = findVElements(vueAst.templateBody);
 
     for (const el of elements) {
@@ -451,6 +461,7 @@ export class NuxtSkill extends BaseSkill {
     if (!vueAst || !vueAst.scriptAST) return results;
 
     walkAST(vueAst.scriptAST, (node) => {
+      // document.querySelector(), document.getElementById(), etc.
       if (
         node.type === AST_NODE_TYPES.CallExpression &&
         node.callee.type === AST_NODE_TYPES.MemberExpression &&
@@ -472,6 +483,29 @@ export class NuxtSkill extends BaseSkill {
           message: `直接使用 document.${node.callee.property.name}() 违反 Vue/Nuxt 数据驱动理念，建议使用 ref 或 useTemplateRef`,
           snippet: vueAst.lines[loc!.start.line - 1]?.trim() ?? '',
         });
+        return;
+      }
+
+      // document.xxx = ... (direct DOM mutation) or document.title access
+      if (
+        node.type === AST_NODE_TYPES.MemberExpression &&
+        node.object.type === AST_NODE_TYPES.Identifier &&
+        node.object.name === 'document'
+      ) {
+        // Skip if this is the right-hand side of a call expression we already handled
+        if (
+          node.parent?.type === AST_NODE_TYPES.CallExpression &&
+          (node.parent as TSESTree.CallExpression).callee === node
+        ) {
+          return;
+        }
+        const loc = node.loc;
+        results.push({
+          line: loc?.start.line ?? 0,
+          column: loc?.start.column ?? 0,
+          message: `直接访问 document.${(node.property as TSESTree.Identifier).name} 违反 SSR 安全实践。建议使用 useHead() 或 template ref。`,
+          snippet: vueAst.lines[loc!.start.line - 1]?.trim() ?? '',
+        });
       }
     });
 
@@ -488,7 +522,50 @@ export class NuxtSkill extends BaseSkill {
 
     this._detectBrowserApiAccess(vueAst.scriptAST, vueAst.lines, results);
 
+    // Detect anti-pattern: fetch/axios inside onMounted (should use useFetch for SSR)
+    this._detectFetchInOnMounted(vueAst.scriptAST, vueAst.lines, results);
+
     return results;
+  }
+
+  /** Detect fetch/axios inside onMounted — anti-pattern in Nuxt SSR apps */
+  private _detectFetchInOnMounted(
+    ast: TSESTree.Program,
+    lines: string[],
+    results: Array<{ line: number; column: number; message: string; snippet: string }>,
+  ): void {
+    walkAST(ast, (node) => {
+      if (
+        node.type === AST_NODE_TYPES.CallExpression &&
+        node.callee.type === AST_NODE_TYPES.Identifier &&
+        node.callee.name === 'onMounted'
+      ) {
+        // onMounted found — check if its callback body contains fetch/axios/XMLHttpRequest
+        if (node.arguments.length > 0) {
+          const cb = node.arguments[0];
+          let hasFetch = false;
+          let fetchLine = 0;
+          walkAST(cb, (inner) => {
+            if (
+              inner.type === AST_NODE_TYPES.CallExpression &&
+              inner.callee.type === AST_NODE_TYPES.Identifier &&
+              (inner.callee.name === 'fetch' || inner.callee.name === 'axios')
+            ) {
+              hasFetch = true;
+              fetchLine = inner.loc?.start.line ?? 0;
+            }
+          });
+          if (hasFetch) {
+            results.push({
+              line: fetchLine,
+              column: 0,
+              message: '在 onMounted 中调用 fetch 绕过 SSR 数据获取。建议使用 useFetch / useAsyncData 在服务端获取数据以提升首屏性能。',
+              snippet: lines[fetchLine - 1]?.trim() ?? '',
+            });
+          }
+        }
+      }
+    });
   }
 
   /** Detect window/document usage without process.client guard in standalone script files */
