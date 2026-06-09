@@ -14,7 +14,6 @@ import { BaseSkill } from '../../base-skill';
 import {
   SkillContext,
   Diagnosis,
-  Severity,
   Fix,
 } from '../../../types';
 import { SEOFixGenerator } from './fixers/seo-fix-generator';
@@ -103,7 +102,7 @@ export class SEOSkill extends BaseSkill {
     const issues: Diagnosis[] = [];
 
     // 检查 description
-    if (!/<meta[^>]*name\s*=\s*["\']description["\'][^>]*>/i.test(content)) {
+    if (!/<meta[^>]*name\s*=\s*["']description["'][^>]*>/i.test(content)) {
       issues.push({
         id: `seo-description-${file}`,
         skill: 'seo',
@@ -121,7 +120,7 @@ export class SEOSkill extends BaseSkill {
     }
 
     // 检查 keywords（虽然现代 SEO 不太重视，但仍建议有）
-    if (!/<meta[^>]*name\s*=\s*["\']keywords["\'][^>]*>/i.test(content)) {
+    if (!/<meta[^>]*name\s*=\s*["']keywords["'][^>]*>/i.test(content)) {
       issues.push({
         id: `seo-keywords-${file}`,
         skill: 'seo',
@@ -141,7 +140,7 @@ export class SEOSkill extends BaseSkill {
     // 检查 Open Graph 标签
     const ogTags = ['og:title', 'og:description', 'og:image', 'og:url'];
     for (const tag of ogTags) {
-      if (!new RegExp(`<meta[^>]*property\s*=\s*["\']${tag}["\']`, 'i').test(content)) {
+      if (!new RegExp(`<meta[^>]*propertys*=s*["']${tag}["']`, 'i').test(content)) {
         issues.push({
           id: `seo-og-${tag}-${file}`,
           skill: 'seo',
@@ -160,7 +159,7 @@ export class SEOSkill extends BaseSkill {
     }
 
     // 检查 Twitter Card 标签
-    if (!/<meta[^>]*name\s*=\s*["\']twitter:card["\'][^>]*>/i.test(content)) {
+    if (!/<meta[^>]*name\s*=\s*["']twitter:card["'][^>]*>/i.test(content)) {
       issues.push({
         id: `seo-twitter-card-${file}`,
         skill: 'seo',
@@ -178,7 +177,7 @@ export class SEOSkill extends BaseSkill {
     }
 
     // 检查 canonical 链接
-    if (!/<link[^>]*rel\s*=\s*["\']canonical["\'][^>]*>/i.test(content)) {
+    if (!/<link[^>]*rel\s*=\s*["']canonical["'][^>]*>/i.test(content)) {
       issues.push({
         id: `seo-canonical-${file}`,
         skill: 'seo',
@@ -196,7 +195,7 @@ export class SEOSkill extends BaseSkill {
     }
 
     // 检查 robots meta
-    if (!/<meta[^>]*name\s*=\s*["\']robots["\'][^>]*>/i.test(content)) {
+    if (!/<meta[^>]*name\s*=\s*["']robots["'][^>]*>/i.test(content)) {
       issues.push({
         id: `seo-robots-${file}`,
         skill: 'seo',
@@ -220,7 +219,7 @@ export class SEOSkill extends BaseSkill {
     const issues: Diagnosis[] = [];
 
     // 检查是否有结构化数据
-    if (!/<script[^>]*type\s*=\s*["\']application\/ld\+json["\'][^>]*>/i.test(content)) {
+    if (!/<script[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>/i.test(content)) {
       issues.push({
         id: `seo-structured-data-${file}`,
         skill: 'seo',
@@ -246,11 +245,13 @@ export class SEOSkill extends BaseSkill {
 
     lines.forEach((line, index) => {
       // 检查外部链接是否有 rel="noopener noreferrer"
-      const externalLinkRegex = /<a[^>]*href\s*=\s*["\']https?:\/\/[^"\']+["\'][^>]*>/gi;
+      const externalLinkRegex = /<a[^>]*href\s*=\s*["']https?:\/\/[^"']+["'][^>]*>/gi;
       let match;
+      const externalLinks: number[] = [];
       while ((match = externalLinkRegex.exec(line)) !== null) {
         const linkTag = match[0];
-        if (!/rel\s*=\s*["\'][^"\']*noopener/.test(linkTag)) {
+        externalLinks.push(match.index);
+        if (!/rel\s*=\s*["'][^"']*noopener/.test(linkTag)) {
           issues.push({
             id: `seo-external-link-${file}-${index}`,
             skill: 'seo',
@@ -259,7 +260,7 @@ export class SEOSkill extends BaseSkill {
             title: 'External link missing rel="noopener"',
             description: 'External links should use rel="noopener noreferrer" for security and performance',
             location: { file, line: index + 1, column: match.index + 1 },
-            evidence: { type: 'code', content: line.trim()  },
+            evidence: { type: 'code', content: line.trim() },
             metadata: {
               category: 'seo',
               type: 'external-link-security',
@@ -269,8 +270,8 @@ export class SEOSkill extends BaseSkill {
         }
       }
 
-      // 检查是否有空链接
-      const emptyLinkRegex = /<a[^>]*href\s*=\s*["\']#?["\'][^>]*>/gi;
+      // 检查是否有空链接 (exclude external links and already-flagged ones)
+      const emptyLinkRegex = /<a[^>]*href\s*=\s*["']#["'][^>]*>/gi;
       while ((match = emptyLinkRegex.exec(line)) !== null) {
         issues.push({
           id: `seo-empty-link-${file}-${index}`,
@@ -280,7 +281,7 @@ export class SEOSkill extends BaseSkill {
           title: 'Empty or placeholder link',
           description: 'Links should have meaningful destinations',
           location: { file, line: index + 1, column: match.index + 1 },
-          evidence: { type: 'code', content: line.trim()  },
+          evidence: { type: 'code', content: line.trim() },
           metadata: {
             category: 'seo',
             type: 'empty-link',
@@ -319,7 +320,7 @@ export class SEOSkill extends BaseSkill {
     }
 
     // 检查描述长度
-    const descMatch = content.match(/<meta[^>]*name\s*=\s*["\']description["\'][^>]*content\s*=\s*["\']([^"\']*)["\'][^>]*>/i);
+    const descMatch = content.match(/<meta[^>]*name\s*=\s*["']description["'][^>]*content\s*=\s*["']([^"']*)["'][^>]*>/i);
     if (descMatch) {
       const descLength = descMatch[1].length;
       if (descLength < 50 || descLength > 160) {
@@ -373,7 +374,7 @@ export class SEOSkill extends BaseSkill {
         const imgTag = match[0];
         
         // 检查文件名是否描述性
-        const srcMatch = imgTag.match(/src\s*=\s*["\']([^"\']+)["\']/i);
+        const srcMatch = imgTag.match(/src\s*=\s*["']([^"']+)["']/i);
         if (srcMatch) {
           const filename = srcMatch[1].split('/').pop() || '';
           if (/^\d+\.(jpg|png|gif)$/i.test(filename) || /^(image|photo|pic|img)\d*\./i.test(filename)) {
@@ -402,9 +403,78 @@ export class SEOSkill extends BaseSkill {
 
   private checkURLStructure(content: string, file: string): Diagnosis[] {
     const issues: Diagnosis[] = [];
+    const lines = content.split('\n');
 
-    // 检查是否有重复内容（多个 URL 指向相同内容）
-    // 这需要分析整个站点的链接结构，简化处理
+    lines.forEach((line, index) => {
+      // Find all href attributes in <a> tags
+      const hrefRegex = /href\s*=\s*["']([^"']+)["']/gi;
+      let match;
+      while ((match = hrefRegex.exec(line)) !== null) {
+        const href = match[1];
+
+        // 1. Check for excessively long URLs (>100 chars)
+        if (href.length > 100) {
+          issues.push({
+            id: `seo-long-url-${file}-${index}`,
+            skill: 'seo',
+            type: 'seo',
+            severity: 'warning',
+            title: 'Excessively long URL detected',
+            description: `URL is ${href.length} characters long. Long URLs may be suspicious to search engines and hard to read.`,
+            location: { file, line: index + 1, column: match.index + 1 },
+            evidence: { type: 'code', content: href },
+            metadata: {
+              category: 'seo',
+              type: 'long-url',
+              suggestion: 'Consider using a shorter, more descriptive URL path',
+            },
+          });
+        }
+
+        // 2. Check for query parameters in internal links (non-external links with ?)
+        if (!href.startsWith('http://') && !href.startsWith('https://') && !href.startsWith('//') && href.includes('?')) {
+          issues.push({
+            id: `seo-query-param-${file}-${index}`,
+            skill: 'seo',
+            type: 'seo',
+            severity: 'info',
+            title: 'Query parameters in internal link',
+            description: 'Internal links should use clean URLs instead of query parameters for better SEO',
+            location: { file, line: index + 1, column: match.index + 1 },
+            evidence: { type: 'code', content: href },
+            metadata: {
+              category: 'seo',
+              type: 'query-params',
+              suggestion: 'Convert to clean URL path (e.g., /page/1 instead of /page?id=1)',
+            },
+          });
+        }
+
+        // 3. Check for broken relative paths that go above root
+        // Count consecutive ../ at the start of the path
+        if (href.startsWith('./') || href.startsWith('../')) {
+          const segments = href.split('/').filter(s => s === '..');
+          // If there are more than 3 ../, it's likely going above the root
+          if (segments.length > 3) {
+            issues.push({
+              id: `seo-broken-relative-${file}-${index}`,
+              skill: 'seo',
+              type: 'seo',
+              severity: 'critical',
+            title: 'Broken relative path detected',
+              description: `Relative path "${href}" goes too many levels up (${segments.length} ../). This may break if the directory structure changes.`,
+              location: { file, line: index + 1, column: match.index + 1 },
+              evidence: { type: 'code', content: href },
+              metadata: {
+                category: 'seo',
+                type: 'broken-relative-path',
+                suggestion: 'Use absolute paths from root or reduce the number of ../ segments',
+              },
+            });
+          }
+        }
+      }
+    });
 
     return issues;
   }

@@ -3,7 +3,7 @@
  * Provides LLM integration for multiple providers
  */
 
-import { ModelClient, ModelMessage } from '../types';
+import { ModelClient, ModelMessage, ModelResponse } from '../types';
 
 export type ModelProvider = 'deepseek' | 'openai' | 'claude' | 'siliconflow' | 'groq' | 'minimax';
 
@@ -74,15 +74,15 @@ export function createModelClient(config?: Partial<ModelConfig>): ModelClient {
 
   // If no API key, return mock client for MVP functionality
   if (!apiKey) {
-    console.warn('No API key provided. Using mock model client. Set MODEL_API_KEY for full functionality.');
     return createMockModelClient();
   }
 
   return {
-    async chat(messages: ModelMessage[]): Promise<string> {
+    async chat(messages: ModelMessage[]): Promise<ModelResponse> {
       // Claude 用独立 API 路径
       if (provider === 'claude') {
-        return chatWithClaude(apiKey, messages, model);
+        const result = await chatWithClaude(apiKey, messages, model);
+        return { content: result };
       }
 
       const endpoint = `${baseUrl}/chat/completions`;
@@ -109,7 +109,7 @@ export function createModelClient(config?: Partial<ModelConfig>): ModelClient {
         }
 
         const data = await response.json() as { choices: Array<{ message: { content: string } }> };
-        return data.choices[0]?.message?.content || '';
+        return { content: data.choices[0]?.message?.content || '' };
       } catch (error) {
         console.error(`Model API call failed (${provider}):`, error);
         throw error;
@@ -260,13 +260,54 @@ export function getSupportedProviders(): string[] {
  *   在 mock 下结果都是垃圾。上生产前请务必配置真实 API key。
  */
 export function createMockModelClient(): ModelClient {
+  console.warn(
+    '[qa-agent] Using mock model client — no MODEL_API_KEY is configured. ' +
+    'AI responses are simulated. Set MODEL_API_KEY for real AI capabilities.'
+  );
+
   return {
-    async chat(messages: ModelMessage[]): Promise<string> {
+    isMock: true,
+
+    async chat(messages: ModelMessage[]): Promise<ModelResponse> {
       const lastMessage = messages[messages.length - 1];
-      if (lastMessage?.content.includes('fix')) {
-        return '【MOCK】建议检查代码中的问题并进行修复。配置 MODEL_API_KEY 启用真实 AI 能力。';
+      const content = lastMessage?.content?.toLowerCase() || '';
+
+      // Generate context-aware responses based on the input
+      if (/fix|repair|bug|error|issue/.test(content)) {
+        return {
+          content: '【MOCK】建议检查代码中的以下问题：1. 类型不一致（如接口返回 Promise<string> 但实现返回 string）；2. 缺少错误处理；3. 硬编码的值应提取为常量。请配置 MODEL_API_KEY 启用真实 AI 能力。',
+        };
       }
-      return '【MOCK】这是一个占位响应。请配置 MODEL_API_KEY 环境变量以启用完整的 AI 功能。';
+      if (/test|unit|integration|e2e|coverage/.test(content)) {
+        return {
+          content: '【MOCK】建议为关键路径补充测试用例：1. 边界条件测试；2. 错误处理分支；3. 核心业务逻辑。请配置 MODEL_API_KEY 启用真实 AI 能力。',
+        };
+      }
+      if (/performance|slow|optimize|bottleneck/.test(content)) {
+        return {
+          content: '【MOCK】性能优化建议：1. 减少不必要的网络请求；2. 使用缓存策略；3. 优化渲染性能（如 React.memo、useMemo）。请配置 MODEL_API_KEY 启用真实 AI 能力。',
+        };
+      }
+      if (/accessibility|a11y|aria|screen.*reader/.test(content)) {
+        return {
+          content: '【MOCK】无障碍建议：1. 确保所有交互元素有正确的 aria 属性；2. 图片提供 alt 文本；3. 键盘导航支持。请配置 MODEL_API_KEY 启用真实 AI 能力。',
+        };
+      }
+      if (/security|vulnerability|xss|csrf/.test(content)) {
+        return {
+          content: '【MOCK】安全检查清单：1. 用户输入必须转义；2. 使用 HTTPS 传输敏感数据；3. 避免在内联脚本中使用敏感信息。请配置 MODEL_API_KEY 启用真实 AI 能力。',
+        };
+      }
+      if (/hello|hi|hey|你好/.test(content)) {
+        return {
+          content: '【MOCK】你好！我是 QA-Agent 的模拟 AI 助手。请配置 MODEL_API_KEY 环境变量以启用完整的 AI 诊断能力。',
+        };
+      }
+
+      // Default response that echoes context
+      return {
+        content: `【MOCK】收到你的请求："${lastMessage?.content?.slice(0, 50)}${(lastMessage?.content?.length || 0) > 50 ? '...' : ''}"。当前使用的是模拟 AI 客户端，回复是占位文本。请配置 MODEL_API_KEY 环境变量以启用完整的 AI 功能。`,
+      };
     },
 
     async embed(_text: string): Promise<number[]> {

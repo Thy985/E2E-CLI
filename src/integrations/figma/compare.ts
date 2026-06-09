@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { FigmaClient } from './client';
 import { DesignTokens } from '../../skills/builtin/uiux/design-token-extractor';
+import { readPNG, writePNG, loadPixelmatch } from '../../utils/image';
 
 export interface ComparisonResult {
   matches: ComparisonItem[];
@@ -37,7 +38,7 @@ export class FigmaCompare {
   async compareTokens(
     fileKey: string,
     codeTokens: DesignTokens,
-    projectPath: string
+    _projectPath: string
   ): Promise<ComparisonResult> {
     const figmaTokens = await this.client.extractDesignTokens(fileKey);
     const result: ComparisonResult = {
@@ -92,7 +93,7 @@ export class FigmaCompare {
       const codeValue = codeValues[key];
 
       if (codeValue === undefined) {
-        // Figma 中有，代码中没有
+        // Figma 有，代码中没有
         result.missing.push({
           name: `${category}/${key}`,
           figmaValue,
@@ -138,15 +139,60 @@ export class FigmaCompare {
     // 导出 Figma 设计稿截图
     const figmaImageUrl = await this.client.exportImage(fileKey, nodeId, 'png');
 
+    // Ensure output directory exists
+    const outputDir = path.join(process.cwd(), '.qa-agent');
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+
     // 下载 Figma 截图
-    const figmaImagePath = path.join(process.cwd(), '.qa-agent', 'figma-screenshot.png');
+    const figmaImagePath = path.join(outputDir, 'figma-screenshot.png');
     await this.downloadImage(figmaImageUrl, figmaImagePath);
 
-    // 对比两张图片
-    // TODO: 使用 pixelmatch 进行对比
+    // Try to load pixelmatch
+    const pixelmatch = await loadPixelmatch();
+    if (!pixelmatch) {
+      console.warn('[FigmaCompare] pixelmatch not available; similarity returns 0');
+      return { similarity: 0, diffImagePath: undefined };
+    }
+
+    // Read and decode PNG files
+    const figmaData = await readPNG(figmaImagePath);
+    const codeData = await readPNG(screenshotPath);
+
+    if (!figmaData || !codeData) {
+      console.warn('[FigmaCompare] Could not decode screenshots for comparison');
+      return { similarity: 0, diffImagePath: undefined };
+    }
+
+    // Check dimensions
+    if (figmaData.width !== codeData.width || figmaData.height !== codeData.height) {
+      console.warn('[FigmaCompare] Screenshot dimensions differ; cannot compute pixel similarity');
+      return { similarity: 0, diffImagePath: undefined };
+    }
+
+    const { width, height } = figmaData;
+    const totalPixels = width * height;
+    const outputBuffer = Buffer.alloc(totalPixels * 4);
+
+    const mismatchedPixels = pixelmatch(
+      figmaData.data,
+      codeData.data,
+      outputBuffer,
+      width,
+      height,
+      { threshold: 0.1 }
+    );
+
+    // Write diff image
+    const diffImagePath = path.join(outputDir, 'figma-diff.png');
+    await writePNG(diffImagePath, outputBuffer, width, height);
+
+    const similarity = ((totalPixels - mismatchedPixels) / totalPixels) * 100;
+
     return {
-      similarity: 0,
-      diffImagePath: undefined,
+      similarity: Math.round(similarity * 100) / 100,
+      diffImagePath,
     };
   }
 

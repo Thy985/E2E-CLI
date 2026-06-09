@@ -37,10 +37,10 @@ export class CSSFixGenerator {
   private fixAtImport(filePath: string, diagnosis: Diagnosis): Fix {
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
-    const line = lines[(diagnosis.location.line || 1) - 1];
+    const _line = lines[(diagnosis.location.line || 1) - 1];
     
     // 鎻愬彇 URL
-    const urlMatch = line.match(/@import\s+url\(['"]?([^'"]+)['"]?\)/i);
+    const urlMatch = _line.match(/@import\s+url\(['"]?([^'"]+)['"]?\)/i);
     const url = urlMatch ? urlMatch[1] : '';
 
     return {
@@ -61,10 +61,6 @@ export class CSSFixGenerator {
   }
 
   private fixEmptyRule(filePath: string, diagnosis: Diagnosis): Fix {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const lines = content.split('\n');
-    const line = lines[(diagnosis.location.line || 1) - 1];
-
     return {
       id: `fix-${diagnosis.id}`,
       diagnosisId: diagnosis.id,
@@ -136,10 +132,6 @@ export class CSSFixGenerator {
   }
 
   private fixUniversalSelector(filePath: string, diagnosis: Diagnosis): Fix {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const lines = content.split('\n');
-    const line = lines[(diagnosis.location.line || 1) - 1];
-
     return {
       id: `fix-${diagnosis.id}`,
       diagnosisId: diagnosis.id,

@@ -3,7 +3,6 @@
  */
 
 import { Skill, SkillContext, Diagnosis } from '../types';
-import { BaseSkill } from './base-skill';
 import { Logger } from '../utils/logger';
 
 export interface SkillInfo {

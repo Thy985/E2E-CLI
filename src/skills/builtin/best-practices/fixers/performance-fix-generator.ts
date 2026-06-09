@@ -128,7 +128,7 @@ export class PerformanceFixGenerator {
     const fixedLines = [
       `// Cache DOM element outside loop`,
       `const ${cacheVar} = ${domOperation};`,
-      ...lines.slice(startLine, endLine + 1).map(l => 
+      ...lines.slice(startLine, endLine + 1).map((l: string) => 
         l.replace(domOperation, cacheVar)
       ),
     ];

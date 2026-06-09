@@ -8,13 +8,10 @@
  * 4. 性能优化
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
 import { BaseSkill } from '../../base-skill';
 import {
   SkillContext,
   Diagnosis,
-  Severity,
   Fix,
 } from '../../../types';
 import { HTMLChecker } from './checkers/html-checker';
@@ -73,7 +70,7 @@ export class BestPracticesSkill extends BaseSkill {
 
   async diagnose(context: SkillContext): Promise<Diagnosis[]> {
     const issues: Diagnosis[] = [];
-    const { project, config } = context;
+    const { project } = context;
 
     // HTML 语义化检查
     context.logger.info('Checking HTML semantics...');
@@ -117,9 +114,21 @@ export class BestPracticesSkill extends BaseSkill {
       
       default:
         // 规则引擎无法修复，尝试 AI 修复
-        const aiFix = await this.aiFixEngine?.generateFix(diagnosis, context);
-        if (aiFix) {
-          return aiFix;
+        try {
+          const aiFix = await this.aiFixEngine?.generateFix(diagnosis, context);
+          if (aiFix) {
+            return aiFix;
+          }
+        } catch (error) {
+          return {
+            id: `Fix-AI-Error-${Date.now()}`,
+            diagnosisId: diagnosis.id,
+            description: `AI-assisted fix failed: ${error instanceof Error ? error.message : String(error)}`,
+            changes: [],
+            riskLevel: 'high',
+            autoApplicable: false,
+            notes: `AI fix engine encountered an error for diagnosis type: ${diagnosis.metadata?.type || 'unknown'}`,
+          };
         }
         throw new Error(`Unsupported fix category: ${diagnosis.metadata?.category}`);
     }

@@ -2,9 +2,13 @@
  * Batch Fix Engine - Clean Implementation
  */
 
-import { Diagnosis, Fix, SkillContext } from '../../types';
+import { Diagnosis, Fix, Skill, SkillContext } from '../../types';
 import { FixEngine } from './index';
-import { createLogger, Logger } from '../../utils/logger';
+
+/** Type for dynamically imported skill modules */
+interface SkillModule {
+  default: new () => Skill;
+}
 
 export interface BatchFixOptions {
   autoApproveLowRisk: boolean;
@@ -26,7 +30,6 @@ export interface BatchFixResult {
 
 export class BatchFixEngine {
   private fixEngine: FixEngine;
-  private logger: Logger;
 
   constructor() {
     this.fixEngine = new FixEngine({
@@ -34,8 +37,8 @@ export class BatchFixEngine {
       sandboxEnabled: false,
       previewBeforeApply: false,
       verifyAfterFix: false,
+      compileCheck: false,
     });
-    this.logger = createLogger({ level: 'info' });
   }
 
   async batchFix(
@@ -116,7 +119,6 @@ export class BatchFixEngine {
     if (!issue.fixSuggestion) {
       // 检查 metadata 中是否有 type 或 category 信息
       const type = issue.metadata?.type;
-      const category = issue.metadata?.category;
       
       // 定义可自动修复的类型列表
       const autoFixableTypes = [
@@ -167,42 +169,42 @@ export class BatchFixEngine {
 
   private async generateFix(issue: Diagnosis, context: SkillContext): Promise<Fix | null> {
     try {
-      let SkillClass: any;
+      let SkillClass: (new () => Skill) | null = null;
 
       switch (issue.skill) {
         case 'best-practices': {
-          const mod = await import('../../skills/builtin/best-practices');
-          SkillClass = mod.default || (mod as any).BestPracticesSkill;
+          const mod = await import('../../skills/builtin/best-practices') as SkillModule;
+          SkillClass = mod.default;
           break;
         }
         case 'seo': {
-          const mod = await import('../../skills/builtin/seo');
-          SkillClass = mod.default || (mod as any).SEOSkill;
+          const mod = await import('../../skills/builtin/seo') as SkillModule;
+          SkillClass = mod.default;
           break;
         }
         case 'dependency': {
-          const mod = await import('../../skills/builtin/dependency');
-          SkillClass = mod.default || (mod as any).DependencySkill;
+          const mod = await import('../../skills/builtin/dependency') as SkillModule;
+          SkillClass = mod.default;
           break;
         }
         case 'a11y': {
-          const mod = await import('../../skills/builtin/a11y');
-          SkillClass = mod.default || (mod as any).A11ySkill;
+          const mod = await import('../../skills/builtin/a11y') as SkillModule;
+          SkillClass = mod.default;
           break;
         }
         case 'performance': {
-          const mod = await import('../../skills/builtin/performance');
-          SkillClass = mod.default || (mod as any).PerformanceSkill;
+          const mod = await import('../../skills/builtin/performance') as SkillModule;
+          SkillClass = mod.default;
           break;
         }
         case 'ui-ux': {
-          const mod = await import('../../skills/builtin/uiux');
-          SkillClass = mod.default || (mod as any).UIUXSkill;
+          const mod = await import('../../skills/builtin/ui-ux') as SkillModule;
+          SkillClass = mod.default;
           break;
         }
         case 'e2e': {
-          const mod = await import('../../skills/builtin/e2e');
-          SkillClass = mod.default || (mod as any).E2ESkill;
+          const mod = await import('../../skills/builtin/e2e') as SkillModule;
+          SkillClass = mod.default;
           break;
         }
         default:

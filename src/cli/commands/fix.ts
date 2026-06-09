@@ -13,6 +13,9 @@ import { UIUXSkill } from '../../skills/builtin/uiux';
 import { BestPracticesSkill } from '../../skills/builtin/best-practices';
 import { SEOSkill } from '../../skills/builtin/seo';
 import { DependencySkill } from '../../skills/builtin/dependency';
+import { createTools } from '../../tools';
+import { createModelClient } from '../../models';
+import { createStorage } from '../../storage';
 
 export const fixCommand = new Command('fix')
   .description('Fix diagnosed issues')
@@ -69,13 +72,18 @@ async function runBatchFix(options: any, config: any, logger: any) {
       project: { path: options.path, name: 'project', type: 'webapp' as const },
       config,
       logger,
-      tools: {} as any,
-      model: {} as any,
-      storage: {} as any,
+      tools: createTools(options.path),
+      model: createModelClient({
+        provider: config.model?.provider,
+        model: config.model?.model,
+        apiKey: config.model?.apiKey,
+        baseUrl: config.model?.baseUrl,
+      }),
+      storage: createStorage(),
     },
     {
-      autoApproveLowRisk: options.autoApprove.includes('low'),
-      autoApproveMediumRisk: options.autoApprove.includes('medium'),
+      autoApproveLowRisk: typeof options.autoApprove === 'string' && options.autoApprove.includes('low'),
+      autoApproveMediumRisk: typeof options.autoApprove === 'string' && options.autoApprove.includes('medium'),
       dryRun: options.dryRun,
       preview: options.preview,
       verify: options.verify,
@@ -83,7 +91,7 @@ async function runBatchFix(options: any, config: any, logger: any) {
   );
 
   // 输出结果
-  console.log('\n' + result.report);
+  logger.info('\n' + result.report);
 
   // 保存报告
   if (!options.dryRun) {
@@ -113,9 +121,14 @@ async function runSingleFix(options: any, config: any, logger: any) {
     project: { path: options.path, name: 'project', type: 'webapp' as const },
     config,
     logger,
-    tools: {} as any,
-    model: {} as any,
-    storage: {} as any,
+    tools: createTools(options.path),
+    model: createModelClient({
+      provider: config.model?.provider,
+      model: config.model?.model,
+      apiKey: config.model?.apiKey,
+      baseUrl: config.model?.baseUrl,
+    }),
+    storage: createStorage(),
   };
 
   // 根据 issue.skill 选择对应的 Skill 并调用其 fix()
@@ -130,6 +143,7 @@ async function runSingleFix(options: any, config: any, logger: any) {
     sandboxEnabled: options.preview,
     previewBeforeApply: options.preview,
     verifyAfterFix: options.verify,
+    compileCheck: true,
   });
 
   try {
@@ -193,7 +207,7 @@ async function runInteractiveFix(options: any, config: any, logger: any) {
   logger.info(`Found ${allIssues.length} issues:\n`);
   
   allIssues.forEach((issue, index) => {
-    const autoFixable = issue.severity !== 'critical' ? '[Auto-fixable]' : '[Manual]';
+    const autoFixable = issue.fixSuggestion?.autoApplicable ? '[Auto-fixable]' : '[Manual]';
     logger.info(`${index + 1}. [${issue.severity}] ${issue.title} ${autoFixable}`);
   });
 
@@ -205,13 +219,19 @@ async function runInteractiveFix(options: any, config: any, logger: any) {
 
 async function collectAllIssues(projectPath: string, config: any, logger: any): Promise<any[]> {
   const issues: any[] = [];
+
   const context = {
     project: { path: projectPath, name: 'project', type: 'webapp' as const },
     config,
     logger,
-    tools: {} as any,
-    model: {} as any,
-    storage: {} as any,
+    tools: createTools(projectPath),
+    model: createModelClient({
+      provider: config.model?.provider,
+      model: config.model?.model,
+      apiKey: config.model?.apiKey,
+      baseUrl: config.model?.baseUrl,
+    }),
+    storage: createStorage(),
   };
 
   // UI/UX
@@ -254,8 +274,38 @@ async function collectAllIssues(projectPath: string, config: any, logger: any): 
 }
 
 async function findIssueById(id: string, projectPath: string, config: any, logger: any): Promise<any | null> {
-  const allIssues = await collectAllIssues(projectPath, config, logger);
-  return allIssues.find(issue => issue.id === id) || null;
+  const skills = [
+    { skill: new UIUXSkill(), name: 'uiux' },
+    { skill: new BestPracticesSkill(), name: 'best-practices' },
+    { skill: new SEOSkill(), name: 'seo' },
+    { skill: new DependencySkill(), name: 'dependency' },
+  ];
+
+  for (const { skill } of skills) {
+    const context = {
+      project: { path: projectPath, name: 'project', type: 'webapp' as const },
+      config,
+      logger,
+      tools: createTools(projectPath),
+      model: createModelClient({
+        provider: config.model?.provider,
+        model: config.model?.model,
+        apiKey: config.model?.apiKey,
+        baseUrl: config.model?.baseUrl,
+      }),
+      storage: createStorage(),
+    };
+
+    try {
+      const issues = await skill.diagnose(context);
+      const found = issues.find(issue => issue.id === id);
+      if (found) return found;
+    } catch (e) {
+      // ignore errors and continue
+    }
+  }
+
+  return null;
 }
 
 export default fixCommand;

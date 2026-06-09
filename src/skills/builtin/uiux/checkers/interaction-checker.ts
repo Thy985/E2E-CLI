@@ -11,11 +11,11 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Diagnosis, Severity } from '../../../../types';
+import { Diagnosis } from '../../../../types';
 import { QAConfig } from '../../../../config';
 
 export class InteractionChecker {
-  async check(projectPath: string, config: QAConfig): Promise<Diagnosis[]> {
+  async check(projectPath: string, _config: QAConfig): Promise<Diagnosis[]> {
     const issues: Diagnosis[] = [];
 
     // 查找组件文件
@@ -43,7 +43,6 @@ export class InteractionChecker {
 
   private checkButtonStates(content: string, file: string): Diagnosis[] {
     const issues: Diagnosis[] = [];
-    const lines = content.split('\n');
 
     // 检查是否定义了按钮样式
     const hasButtonClass = /\.button|\.btn|button\s*{/i.test(content);

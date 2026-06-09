@@ -6,7 +6,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Diagnosis, Severity } from '../../../../types';
+import { Diagnosis } from '../../../../types';
 
 export class HTMLChecker {
   async check(projectPath: string): Promise<Diagnosis[]> {
@@ -121,8 +121,6 @@ export class HTMLChecker {
         const hasAriaLabel = /aria-label|aria-labelledby/.test(inputTag);
         // 检查是否有 id（用于 label 关联）
         const hasId = /id=/.test(inputTag);
-        // 检查是否有 placeholder（不能替代 label）
-        const hasPlaceholder = /placeholder=/.test(inputTag);
 
         if (!hasAriaLabel && !hasId) {
           issues.push({

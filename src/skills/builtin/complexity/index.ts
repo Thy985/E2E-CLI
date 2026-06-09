@@ -8,7 +8,6 @@ import {
   SkillContext,
   Diagnosis,
   Fix,
-  Severity,
   DiagnosisType,
 } from '../../../types';
 import { generateId } from '../../../utils';
@@ -114,6 +113,7 @@ export class ComplexitySkill extends BaseSkill {
   triggers = [
     { type: 'command' as const, pattern: 'complexity' },
     { type: 'keyword' as const, pattern: /复杂度|complexity|cyclomatic|cognitive/i },
+    { type: 'file' as const, pattern: /\.(ts|tsx|js|jsx)$/i },
   ];
 
   capabilities = [
@@ -159,7 +159,7 @@ export class ComplexitySkill extends BaseSkill {
   }
 
   private async getSourceFiles(
-    projectPath: string,
+    _projectPath: string,
     tools: SkillContext['tools']
   ): Promise<string[]> {
     const patterns = [
@@ -417,7 +417,7 @@ export class ComplexitySkill extends BaseSkill {
   private analyzeFunction(
     file: string,
     fn: FunctionComplexity,
-    lines: string[]
+    _lines: string[]
   ): Diagnosis[] {
     const diagnoses: Diagnosis[] = [];
 
@@ -533,7 +533,7 @@ export class ComplexitySkill extends BaseSkill {
     return diagnoses;
   }
 
-  async fix(diagnosis: Diagnosis, context: SkillContext): Promise<Fix> {
+  async fix(_diagnosis: Diagnosis, _context: SkillContext): Promise<Fix> {
     // Complexity issues generally require manual refactoring
     throw new Error('Complexity issues require manual refactoring');
   }

@@ -7,7 +7,6 @@ import { BaseSkill } from '../../base-skill';
 import {
   SkillContext,
   Diagnosis,
-  Fix,
   Severity,
   DiagnosisType,
 } from '../../../types';
@@ -18,9 +17,9 @@ const UI_UX_RULES = [
   {
     id: 'missing-label',
     patterns: [
-      /<input[^>]*(?!aria-label|id\s*=)[^>]*>/gi,
-      /<textarea[^>]*(?!aria-label|id\s*=)[^>]*>/gi,
-      /<select[^>]*(?!aria-label|id\s*=)[^>]*>/gi,
+      /<input(?![^>]*aria-label)(?![^>]*aria-labelledby)(?![^>]*(?:id)\s*=)[^>]*>/gi,
+      /<textarea(?![^>]*aria-label)(?![^>]*aria-labelledby)(?![^>]*(?:id)\s*=)[^>]*>/gi,
+      /<select(?![^>]*aria-label)(?![^>]*aria-labelledby)(?![^>]*(?:id)\s*=)[^>]*>/gi,
     ],
     severity: 'warning' as Severity,
     title: '表单元素缺少标签',
@@ -192,7 +191,7 @@ export class UIUXSkill extends BaseSkill {
     return diagnoses;
   }
 
-  private async getComponentFiles(projectPath: string, tools: SkillContext['tools']): Promise<string[]> {
+  private async getComponentFiles(_projectPath: string, tools: SkillContext['tools']): Promise<string[]> {
     const patterns = ['**/*.tsx', '**/*.jsx'];
     const files: string[] = [];
 
@@ -208,7 +207,7 @@ export class UIUXSkill extends BaseSkill {
     return [...new Set(files)];
   }
 
-  private async getStyleFiles(projectPath: string, tools: SkillContext['tools']): Promise<string[]> {
+  private async getStyleFiles(_projectPath: string, tools: SkillContext['tools']): Promise<string[]> {
     const patterns = ['**/*.css', '**/*.scss', '**/*.less'];
     const files: string[] = [];
 

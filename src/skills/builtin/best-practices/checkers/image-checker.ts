@@ -6,7 +6,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Diagnosis, Severity } from '../../../../types';
+import { Diagnosis } from '../../../../types';
 
 export class ImageChecker {
   async check(projectPath: string): Promise<Diagnosis[]> {
@@ -85,7 +85,7 @@ export class ImageChecker {
         const imgTag = match[0];
         
         // 检查是否有 loading="lazy"
-        if (!/loading\s*=\s*["\']lazy["\']/.test(imgTag)) {
+        if (!/loading\s*=\s*["']lazy["']/.test(imgTag)) {
           issues.push({
             id: `img-lazy-${file}-${index}`,
             skill: 'best-practices',
@@ -110,7 +110,7 @@ export class ImageChecker {
 
   private checkImageFormat(content: string, file: string): Diagnosis[] {
     const issues: Diagnosis[] = [];
-    const imgRegex = /<img[^>]*src\s*=\s*["\']([^"\']+)["\'][^>]*>/g;
+    const imgRegex = /<img[^>]*src\s*=\s*["']([^"']+)["'][^>]*>/g;
     const lines = content.split('\n');
 
     lines.forEach((line, index) => {
@@ -158,7 +158,7 @@ export class ImageChecker {
         // 检查是否有 srcset
         if (!/srcset=/.test(imgTag)) {
           // 检查图片是否很大（简单启发式）
-          const srcMatch = imgTag.match(/src\s*=\s*["\']([^"\']+)["\']/);
+          const srcMatch = imgTag.match(/src\s*=\s*["']([^"']+)["']/);
           if (srcMatch) {
             issues.push({
               id: `img-responsive-${file}-${index}`,

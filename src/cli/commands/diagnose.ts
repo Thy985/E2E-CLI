@@ -6,20 +6,12 @@ import { DiagnoseOptions, Diagnosis, ProjectInfo, SkillContext } from '../../typ
 import { createLogger } from '../../utils/logger';
 import { createFormatter } from '../output/formatter';
 import { createSkillRegistry } from '../../skills/registry';
-import { A11ySkill } from '../../skills/builtin/a11y';
-import { E2ESkill } from '../../skills/builtin/e2e';
-import { PerformanceSkill } from '../../skills/builtin/performance';
-import { SecuritySkill } from '../../skills/builtin/security';
-import { UIUXSkill } from '../../skills/builtin/uiux';
-import { SEOSkill } from '../../skills/builtin/seo';
-import { APISkill } from '../../skills/builtin/api';
-import { DependencySkill } from '../../skills/builtin/dependency';
-import { ComplexitySkill } from '../../skills/builtin/complexity';
+import { getAllSkillInstances } from '../../engines/skill-factory';
 import { createReportGenerator } from '../../engines/report';
-import { createModelClient } from '../../models';
+import { createModelClient, ModelProvider } from '../../models';
 import { createTools } from '../../tools';
 import { createStorage } from '../../storage';
-import { loadConfig, QAConfig, shouldIgnore } from '../../config';
+import { loadConfig, QAConfig } from '../../config';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -71,16 +63,11 @@ export async function diagnoseCommand(options: any) {
     // Initialize skill registry
     const skillRegistry = createSkillRegistry(logger);
     
-    // Register built-in skills
-    skillRegistry.register(new A11ySkill());
-    skillRegistry.register(new E2ESkill());
-    skillRegistry.register(new PerformanceSkill());
-    skillRegistry.register(new SecuritySkill());
-    skillRegistry.register(new UIUXSkill());
-    skillRegistry.register(new SEOSkill());
-    skillRegistry.register(new APISkill());
-    skillRegistry.register(new DependencySkill());
-    skillRegistry.register(new ComplexitySkill());
+    // Register all built-in skills from factory
+    const skillInstances = getAllSkillInstances();
+    for (const skill of Object.values(skillInstances)) {
+      skillRegistry.register(skill);
+    }
 
     // Filter skills (respect disabled skills from config)
     const disabledSkills = config.skills?.disabled || [];
@@ -102,13 +89,18 @@ export async function diagnoseCommand(options: any) {
     }
 
     // Create skill context with config
+    const VALID_PROVIDERS: ModelProvider[] = ['deepseek', 'openai', 'claude', 'siliconflow', 'groq', 'minimax'];
+    const provider = (config.model?.provider && VALID_PROVIDERS.includes(config.model?.provider as ModelProvider))
+      ? config.model?.provider as ModelProvider
+      : undefined;
+
     const context: SkillContext = {
       project: projectInfo,
       config: config,
       logger: logger.child('Skill'),
       tools: createTools(diagnoseOptions.path!),
       model: createModelClient({
-        provider: config.model?.provider as any,
+        provider,
         model: config.model?.model,
         apiKey: config.model?.apiKey,
         baseUrl: config.model?.baseUrl,
@@ -131,7 +123,7 @@ export async function diagnoseCommand(options: any) {
     if (!isCI) {
       formatter.succeedSpinner(`诊断完成，发现 ${allIssues.length} 个问题`);
     } else {
-      console.log(`诊断完成，发现 ${allIssues.length} 个问题`);
+      logger.info(`诊断完成，发现 ${allIssues.length} 个问题`);
     }
 
     // Generate report
@@ -170,7 +162,7 @@ export async function diagnoseCommand(options: any) {
       logger.error('诊断过程中发生错误:', error);
     } else {
       console.log('::error::诊断过程中发生错误');
-      console.error(error);
+      logger.error(String(error));
     }
     process.exit(3);
   }
@@ -233,7 +225,7 @@ async function outputReport(
   if (!options.quiet) {
     formatter.printSummary(report.summary);
     formatter.printIssues(report.issues);
-    console.log();
+    console.log('\n');
     console.log(`⏱️  耗时: ${report.duration}ms`);
   }
 

@@ -50,7 +50,7 @@ export class DependencyChecker {
     };
   }
 
-  private async checkPackageJson(projectPath: string, logger: Logger): Promise<AuditCheck> {
+  private async checkPackageJson(projectPath: string, _logger: Logger): Promise<AuditCheck> {
     const pkgPath = path.join(projectPath, 'package.json');
     
     try {
@@ -92,7 +92,7 @@ export class DependencyChecker {
     }
   }
 
-  private async checkOutdated(projectPath: string, logger: Logger): Promise<AuditCheck> {
+  private async checkOutdated(projectPath: string, _logger: Logger): Promise<AuditCheck> {
     try {
       // Try to run npm outdated
       const { stdout } = await execAsync('npm outdated --json', {
@@ -131,7 +131,7 @@ export class DependencyChecker {
     }
   }
 
-  private async checkSecurity(projectPath: string, logger: Logger): Promise<AuditCheck> {
+  private async checkSecurity(projectPath: string, _logger: Logger): Promise<AuditCheck> {
     try {
       // Try to run npm audit
       const { stdout } = await execAsync('npm audit --json', {
@@ -178,7 +178,7 @@ export class DependencyChecker {
     }
   }
 
-  private async checkLockFile(projectPath: string, logger: Logger): Promise<AuditCheck> {
+  private async checkLockFile(projectPath: string, _logger: Logger): Promise<AuditCheck> {
     const lockFiles = ['package-lock.json', 'pnpm-lock.yaml', 'yarn.lock'];
     
     for (const file of lockFiles) {

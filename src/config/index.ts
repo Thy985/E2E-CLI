@@ -3,10 +3,13 @@
  * Supports .qa-agent/config.yaml, .qa-agent/config.json, qa.config.ts
  */
 
+import { createLogger } from '../utils/logger';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as yaml from 'js-yaml';
 import { minimatch } from 'minimatch';
+
+const logger = createLogger();
 
 export interface QAConfig {
   version: number;
@@ -99,6 +102,47 @@ const CONFIG_FILES = [
 ];
 
 /**
+ * Validate loaded config and return a list of warnings/errors
+ */
+export function validateConfig(config: QAConfig): string[] {
+  const issues: string[] = [];
+
+  // version must be a number
+  if (typeof config.version !== 'number') {
+    issues.push(`Config "version" must be a number, got: ${typeof config.version}`);
+  }
+
+  // project.type must be one of the allowed values if provided
+  const allowedProjectTypes = ['webapp', 'library', 'cli', 'api'] as const;
+  if (config.project?.type !== undefined && !(allowedProjectTypes as readonly string[]).includes(config.project.type)) {
+    issues.push(`Config "project.type" must be one of ${allowedProjectTypes.join(', ')}, got: "${config.project.type}"`);
+  }
+
+  // output.format must be one of the allowed values if provided
+  const allowedFormats = ['html', 'json', 'markdown', 'compact'] as const;
+  if (config.output?.format !== undefined && !(allowedFormats as readonly string[]).includes(config.output.format)) {
+    issues.push(`Config "output.format" must be one of ${allowedFormats.join(', ')}, got: "${config.output.format}"`);
+  }
+
+  // model.provider must be a known provider if provided
+  const knownProviders = ['openai', 'claude', 'deepseek', 'siliconflow', 'groq', 'minimax'];
+  if (config.model?.provider !== undefined && !knownProviders.includes(config.model.provider)) {
+    issues.push(`Config "model.provider" must be one of ${knownProviders.join(', ')}, got: "${config.model.provider}"`);
+  }
+
+  // thresholds.score.warning must be > thresholds.score.error if both provided
+  if (
+    config.thresholds?.score?.warning !== undefined &&
+    config.thresholds?.score?.error !== undefined &&
+    config.thresholds.score.warning <= config.thresholds.score.error
+  ) {
+    issues.push(`Config "thresholds.score.warning" (${config.thresholds.score.warning}) must be greater than "thresholds.score.error" (${config.thresholds.score.error})`);
+  }
+
+  return issues;
+}
+
+/**
  * Load configuration from project directory
  */
 export async function loadConfig(projectPath: string): Promise<QAConfig> {
@@ -110,9 +154,14 @@ export async function loadConfig(projectPath: string): Promise<QAConfig> {
 
   try {
     const config = await parseConfigFile(configPath);
-    return mergeConfig(DEFAULT_CONFIG, config);
+    const merged = mergeConfig(DEFAULT_CONFIG, config);
+    const issues = validateConfig(merged);
+    if (issues.length > 0) {
+      issues.forEach(issue => logger.warn(`Config validation: ${issue}`));
+    }
+    return merged;
   } catch (error) {
-    console.warn(`Failed to load config from ${configPath}:`, error);
+    logger.warn(`Failed to load config from ${configPath}:`, error);
     return { ...DEFAULT_CONFIG };
   }
 }

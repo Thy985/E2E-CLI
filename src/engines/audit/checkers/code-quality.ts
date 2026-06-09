@@ -46,7 +46,7 @@ export class CodeQualityChecker {
     };
   }
 
-  private async checkTypeScript(projectPath: string, logger: Logger): Promise<AuditCheck> {
+  private async checkTypeScript(projectPath: string, _logger: Logger): Promise<AuditCheck> {
     const tsconfigPath = path.join(projectPath, 'tsconfig.json');
     
     try {
@@ -87,7 +87,7 @@ export class CodeQualityChecker {
     }
   }
 
-  private async checkESLint(projectPath: string, logger: Logger): Promise<AuditCheck> {
+  private async checkESLint(projectPath: string, _logger: Logger): Promise<AuditCheck> {
     const eslintFiles = [
       '.eslintrc.js',
       '.eslintrc.json',
@@ -130,7 +130,7 @@ export class CodeQualityChecker {
     };
   }
 
-  private async checkCodeStructure(projectPath: string, logger: Logger): Promise<AuditCheck> {
+  private async checkCodeStructure(projectPath: string, _logger: Logger): Promise<AuditCheck> {
     const srcPath = path.join(projectPath, 'src');
     let score = 0;
     const details: string[] = [];
@@ -176,7 +176,7 @@ export class CodeQualityChecker {
     };
   }
 
-  private async checkCommonIssues(projectPath: string, logger: Logger): Promise<AuditCheck> {
+  private async checkCommonIssues(projectPath: string, _logger: Logger): Promise<AuditCheck> {
     let score = 100;
     const issues: string[] = [];
 

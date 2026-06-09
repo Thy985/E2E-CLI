@@ -14,7 +14,6 @@ import { BaseSkill } from '../../base-skill';
 import {
   SkillContext,
   Diagnosis,
-  Severity,
   Fix,
 } from '../../../types';
 import { DependencyFixGenerator } from './fixers/dependency-fix-generator';
@@ -95,6 +94,8 @@ export class DependencySkill extends BaseSkill {
       'wrong-placement',
       'unsafe-version',
       'exact-version',
+      'git-url-deps',
+      'outdated-deps',
     ];
     return autoFixableTypes.includes(diagnosis.metadata?.type);
   }
@@ -225,7 +226,7 @@ export class DependencySkill extends BaseSkill {
       }
 
       // 检查是否使用了 git URL
-      if (versionStr.startsWith('git://') || versionStr.startsWith('git+')) {
+      if (versionStr.startsWith('git://') || versionStr.startsWith('git+') || versionStr.startsWith('github:') || versionStr.startsWith('gitlab:') || versionStr.startsWith('bitbucket:')) {
         issues.push({
           id: `dep-git-url-${name}`,
           skill: 'dependency',

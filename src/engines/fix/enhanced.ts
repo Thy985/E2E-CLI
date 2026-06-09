@@ -49,7 +49,7 @@ export class FixEngine {
     };
     this.logger = logger || createLogger({ level: 'info' });
     this.rollbackManager = new RollbackManager(this.logger);
-    this.verifyEngine = new VerifyEngine(this.logger);
+    this.verifyEngine = new VerifyEngine(undefined, this.logger);
   }
 
   /**
@@ -109,10 +109,11 @@ export class FixEngine {
         if (!verifyResult.success) {
           result.warnings.push(...verifyResult.errors);
           this.logger.warn(`⚠️ Fix verification issues: ${fix.id}`);
-          
-          // Rollback if verification failed
-          if (rollbackId && verifyResult.diff.new > 0) {
-            this.logger.info(`Rolling back fix due to new issues introduced`);
+
+          // Rollback if: (1) new issues introduced, OR (2) fix had no effect (no issues fixed)
+          const shouldRollback = verifyResult.diff.new > 0 || verifyResult.diff.fixed === 0;
+          if (rollbackId && shouldRollback) {
+            this.logger.info(`Rolling back fix: verification failed (new=${verifyResult.diff.new}, fixed=${verifyResult.diff.fixed})`);
             await this.rollbackManager.rollback(rollbackId);
             result.applied = false;
             result.errors.push('Fix rolled back due to verification failure');
@@ -193,7 +194,7 @@ export class FixEngine {
   /**
    * Preview a fix without applying
    */
-  async previewFix(fix: Fix, projectPath: string): Promise<string> {
+  async previewFix(fix: Fix, _projectPath: string): Promise<string> {
     const lines: string[] = [];
     
     lines.push(`# Fix Preview: ${fix.id}\n`);
@@ -204,7 +205,6 @@ export class FixEngine {
     lines.push(`## Changes (${fix.changes.length} files)\n`);
     
     for (const change of fix.changes) {
-      const filePath = path.join(projectPath, change.file);
       lines.push(`### ${change.file}`);
       lines.push(`**Type**: ${change.type}\n`);
       
@@ -263,8 +263,9 @@ export class FixEngine {
 
   private async replaceInFile(filePath: string, search: string, replace: string): Promise<void> {
     const content = fs.readFileSync(filePath, 'utf-8');
-    const newContent = content.replace(search, replace);
-    
+    // Replace ALL occurrences, not just the first one
+    const newContent = content.split(search).join(replace);
+
     if (content === newContent) {
       this.logger.warn(`No changes made to ${filePath} - pattern not found`);
     } else {

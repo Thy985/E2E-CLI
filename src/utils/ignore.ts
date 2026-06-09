@@ -54,7 +54,7 @@ export function shouldIgnoreLine(
 export function shouldIgnoreSection(
   content: string,
   startLine: number,
-  endLine: number,
+  _endLine: number,
   ruleId?: string
 ): boolean {
   const lines = content.split('\n');

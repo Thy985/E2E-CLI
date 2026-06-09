@@ -125,7 +125,7 @@ export class RollbackManager {
     const points: RollbackPoint[] = [];
     
     // Load from memory
-    for (const [id, point] of this.rollbackPoints) {
+    for (const [, point] of this.rollbackPoints) {
       if (!projectPath || point.projectPath === projectPath) {
         points.push(point);
       }

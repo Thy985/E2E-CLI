@@ -211,9 +211,7 @@ export const skillCommand = {
  * Legacy skill command handler (for backward compatibility)
  */
 export async function skillCommandOld(action: string, name?: string) {
-  const logger = createLogger({ level: 'info' });
   const formatter = createFormatter();
-  const manager = new SkillManager(logger);
 
   switch (action) {
     case 'list':

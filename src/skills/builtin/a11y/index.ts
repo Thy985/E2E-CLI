@@ -10,6 +10,7 @@ import {
   Fix,
   Severity,
   DiagnosisType,
+  FileChange,
 } from '../../../types';
 import { generateId } from '../../../utils';
 
@@ -53,21 +54,48 @@ const WCAG_RULES = [
   },
   {
     id: 'heading-order',
-    selector: 'h1, h2, h3, h4, h5, h6',
+    selector: 'heading-order-check',
     severity: 'warning' as Severity,
-    title: '标题层级可能不正确',
-    description: '标题应按层级顺序使用',
+    title: '标题层级不正确',
+    description: '标题层级跳跃（如 h1 直接到 h3）会影响屏幕阅读器用户导航',
     wcag: 'WCAG 2.2 - 1.3.1 Info and Relationships',
-    fix: '确保标题按正确层级顺序使用',
+    fix: '确保标题按正确层级顺序使用，不跳过层级',
   },
   {
     id: 'landmark',
-    selector: 'body:not(:has(main, [role="main"]))',
+    selector: 'landmark-check',
     severity: 'warning' as Severity,
     title: '页面缺少 main 地标',
-    description: '页面应包含 main 地标以便导航',
+    description: '页面应包含 <main> 元素或 role="main" 以便屏幕阅读器导航',
     wcag: 'WCAG 2.2 - 1.3.1 Info and Relationships',
     fix: '添加 <main> 元素或 role="main"',
+  },
+  {
+    id: 'html-has-lang',
+    selector: 'html-has-lang-check',
+    severity: 'warning' as Severity,
+    title: 'html 元素缺少 lang 属性',
+    description: '<html> 元素必须设置 lang 属性以便屏幕阅读器识别页面语言',
+    wcag: 'WCAG 2.2 - 3.1.1 Language of Page',
+    fix: '添加 <html lang="en"> 属性',
+  },
+  {
+    id: 'document-title',
+    selector: 'document-title-check',
+    severity: 'warning' as Severity,
+    title: '页面缺少 title 元素',
+    description: '<title> 元素是必需的可访问性要求，帮助用户了解页面内容',
+    wcag: 'WCAG 2.2 - 2.4.2 Page Titled',
+    fix: '添加 <title> 元素描述页面内容',
+  },
+  {
+    id: 'color-contrast',
+    selector: 'color-contrast-check',
+    severity: 'warning' as Severity,
+    title: '颜色对比度可能不足',
+    description: '前景色与背景色对比度应至少 4.5:1（正文）或 3:1（大字体）',
+    wcag: 'WCAG 2.2 - 1.4.3 Contrast (Minimum)',
+    fix: '提高前景色与背景色的对比度',
   },
 ];
 
@@ -102,24 +130,21 @@ export class A11ySkill extends BaseSkill {
 
     logger.info('开始可访问性检查...');
 
-    // Get HTML files
     const htmlFiles = await this.getHtmlFiles(project.path, tools);
     logger.debug(`找到 ${htmlFiles.length} 个 HTML 文件`);
 
-    // Check each file
     for (const file of htmlFiles) {
       const content = await tools.fs.readFile(file);
       const fileDiagnoses = await this.checkFile(file, content);
       diagnoses.push(...fileDiagnoses);
     }
 
-    // Check TSX/JSX files for React components
     const componentFiles = await this.getComponentFiles(project.path, tools);
     logger.debug(`找到 ${componentFiles.length} 个组件文件`);
 
     for (const file of componentFiles) {
       const content = await tools.fs.readFile(file);
-      const fileDiagnoses = await this.checkComponent(file, content);
+      const fileDiagnoses = await this.checkFile(file, content);
       diagnoses.push(...fileDiagnoses);
     }
 
@@ -128,7 +153,7 @@ export class A11ySkill extends BaseSkill {
   }
 
   private async getHtmlFiles(
-    projectPath: string,
+    _projectPath: string,
     tools: SkillContext['tools']
   ): Promise<string[]> {
     const patterns = [
@@ -145,14 +170,10 @@ export class A11ySkill extends BaseSkill {
   }
 
   private async getComponentFiles(
-    projectPath: string,
+    _projectPath: string,
     tools: SkillContext['tools']
   ): Promise<string[]> {
-    const patterns = [
-      '**/*.tsx',
-      '**/*.jsx',
-    ];
-
+    const patterns = ['**/*.tsx', '**/*.jsx'];
     const files: string[] = [];
     for (const pattern of patterns) {
       const matches = await tools.fs.glob(pattern);
@@ -166,7 +187,7 @@ export class A11ySkill extends BaseSkill {
 
     for (const rule of WCAG_RULES) {
       const issues = this.findRuleViolations(content, rule.selector, rule);
-      
+
       for (const issue of issues) {
         diagnoses.push({
           id: `A11y-${generateId()}`,
@@ -182,10 +203,12 @@ export class A11ySkill extends BaseSkill {
           metadata: {
             ruleId: rule.id,
             wcag: rule.wcag,
+            fixable: ['img-alt', 'label', 'button-name', 'link-name'].includes(rule.id),
+            ...(issue.matchedCode ? { matchedCode: issue.matchedCode.slice(0, 100) } : {}),
           },
           fixSuggestion: {
             description: rule.fix,
-            autoApplicable: rule.severity === 'critical',
+            autoApplicable: ['img-alt', 'label', 'button-name', 'link-name'].includes(rule.id),
             riskLevel: 'low',
           },
         });
@@ -195,85 +218,162 @@ export class A11ySkill extends BaseSkill {
     return diagnoses;
   }
 
-  private async checkComponent(filePath: string, content: string): Promise<Diagnosis[]> {
-    const diagnoses: Diagnosis[] = [];
+  private findRuleViolations(
+    content: string,
+    selector: string,
+    _rule: typeof WCAG_RULES[0]
+  ): { line: number; matchedCode?: string }[] {
+    const issues: { line: number; matchedCode?: string }[] = [];
 
-    // Check for common a11y issues in React components
-    const patterns = [
-      {
-        regex: /<img[^>]*>/g,
-        check: (match: string) => !match.includes('alt='),
-        rule: WCAG_RULES[0], // img-alt
-      },
-      {
-        regex: /<input[^>]*>/g,
-        check: (match: string) => 
-          !match.includes('id=') && 
-          !match.includes('aria-label=') &&
-          !match.includes('type="hidden"'),
-        rule: WCAG_RULES[1], // label
-      },
-      {
-        regex: /<button[^>]*>\s*<\/button>/g,
-        check: () => true,
-        rule: WCAG_RULES[2], // button-name
-      },
-    ];
+    if (selector === 'heading-order-check') {
+      return this.checkHeadingOrder(content);
+    }
 
-    for (const { regex, check, rule } of patterns) {
-      const matches = content.matchAll(regex);
-      
-      for (const match of matches) {
-        if (check(match[0])) {
-          const lineNumber = this.getLineNumber(content, match.index!);
-          
-          diagnoses.push({
-            id: `A11y-${generateId()}`,
-            skill: this.name,
-            type: 'accessibility' as DiagnosisType,
-            severity: rule.severity,
-            title: rule.title,
-            description: rule.description,
-            location: {
-              file: filePath,
-              line: lineNumber,
-            },
-            metadata: {
-              ruleId: rule.id,
-              wcag: rule.wcag,
-              matchedCode: match[0].slice(0, 100),
-            },
-            fixSuggestion: {
-              description: rule.fix,
-              autoApplicable: rule.severity === 'critical',
-              riskLevel: 'low',
-            },
-          });
+    if (selector === 'landmark-check') {
+      return this.checkLandmark(content);
+    }
+
+    if (selector === 'html-has-lang-check') {
+      return this.checkHtmlLang(content);
+    }
+
+    if (selector === 'document-title-check') {
+      return this.checkDocumentTitle(content);
+    }
+
+    if (selector === 'color-contrast-check') {
+      return this.checkColorContrast(content);
+    }
+
+    // img:not([alt])
+    if (selector.includes('img:not([alt])')) {
+      const regex = /<img(?![^>]*?\balt\s*=)[^>]*>/gis;
+      for (const match of content.matchAll(regex)) {
+        issues.push({ line: this.getLineNumber(content, match.index!), matchedCode: match[0] });
+      }
+    }
+
+    // input/textarea/select:not([id])
+    if (selector.includes('input:not([id])') || selector.includes('textarea:not([id])') || selector.includes('select:not([id])')) {
+      const regex = /<(?:input|textarea|select)(?![^>]*?\bid\s*=)(?![^>]*?\btype\s*=\s*["']hidden["'])[^>]*>/gis;
+      for (const match of content.matchAll(regex)) {
+        if (!match[0].includes('aria-label=')) {
+          issues.push({ line: this.getLineNumber(content, match.index!), matchedCode: match[0] });
         }
       }
     }
 
-    return diagnoses;
+    // button without accessible name
+    if (selector.includes('button') && selector.includes('aria-label')) {
+      const regex = /<button([^>]*)>([\s\S]*?)<\/button>/gi;
+      for (const match of content.matchAll(regex)) {
+        const attrs = match[1] || '';
+        const body = match[2] || '';
+        const hasAccessibleName = attrs.includes('aria-label=') ||
+          attrs.includes('aria-labelledby=') ||
+          body.trim().length > 0;
+        if (!hasAccessibleName) {
+          issues.push({ line: this.getLineNumber(content, match.index!), matchedCode: match[0] });
+        }
+      }
+    }
+
+    // a:empty without accessible name
+    if (selector.includes('a:empty') && selector.includes('aria-label')) {
+      const regex = /<a([^>]*)>([\s\S]*?)<\/a>/gi;
+      for (const match of content.matchAll(regex)) {
+        const attrs = match[1] || '';
+        const body = match[2] || '';
+        const hasAccessibleName = attrs.includes('aria-label=') ||
+          attrs.includes('aria-labelledby=') ||
+          body.trim().length > 0;
+        if (!hasAccessibleName) {
+          issues.push({ line: this.getLineNumber(content, match.index!), matchedCode: match[0] });
+        }
+      }
+    }
+
+    return issues;
   }
 
-  private findRuleViolations(
-    content: string,
-    selector: string,
-    rule: typeof WCAG_RULES[0]
-  ): { line: number }[] {
-    // Simple pattern matching for demo
-    // In production, would use proper HTML parser
+  /**
+   * Check heading order — detect skipped heading levels (e.g., h1 → h3)
+   */
+  private checkHeadingOrder(content: string): { line: number }[] {
     const issues: { line: number }[] = [];
-    
-    // Basic pattern matching
-    if (selector.includes('img:not([alt])')) {
-      const regex = /<img(?![^>]*alt=)[^>]*>/gi;
-      const matches = content.matchAll(regex);
-      for (const match of matches) {
+    const headingRegex = /<(h[1-6])[\s>]/gi;
+    let lastLevel = 0;
+
+    for (const match of content.matchAll(headingRegex)) {
+      const level = parseInt(match[1][1], 10);
+      if (lastLevel > 0 && level > lastLevel + 1) {
+        issues.push({ line: this.getLineNumber(content, match.index!) });
+      }
+      lastLevel = level;
+    }
+
+    return issues;
+  }
+
+  /**
+   * Check for main landmark — simple string search, no :has() pseudo-class needed
+   */
+  private checkLandmark(content: string): { line: number }[] {
+    const hasMain = content.includes('<main') || content.includes('role="main"') || content.includes("role='main'");
+    if (!hasMain) {
+      // Report on the first line of the file
+      return [{ line: 1 }];
+    }
+    return [];
+  }
+
+  /**
+   * Check <html> has lang attribute
+   */
+  private checkHtmlLang(content: string): { line: number }[] {
+    const issues: { line: number }[] = [];
+    const htmlOpenRegex = /<html\b[^>]*>/gi;
+    for (const match of content.matchAll(htmlOpenRegex)) {
+      const tag = match[0];
+      if (!/\blang\s*=/i.test(tag)) {
         issues.push({ line: this.getLineNumber(content, match.index!) });
       }
     }
-    
+    return issues;
+  }
+
+  /**
+   * Check page has <title> element
+   */
+  private checkDocumentTitle(content: string): { line: number }[] {
+    const issues: { line: number }[] = [];
+    const isHtml = /<!doctype\s+html/i.test(content) || /<html\b/i.test(content);
+    if (!isHtml) return issues;
+
+    const hasTitle = /<title\b[^>]*>[\s\S]*?<\/title>/i.test(content);
+    if (!hasTitle) {
+      issues.push({ line: 1 });
+    }
+    return issues;
+  }
+
+  /**
+   * Check for low color contrast — heuristic detection of common low-contrast pairs
+   */
+  private checkColorContrast(content: string): { line: number }[] {
+    const issues: { line: number }[] = [];
+    // Common low-contrast patterns: light gray on white, light colors on light backgrounds
+    const lowContrastPatterns = [
+      /color\s*:\s*#([9a-f][9a-f][9a-f])\b/gi,            // #999 etc
+      /color\s*:\s*rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*0?[0-4]\d?\s*\)/gi,  // alpha < 0.5
+      /color\s*:\s*#?[a-f0-9]{3,6}\b.*background[^;]*#[fF][fF][fF]/gi,
+    ];
+
+    for (const pattern of lowContrastPatterns) {
+      for (const match of content.matchAll(pattern)) {
+        issues.push({ line: this.getLineNumber(content, match.index!) });
+      }
+    }
     return issues;
   }
 
@@ -286,7 +386,7 @@ export class A11ySkill extends BaseSkill {
     const filePath = diagnosis.location.file;
     const content = await context.tools.fs.readFile(filePath);
 
-    let changes: any[] = [];
+    let changes: FileChange[] = [];
 
     switch (ruleId) {
       case 'img-alt':
@@ -312,13 +412,36 @@ export class A11ySkill extends BaseSkill {
     };
   }
 
-  private fixImgAlt(content: string, diagnosis: Diagnosis): any[] {
-    // Find the img tag and add alt attribute
-    const matchedCode = diagnosis.metadata?.matchedCode;
+  private fixImgAlt(content: string, diagnosis: Diagnosis): FileChange[] {
+    const matchedCode = diagnosis.metadata?.matchedCode as string | undefined;
     if (!matchedCode) return [];
 
-    const fixedCode = matchedCode.replace(/<img/, '<img alt="图片描述"');
-    
+    let altText = '图片描述';
+    const srcMatch = matchedCode.match(/src\s*=\s*["']([^"']*)["']/i);
+    if (srcMatch) {
+      const srcValue = srcMatch[1];
+      const filename = srcValue.split('/').pop() || '';
+      const nameWithoutExt = filename.replace(/\.[^.]+$/, '');
+      altText = nameWithoutExt
+        .replace(/[-_]/g, ' ')
+        .replace(/([a-z])([A-Z])/g, '$1 $2')
+        .replace(/\b\w/g, (c: string) => c.toUpperCase())
+        .trim();
+      if (!altText) altText = '图片描述';
+    }
+
+    const line = diagnosis.location.line;
+    if (line) {
+      const lines = content.split('\n');
+      const contextLines = [lines[line - 2], lines[line - 1], lines[line]].filter(Boolean).join(' ');
+      const labelMatch = contextLines.match(/(?:label|caption|title|alt|description)\s*[:=]\s*["']([^"']+)["']/i);
+      if (labelMatch && labelMatch[1].length > 2) {
+        altText = labelMatch[1];
+      }
+    }
+
+    const fixedCode = matchedCode.replace(/<img/, `<img alt="${altText}"`);
+
     return [{
       file: diagnosis.location.file,
       type: 'replace',
@@ -327,13 +450,32 @@ export class A11ySkill extends BaseSkill {
     }];
   }
 
-  private fixButtonName(content: string, diagnosis: Diagnosis): any[] {
-    const matchedCode = diagnosis.metadata?.matchedCode;
+  private fixButtonName(content: string, diagnosis: Diagnosis): FileChange[] {
+    const matchedCode = diagnosis.metadata?.matchedCode as string | undefined;
     if (!matchedCode) return [];
+
+    let labelText = '按钮';
+    const line = diagnosis.location.line;
+    if (line) {
+      const lines = content.split('\n');
+      const contextLine = lines[line - 2] || '';
+      const varMatch = contextLine.match(/(?:label|title|text|name)\s*[=:]\s*["']([^"']+)["']/i);
+      if (varMatch && varMatch[1].length > 1) {
+        labelText = varMatch[1];
+      } else {
+        const propMatch = contextLine.match(/\b(\w+Button|button\w+|submit|save|cancel|delete|confirm|close|open|add|edit|remove)\b/i);
+        if (propMatch) {
+          labelText = propMatch[1].replace(/([a-z])([A-Z])/g, '$1 $2')
+            .replace(/[_-]/g, ' ')
+            .toLowerCase()
+            .replace(/\b\w/g, (c) => c.toUpperCase());
+        }
+      }
+    }
 
     const fixedCode = matchedCode.replace(
       /<button([^>]*)>\s*<\/button>/,
-      '<button$1 aria-label="按钮">按钮</button>'
+      `<button$1 aria-label="${labelText}">${labelText}</button>`
     );
 
     return [{
@@ -344,26 +486,40 @@ export class A11ySkill extends BaseSkill {
     }];
   }
 
-  private fixInputLabel(content: string, diagnosis: Diagnosis): any[] {
-    const matchedCode = diagnosis.metadata?.matchedCode;
+  private fixInputLabel(content: string, diagnosis: Diagnosis): FileChange[] {
+    const matchedCode = diagnosis.metadata?.matchedCode as string | undefined;
     if (!matchedCode) return [];
 
-    // Generate a unique ID based on the input type
-    const inputTypeMatch = matchedCode.match(/type="([^"]*)"/);
+    const inputTypeMatch = matchedCode.match(/type\s*=\s*["']([^"']*)["']/i);
     const inputType = inputTypeMatch ? inputTypeMatch[1] : 'input';
     const generatedId = `${inputType}-field-${generateId().slice(0, 4)}`;
 
-    // Add id attribute to the input
-    const fixedCode = matchedCode.replace(/<input/, `<input id="${generatedId}"`);
+    // Add id to input and remove placeholder (placeholder is not a substitute for label)
+    let fixedInput = matchedCode.replace(/<input/, `<input id="${generatedId}"`);
+    fixedInput = fixedInput.replace(/\s*placeholder\s*=\s*["'][^"']*["']/i, '');
 
-    return [{
-      file: diagnosis.location.file,
-      type: 'replace',
-      oldContent: matchedCode,
-      content: fixedCode,
-    }];
+    // Generate a corresponding <label> element
+    const label = `<label for="${generatedId}">${inputType.charAt(0).toUpperCase() + inputType.slice(1)}</label>`;
+
+    const line = diagnosis.location.line || 1;
+    const lines = content.split('\n');
+    const indentation = lines[line - 1]?.match(/^(\s*)/)?.[1] || '';
+
+    return [
+      {
+        file: diagnosis.location.file,
+        type: 'replace',
+        oldContent: matchedCode,
+        content: fixedInput,
+      },
+      {
+        file: diagnosis.location.file,
+        type: 'insert',
+        position: { line },
+        content: `${indentation}${label}`,
+      },
+    ];
   }
 }
 
-// Export default instance
 export default A11ySkill;

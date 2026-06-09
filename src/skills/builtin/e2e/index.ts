@@ -8,7 +8,6 @@ import {
   SkillContext,
   Diagnosis,
   Fix,
-  Verification,
   DiagnosisType,
   Severity,
 } from '../../../types';
@@ -78,7 +77,7 @@ export class E2ESkill extends BaseSkill {
   }
 
   private async getTestFiles(
-    projectPath: string,
+    _projectPath: string,
     tools: SkillContext['tools']
   ): Promise<string[]> {
     const patterns = [
@@ -221,7 +220,7 @@ export class E2ESkill extends BaseSkill {
       }
 
       const xpathMatch = cleaned.match(/['"`](\/\/[^'"`]+|\/[a-zA-Z][^'"`]*)['"`]/);
-      if (xpathMatch && /^\/{1,2}[a-zA-Z\[\]]/.test(xpathMatch[1])) {
+      if (xpathMatch && /^\/{1,2}[a-zA-Z[\]]/.test(xpathMatch[1])) {
         issues.push({
           selector: xpathMatch[1],
           line: index + 1,
@@ -238,8 +237,8 @@ export class E2ESkill extends BaseSkill {
         });
       }
 
-      const deepMatch = cleaned.match(/['"`]([^'"`]*[\s>+~]+[#.\[]a-zA-Z\d_-?[^'"`]*)['"`]/);
-      if (deepMatch && /[\s>+~]/.test(deepMatch[1]) && /[#.\[]/.test(deepMatch[1])) {
+      const deepMatch = cleaned.match(/['"`]([^'"`]*[\s>+~]+[#.[]a-zA-Z\d_-?[^'"`]*)['"`]/);
+      if (deepMatch && /[\s>+~]/.test(deepMatch[1]) && /[#.[]/.test(deepMatch[1])) {
         issues.push({
           selector: deepMatch[1],
           line: index + 1,
@@ -261,7 +260,7 @@ export class E2ESkill extends BaseSkill {
   }
 
   private async checkMissingTests(
-    projectPath: string,
+    _projectPath: string,
     tools: SkillContext['tools']
   ): Promise<Diagnosis[]> {
     const diagnoses: Diagnosis[] = [];
@@ -325,10 +324,11 @@ export class E2ESkill extends BaseSkill {
 
 请只输出测试代码，不要其他解释。`;
 
-    const code = await model.chat([
+    const response = await model.chat([
       { role: 'system', content: '你是一个专业的测试工程师，擅长编写 Playwright E2E 测试。' },
       { role: 'user', content: prompt },
     ]);
+    const code = response.content;
 
     // Extract selectors from generated code
     const selectors = this.extractSelectors(code);

@@ -46,7 +46,7 @@ export class SecurityChecker {
     };
   }
 
-  private async checkEnvNotCommitted(projectPath: string, logger: Logger): Promise<AuditCheck> {
+  private async checkEnvNotCommitted(projectPath: string, _logger: Logger): Promise<AuditCheck> {
     const gitignorePath = path.join(projectPath, '.gitignore');
     
     try {
@@ -82,7 +82,7 @@ export class SecurityChecker {
     }
   }
 
-  private async checkSecretsInCode(projectPath: string, logger: Logger): Promise<AuditCheck> {
+  private async checkSecretsInCode(projectPath: string, _logger: Logger): Promise<AuditCheck> {
     const secretPatterns = [
       { pattern: /api[_-]?key\s*[=:]\s*['"][^'"]+['"]/gi, name: 'API Key' },
       { pattern: /secret[_-]?key\s*[=:]\s*['"][^'"]+['"]/gi, name: 'Secret Key' },
@@ -137,7 +137,7 @@ export class SecurityChecker {
     };
   }
 
-  private async checkSecurityHeaders(projectPath: string, logger: Logger): Promise<AuditCheck> {
+  private async checkSecurityHeaders(projectPath: string, _logger: Logger): Promise<AuditCheck> {
     // Check for security middleware in package.json
     const pkgPath = path.join(projectPath, 'package.json');
     
@@ -201,7 +201,7 @@ export class SecurityChecker {
     }
   }
 
-  private async checkHTTPS(projectPath: string, logger: Logger): Promise<AuditCheck> {
+  private async checkHTTPS(projectPath: string, _logger: Logger): Promise<AuditCheck> {
     // Check for HTTPS configuration
     const configFiles = [
       'next.config.js',
