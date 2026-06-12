@@ -5,9 +5,15 @@
  * - loadFeedback, saveFeedback, getRecentFeedback, clearFeedback
  * - FeedbackLoopEngine: collectFeedback, analyzeFeedback, getInsights,
  *   getSkillStats, generateRecommendations, _generateInsightRecommendation
+ *
+ * 使用真实 tmpDir + basePath 参数化实现文件隔离，
+ * 不再使用 `mock.module('fs', ...)` —— 跨文件 mock 会在
+ * 共享 module registry 时污染 phase5-engines / prompt-tuner 等
+ * 其他 suite。
  */
 
-import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import * as fs from 'fs';
 import * as path from 'path';
 import {
   loadFeedback,
@@ -18,93 +24,61 @@ import {
 } from '../../src/engines/harness/feedback-loop';
 import type { FeedbackEntry } from '../../src/engines/harness/feedback-loop';
 
-// ── Shared mock state (mutable, referenced by mock closures) ────────────────
+// ── Temp directory helpers ──────────────────────────────────────────────────
 
-const mockState = {
-  fileExists: false,
-  fileContent: '',
-  writtenCalls: [] as Array<{ path: string; content: string }>,
-  unlinkCalls: [] as string[],
-  mkdirCalls: [] as string[],
-  idCounter: 0,
-};
-
-// ── Mock fs ──────────────────────────────────────────────────────────────────
-
-mock.module('fs', () => ({
-  existsSync: (p: string) => {
-    // Only return mockState.fileExists for our feedback file path
-    return mockState.fileExists;
-  },
-  readFileSync: (p: string, encoding?: string) => mockState.fileContent,
-  writeFileSync: (p: string, content: string) => {
-    mockState.writtenCalls.push({ path: p, content: content as string });
-  },
-  unlinkSync: (p: string) => {
-    mockState.unlinkCalls.push(p);
-  },
-  mkdirSync: (p: string, opts?: any) => {
-    mockState.mkdirCalls.push(p);
-  },
-}));
-
-// ── Mock generateId ─────────────────────────────────────────────────────────
-
-mock.module('../../src/utils', () => ({
-  generateId: () => {
-    mockState.idCounter++;
-    return `fb-${String(mockState.idCounter).padStart(3, '0')}`;
-  },
-  hash: (s: string) => s,
-  formatDuration: (ms: number) => `${ms}ms`,
-  formatSize: (b: number) => `${b}B`,
-  sleep: async () => {},
-  retry: async (fn: () => Promise<any>) => fn(),
-  debounce: (fn: any) => fn,
-  throttle: (fn: any) => fn,
-  matchPattern: () => true,
-  deepMerge: (t: any, s: any) => ({ ...t, ...s }),
-  pick: (obj: any, keys: string[]) => {
-    const r: any = {};
-    for (const k of keys) if (k in obj) r[k] = obj[k];
-    return r;
-  },
-  omit: (obj: any, keys: string[]) => {
-    const r = { ...obj };
-    for (const k of keys) delete r[k];
-    return r;
-  },
-  groupBy: (arr: any[], fn: any) => arr.reduce((g, i) => { const k = fn(i); (g[k] ||= []).push(i); return g; }, {} as any),
-  calculateScore: () => 100,
-  getGrade: () => 'A',
-}));
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-const FEEDBACK_DIR = '.qa-feedback';
-const FEEDBACK_FILE = 'feedback.json';
-const FEEDBACK_PATH = path.join(process.cwd(), FEEDBACK_DIR, FEEDBACK_FILE);
-
-function resetMockState() {
-  mockState.fileExists = false;
-  mockState.fileContent = '';
-  mockState.writtenCalls = [];
-  mockState.unlinkCalls = [];
-  mockState.mkdirCalls = [];
-  mockState.idCounter = 0;
+function createTempDir(prefix: string): string {
+  const dir = path.join(
+    process.env.TMPDIR || '/tmp',
+    `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  );
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
 }
 
-// ── Tests ────────────────────────────────────────────────────────────────────
+function cleanupDir(dir: string): void {
+  if (fs.existsSync(dir)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function feedbackDir(basePath: string): string {
+  return path.join(basePath, '.qa-feedback');
+}
+
+function feedbackFile(basePath: string): string {
+  return path.join(feedbackDir(basePath), 'feedback.json');
+}
+
+/** 预填充 feedback.json；测试 arrange 阶段使用 */
+function seedFeedback(entries: FeedbackEntry[], basePath: string): void {
+  const dir = feedbackDir(basePath);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(feedbackFile(basePath), JSON.stringify(entries, null, 2));
+}
+
+/** 读 feedback.json；测试 assert 阶段使用 */
+function readFeedbackFile(basePath: string): FeedbackEntry[] {
+  const content = fs.readFileSync(feedbackFile(basePath), 'utf-8');
+  return JSON.parse(content);
+}
+
+// ── Tests ───────────────────────────────────────────────────────────────────
 
 describe('FeedbackLoop - Standalone functions', () => {
-  beforeEach(resetMockState);
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = createTempDir('feedback-loop');
+  });
+
+  afterEach(() => {
+    cleanupDir(tmpDir);
+  });
 
   describe('loadFeedback', () => {
     it('返回空数组当文件不存在时', () => {
-      mockState.fileExists = false;
-
-      const result = loadFeedback();
-
+      // tmpDir/.qa-feedback/feedback.json 还没创建
+      const result = loadFeedback(tmpDir);
       expect(result).toEqual([]);
     });
 
@@ -126,11 +100,9 @@ describe('FeedbackLoop - Standalone functions', () => {
           notes: 'False positive',
         },
       ];
+      seedFeedback(entries, tmpDir);
 
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(entries);
-
-      const result = loadFeedback();
+      const result = loadFeedback(tmpDir);
 
       expect(result).toHaveLength(2);
       expect(result[0].id).toBe('fb-001');
@@ -141,28 +113,31 @@ describe('FeedbackLoop - Standalone functions', () => {
     });
 
     it('优雅处理损坏的 JSON', () => {
-      mockState.fileExists = true;
-      mockState.fileContent = 'not valid json{{{';
+      const dir = feedbackDir(tmpDir);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(feedbackFile(tmpDir), 'not valid json{{{');
 
-      const result = loadFeedback();
+      const result = loadFeedback(tmpDir);
 
       expect(result).toEqual([]);
     });
 
     it('当 JSON 不是数组时返回空数组', () => {
-      mockState.fileExists = true;
-      mockState.fileContent = '{"not": "array"}';
+      const dir = feedbackDir(tmpDir);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(feedbackFile(tmpDir), '{"not": "array"}');
 
-      const result = loadFeedback();
+      const result = loadFeedback(tmpDir);
 
       expect(result).toEqual([]);
     });
 
     it('处理空文件内容', () => {
-      mockState.fileExists = true;
-      mockState.fileContent = '';
+      const dir = feedbackDir(tmpDir);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(feedbackFile(tmpDir), '');
 
-      const result = loadFeedback();
+      const result = loadFeedback(tmpDir);
 
       expect(result).toEqual([]);
     });
@@ -170,20 +145,20 @@ describe('FeedbackLoop - Standalone functions', () => {
 
   describe('saveFeedback', () => {
     it('写入新的反馈条目', () => {
-      mockState.fileExists = false;
+      // 文件不存在 → 写入后应创建 .qa-feedback/ 目录和 feedback.json
+      saveFeedback(
+        {
+          id: 'fb-001',
+          timestamp: '2025-01-01T00:00:00.000Z',
+          skill: 'a11y',
+          ruleId: 'aria-label',
+          action: 'accept',
+        },
+        tmpDir,
+      );
 
-      saveFeedback({
-        id: 'fb-001',
-        timestamp: '2025-01-01T00:00:00.000Z',
-        skill: 'a11y',
-        ruleId: 'aria-label',
-        action: 'accept',
-      });
-
-      expect(mockState.mkdirCalls.length).toBeGreaterThan(0);
-      expect(mockState.writtenCalls).toHaveLength(1);
-
-      const written = JSON.parse(mockState.writtenCalls[0].content);
+      expect(fs.existsSync(feedbackDir(tmpDir))).toBe(true);
+      const written = readFeedbackFile(tmpDir);
       expect(written).toHaveLength(1);
       expect(written[0].id).toBe('fb-001');
       expect(written[0].action).toBe('accept');
@@ -193,35 +168,37 @@ describe('FeedbackLoop - Standalone functions', () => {
       const existing: FeedbackEntry[] = [
         { id: 'old', timestamp: '2025-01-01T00:00:00.000Z', skill: 'a11y', ruleId: 'r1', action: 'accept' },
       ];
+      seedFeedback(existing, tmpDir);
 
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(existing);
+      saveFeedback(
+        { id: 'new', timestamp: '2025-01-02T00:00:00.000Z', skill: 'security', ruleId: 'r2', action: 'reject' },
+        tmpDir,
+      );
 
-      saveFeedback({ id: 'new', timestamp: '2025-01-02T00:00:00.000Z', skill: 'security', ruleId: 'r2', action: 'reject' });
-
-      const written = JSON.parse(mockState.writtenCalls[0].content);
+      const written = readFeedbackFile(tmpDir);
       expect(written).toHaveLength(2);
       expect(written[0].id).toBe('new');
       expect(written[1].id).toBe('old');
     });
 
     it('使用完整的上下文信息保存条目', () => {
-      mockState.fileExists = false;
+      saveFeedback(
+        {
+          id: 'fb-001',
+          timestamp: '2025-01-01T00:00:00.000Z',
+          skill: 'performance',
+          ruleId: 'bundle-size',
+          action: 'partial',
+          diagnosisId: 'diag-1',
+          fixId: 'fix-1',
+          notes: 'Partially helpful',
+          severity: 'warning',
+          filePath: 'src/index.ts',
+        },
+        tmpDir,
+      );
 
-      saveFeedback({
-        id: 'fb-001',
-        timestamp: '2025-01-01T00:00:00.000Z',
-        skill: 'performance',
-        ruleId: 'bundle-size',
-        action: 'partial',
-        diagnosisId: 'diag-1',
-        fixId: 'fix-1',
-        notes: 'Partially helpful',
-        severity: 'warning',
-        filePath: 'src/index.ts',
-      });
-
-      const written = JSON.parse(mockState.writtenCalls[0].content);
+      const written = readFeedbackFile(tmpDir);
       expect(written[0].diagnosisId).toBe('diag-1');
       expect(written[0].fixId).toBe('fix-1');
       expect(written[0].notes).toBe('Partially helpful');
@@ -239,11 +216,9 @@ describe('FeedbackLoop - Standalone functions', () => {
         ruleId: `rule-${i}`,
         action: i % 2 === 0 ? 'accept' : 'reject',
       }));
+      seedFeedback(entries, tmpDir);
 
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(entries);
-
-      const result = getRecentFeedback(5);
+      const result = getRecentFeedback(5, tmpDir);
 
       expect(result).toHaveLength(5);
       expect(result[0].id).toBe('fb-0');
@@ -253,11 +228,9 @@ describe('FeedbackLoop - Standalone functions', () => {
       const entries: FeedbackEntry[] = [
         { id: 'fb-0', timestamp: '2025-01-01T00:00:00.000Z', skill: 'a11y', ruleId: 'r1', action: 'accept' },
       ];
+      seedFeedback(entries, tmpDir);
 
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(entries);
-
-      const result = getRecentFeedback(10);
+      const result = getRecentFeedback(10, tmpDir);
 
       expect(result).toHaveLength(1);
     });
@@ -270,11 +243,9 @@ describe('FeedbackLoop - Standalone functions', () => {
         ruleId: `rule-${i}`,
         action: 'accept',
       }));
+      seedFeedback(entries, tmpDir);
 
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(entries);
-
-      const result = getRecentFeedback();
+      const result = getRecentFeedback(undefined, tmpDir);
 
       expect(result).toHaveLength(10);
     });
@@ -282,41 +253,50 @@ describe('FeedbackLoop - Standalone functions', () => {
 
   describe('clearFeedback', () => {
     it('当文件存在时删除文件', () => {
-      mockState.fileExists = true;
+      seedFeedback(
+        [{ id: '1', timestamp: '', skill: 'a11y', ruleId: 'r', action: 'accept' }],
+        tmpDir,
+      );
+      expect(fs.existsSync(feedbackFile(tmpDir))).toBe(true);
 
-      clearFeedback();
+      clearFeedback(tmpDir);
 
-      expect(mockState.unlinkCalls).toContain(FEEDBACK_PATH);
+      expect(fs.existsSync(feedbackFile(tmpDir))).toBe(false);
     });
 
     it('当文件不存在时不做任何操作', () => {
-      mockState.fileExists = false;
+      // 不预填充，文件不存在
+      clearFeedback(tmpDir);
 
-      clearFeedback();
-
-      expect(mockState.unlinkCalls).toHaveLength(0);
+      // 不抛错即可
+      expect(fs.existsSync(feedbackFile(tmpDir))).toBe(false);
     });
   });
 });
 
 describe('FeedbackLoopEngine', () => {
+  let tmpDir: string;
   let engine: FeedbackLoopEngine;
 
   beforeEach(() => {
-    resetMockState();
-    engine = new FeedbackLoopEngine();
+    tmpDir = createTempDir('feedback-loop-engine');
+    engine = new FeedbackLoopEngine({ storageDir: tmpDir });
+  });
+
+  afterEach(() => {
+    cleanupDir(tmpDir);
   });
 
   describe('collectFeedback', () => {
     it('创建并保存反馈条目', () => {
-      mockState.fileExists = false;
-
       const entry = engine.collectFeedback('a11y', 'aria-label', 'accept', {
         diagnosisId: 'diag-1',
         notes: 'Good catch',
       });
 
-      expect(entry.id).toBe('fb-001');
+      expect(entry.id).toBeTruthy();
+      expect(typeof entry.id).toBe('string');
+      expect(entry.id.length).toBeGreaterThan(0);
       expect(entry.skill).toBe('a11y');
       expect(entry.ruleId).toBe('aria-label');
       expect(entry.action).toBe('accept');
@@ -324,12 +304,12 @@ describe('FeedbackLoopEngine', () => {
       expect(entry.notes).toBe('Good catch');
       expect(entry.timestamp).toBeDefined();
 
-      expect(mockState.writtenCalls).toHaveLength(1);
+      // 文件确实被写入
+      const written = readFeedbackFile(tmpDir);
+      expect(written).toHaveLength(1);
     });
 
     it('不使用上下文时创建基本条目', () => {
-      mockState.fileExists = false;
-
       const entry = engine.collectFeedback('security', 'xss', 'reject');
 
       expect(entry.skill).toBe('security');
@@ -341,22 +321,20 @@ describe('FeedbackLoopEngine', () => {
     });
 
     it('为每次调用生成递增的 ID', () => {
-      mockState.fileExists = false;
-
       const e1 = engine.collectFeedback('s1', 'r1', 'accept');
       const e2 = engine.collectFeedback('s2', 'r2', 'reject');
       const e3 = engine.collectFeedback('s3', 'r3', 'partial');
 
-      expect(e1.id).toBe('fb-001');
-      expect(e2.id).toBe('fb-002');
-      expect(e3.id).toBe('fb-003');
+      // 真实 generateId 返回非空字符串；只验证三者互不相同
+      expect(e1.id).toBeTruthy();
+      expect(e2.id).toBeTruthy();
+      expect(e3.id).toBeTruthy();
+      expect(new Set([e1.id, e2.id, e3.id]).size).toBe(3);
     });
 
     it('支持所有 FeedbackAction 类型', () => {
-      mockState.fileExists = false;
-
       const actions: Array<'accept' | 'reject' | 'partial' | 'ignore'> = ['accept', 'reject', 'partial', 'ignore'];
-      const entries = actions.map(a => engine.collectFeedback('test', 'rule', a));
+      const entries = actions.map((a) => engine.collectFeedback('test', 'rule', a));
 
       entries.forEach((e, i) => expect(e.action).toBe(actions[i]));
     });
@@ -364,8 +342,6 @@ describe('FeedbackLoopEngine', () => {
 
   describe('analyzeFeedback', () => {
     it('返回空数据的正确统计', () => {
-      mockState.fileExists = false;
-
       const stats = engine.analyzeFeedback();
 
       expect(stats.totalFeedbacks).toBe(0);
@@ -383,9 +359,7 @@ describe('FeedbackLoopEngine', () => {
         { id: '4', timestamp: '', skill: 'a11y', ruleId: 'r3', action: 'partial' },
         { id: '5', timestamp: '', skill: 'security', ruleId: 'r2', action: 'ignore' },
       ];
-
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(entries);
+      seedFeedback(entries, tmpDir);
 
       const stats = engine.analyzeFeedback();
 
@@ -401,9 +375,7 @@ describe('FeedbackLoopEngine', () => {
         { id: '4', timestamp: '', skill: 'security', ruleId: 'r2', action: 'reject' },
         { id: '5', timestamp: '', skill: 'security', ruleId: 'r2', action: 'reject' },
       ];
-
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(entries);
+      seedFeedback(entries, tmpDir);
 
       const stats = engine.analyzeFeedback();
 
@@ -418,9 +390,7 @@ describe('FeedbackLoopEngine', () => {
         { id: '3', timestamp: '', skill: 'a11y', ruleId: 'r1', action: 'reject' },
         { id: '4', timestamp: '', skill: 'a11y', ruleId: 'r1', action: 'partial' },
       ];
-
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(entries);
+      seedFeedback(entries, tmpDir);
 
       const stats = engine.analyzeFeedback();
 
@@ -435,9 +405,7 @@ describe('FeedbackLoopEngine', () => {
         { id: '3', timestamp: '', skill: 'security', ruleId: 'r3', action: 'reject' },
         { id: '4', timestamp: '', skill: 'performance', ruleId: 'r2', action: 'partial' },
       ];
-
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(entries);
+      seedFeedback(entries, tmpDir);
 
       const stats = engine.analyzeFeedback();
 
@@ -457,20 +425,18 @@ describe('FeedbackLoopEngine', () => {
         { id: '4', timestamp: '', skill: 'security', ruleId: 'xss', action: 'accept' },
         { id: '5', timestamp: '', skill: 'security', ruleId: 'xss', action: 'reject' },
       ];
-
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(entries);
+      seedFeedback(entries, tmpDir);
 
       const insights = engine.getInsights();
 
       expect(insights).toHaveLength(2);
 
-      const a11yInsight = insights.find(i => i.skill === 'a11y' && i.ruleId === 'aria-label')!;
+      const a11yInsight = insights.find((i) => i.skill === 'a11y' && i.ruleId === 'aria-label')!;
       expect(a11yInsight).toBeDefined();
       expect(a11yInsight.acceptRate).toBe(2 / 3);
       expect(a11yInsight.totalFeedbacks).toBe(3);
 
-      const securityInsight = insights.find(i => i.skill === 'security' && i.ruleId === 'xss')!;
+      const securityInsight = insights.find((i) => i.skill === 'security' && i.ruleId === 'xss')!;
       expect(securityInsight).toBeDefined();
       expect(securityInsight.acceptRate).toBe(0.5);
       expect(securityInsight.totalFeedbacks).toBe(2);
@@ -488,15 +454,13 @@ describe('FeedbackLoopEngine', () => {
       ];
 
       const all = [...highEntries, ...mediumEntries, ...lowEntries];
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(all);
+      seedFeedback(all, tmpDir);
 
       const insights = engine.getInsights();
 
-      const high = insights.find(i => i.ruleId === 'high')!;
-      const medium = insights.find(i => i.ruleId === 'medium')!;
-      const low = insights.find(i => i.ruleId === 'low')!;
-
+      const high = insights.find((i) => i.ruleId === 'high')!;
+      const medium = insights.find((i) => i.ruleId === 'medium')!;
+      const low = insights.find((i) => i.ruleId === 'low')!;
       expect(high.confidence).toBe('high');
       expect(medium.confidence).toBe('medium');
       expect(low.confidence).toBe('low');
@@ -512,9 +476,7 @@ describe('FeedbackLoopEngine', () => {
         { id: '6', timestamp: '', skill: 'a11y', ruleId: 'mid', action: 'accept' },
         { id: '7', timestamp: '', skill: 'a11y', ruleId: 'mid', action: 'reject' },
       ];
-
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(entries);
+      seedFeedback(entries, tmpDir);
 
       const insights = engine.getInsights();
 
@@ -527,20 +489,17 @@ describe('FeedbackLoopEngine', () => {
       const goodEntries: FeedbackEntry[] = Array.from({ length: 10 }, (_, i) => ({
         id: `g${i}`, timestamp: '', skill: 'a11y', ruleId: 'excellent', action: 'accept',
       }));
-
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(goodEntries);
+      seedFeedback(goodEntries, tmpDir);
 
       const insights = engine.getInsights();
 
-      const excellent = insights.find(i => i.ruleId === 'excellent')!;
+      const excellent = insights.find((i) => i.ruleId === 'excellent')!;
       expect(excellent.acceptRate).toBeGreaterThan(0.9);
       expect(excellent.recommendation).toBe('Highly valued rule — consider promoting');
     });
 
     it('空数据返回空数组', () => {
-      mockState.fileExists = false;
-
+      // tmpDir 没 feedback.json
       const insights = engine.getInsights();
 
       expect(insights).toEqual([]);
@@ -606,9 +565,7 @@ describe('FeedbackLoopEngine', () => {
         { id: '4', timestamp: '', skill: 'a11y', ruleId: 'color-contrast', action: 'accept' },
         { id: '5', timestamp: '', skill: 'security', ruleId: 'xss', action: 'accept' },
       ];
-
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(entries);
+      seedFeedback(entries, tmpDir);
 
       const stats = engine.getSkillStats('a11y');
 
@@ -626,9 +583,7 @@ describe('FeedbackLoopEngine', () => {
         { id: '6', timestamp: '', skill: 'a11y', ruleId: 'rule-c', action: 'reject' },
         { id: '7', timestamp: '', skill: 'a11y', ruleId: 'rule-a', action: 'accept' },
       ];
-
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(entries);
+      seedFeedback(entries, tmpDir);
 
       const stats = engine.getSkillStats('a11y');
 
@@ -643,9 +598,7 @@ describe('FeedbackLoopEngine', () => {
       for (let i = 0; i < 10; i++) {
         entries.push({ id: `r${i}`, timestamp: '', skill: 'a11y', ruleId: `rule-${i}`, action: 'reject' });
       }
-
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(entries);
+      seedFeedback(entries, tmpDir);
 
       const stats = engine.getSkillStats('a11y');
 
@@ -654,8 +607,7 @@ describe('FeedbackLoopEngine', () => {
     });
 
     it('不存在的技能返回零统计', () => {
-      mockState.fileExists = false;
-
+      // 不写 feedback.json
       const stats = engine.getSkillStats('nonexistent');
 
       expect(stats).toEqual({
@@ -671,9 +623,7 @@ describe('FeedbackLoopEngine', () => {
         { id: '2', timestamp: '', skill: 'security', ruleId: 'r2', action: 'reject' },
         { id: '3', timestamp: '', skill: 'a11y', ruleId: 'r1', action: 'reject' },
       ];
-
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(entries);
+      seedFeedback(entries, tmpDir);
 
       const stats = engine.getSkillStats('a11y');
 
@@ -687,9 +637,7 @@ describe('FeedbackLoopEngine', () => {
         { id: '1', timestamp: '', skill: 'a11y', ruleId: 'r1', action: 'accept' },
         { id: '2', timestamp: '', skill: 'a11y', ruleId: 'r1', action: 'partial' },
       ];
-
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(entries);
+      seedFeedback(entries, tmpDir);
 
       const stats = engine.getSkillStats('a11y');
 
@@ -699,8 +647,7 @@ describe('FeedbackLoopEngine', () => {
 
   describe('generateRecommendations', () => {
     it('空数据返回空数组', () => {
-      mockState.fileExists = false;
-
+      // tmpDir 没 feedback.json
       const recs = engine.generateRecommendations();
 
       expect(recs).toEqual([]);
@@ -715,13 +662,11 @@ describe('FeedbackLoopEngine', () => {
         { id: '5', timestamp: '', skill: 'a11y', ruleId: 'bad-rule', action: 'reject' },
         { id: '6', timestamp: '', skill: 'a11y', ruleId: 'bad-rule', action: 'accept' },
       ];
-
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(entries);
+      seedFeedback(entries, tmpDir);
 
       const recs = engine.generateRecommendations();
 
-      const disable = recs.find(r => r.type === 'disable');
+      const disable = recs.find((r) => r.type === 'disable');
       expect(disable).toBeDefined();
       expect(disable!.skill).toBe('a11y');
       expect(disable!.ruleId).toBe('bad-rule');
@@ -736,13 +681,11 @@ describe('FeedbackLoopEngine', () => {
         { id: '3', timestamp: '', skill: 'a11y', ruleId: 'good-rule', action: 'accept' },
         { id: '4', timestamp: '', skill: 'a11y', ruleId: 'good-rule', action: 'accept' },
       ];
-
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(entries);
+      seedFeedback(entries, tmpDir);
 
       const recs = engine.generateRecommendations();
 
-      const promote = recs.find(r => r.type === 'promote');
+      const promote = recs.find((r) => r.type === 'promote');
       expect(promote).toBeDefined();
       expect(promote!.ruleId).toBe('good-rule');
       expect(promote!.priority).toBe('medium');
@@ -757,13 +700,11 @@ describe('FeedbackLoopEngine', () => {
         { id: '4', timestamp: '', skill: 'a11y', ruleId: 'mid-rule', action: 'reject' },
         { id: '5', timestamp: '', skill: 'a11y', ruleId: 'mid-rule', action: 'accept' },
       ];
-
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(entries);
+      seedFeedback(entries, tmpDir);
 
       const recs = engine.generateRecommendations();
 
-      const tune = recs.find(r => r.type === 'tune');
+      const tune = recs.find((r) => r.type === 'tune');
       expect(tune).toBeDefined();
       expect(tune!.ruleId).toBe('mid-rule');
       expect(tune!.priority).toBe('medium');
@@ -781,9 +722,7 @@ describe('FeedbackLoopEngine', () => {
         { id: '5', timestamp: '', skill: 'a11y', ruleId: 'mixed-rule', action: 'partial' },
         { id: '6', timestamp: '', skill: 'a11y', ruleId: 'mixed-rule', action: 'ignore' },
       ];
-
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(entries);
+      seedFeedback(entries, tmpDir);
 
       const recs = engine.generateRecommendations();
 
@@ -791,7 +730,7 @@ describe('FeedbackLoopEngine', () => {
       // rejectRate = 2/6 ≈ 0.333 → 不满足 disable (>0.8)
       // mixedSignals = 4 (accept, reject, partial, ignore) >= 2
       // acceptRate 0.333 在 [0.3, 0.7] 内
-      const investigate = recs.find(r => r.type === 'investigate');
+      const investigate = recs.find((r) => r.type === 'investigate');
       expect(investigate).toBeDefined();
       expect(investigate!.ruleId).toBe('mixed-rule');
       expect(investigate!.priority).toBe('low');
@@ -826,8 +765,7 @@ describe('FeedbackLoopEngine', () => {
         { id: 'm3', timestamp: '', skill: 'a11y', ruleId: 'mid-rule', action: 'accept' },
       );
 
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(entries);
+      seedFeedback(entries, tmpDir);
 
       const recs = engine.generateRecommendations();
 
@@ -849,13 +787,11 @@ describe('FeedbackLoopEngine', () => {
         { id: '6', timestamp: '', skill: 'a11y', ruleId: 'rule-x', action: 'reject' },
         { id: '7', timestamp: '', skill: 'a11y', ruleId: 'rule-x', action: 'accept' },
       ];
-
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(entries);
+      seedFeedback(entries, tmpDir);
 
       const recs = engine.generateRecommendations();
 
-      const ruleXRecs = recs.filter(r => r.ruleId === 'rule-x');
+      const ruleXRecs = recs.filter((r) => r.ruleId === 'rule-x');
       expect(ruleXRecs).toHaveLength(1);
       expect(ruleXRecs[0].type).toBe('disable');
     });
@@ -865,13 +801,11 @@ describe('FeedbackLoopEngine', () => {
         { id: '1', timestamp: '', skill: 'a11y', ruleId: 'few', action: 'reject' },
         { id: '2', timestamp: '', skill: 'a11y', ruleId: 'few', action: 'reject' },
       ];
-
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(entries);
+      seedFeedback(entries, tmpDir);
 
       const recs = engine.generateRecommendations();
 
-      const fewRecs = recs.filter(r => r.ruleId === 'few');
+      const fewRecs = recs.filter((r) => r.ruleId === 'few');
       expect(fewRecs).toHaveLength(0);
     });
 
@@ -886,13 +820,12 @@ describe('FeedbackLoopEngine', () => {
         entries.push({ id: `b${i}`, timestamp: '', skill: 'security', ruleId: 'terrible', action: 'reject' });
       }
 
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(entries);
+      seedFeedback(entries, tmpDir);
 
       const recs = engine.generateRecommendations();
 
       expect(recs).toHaveLength(2);
-      const types = recs.map(r => r.type);
+      const types = recs.map((r) => r.type);
       expect(types).toContain('disable');
       expect(types).toContain('promote');
     });
@@ -906,13 +839,11 @@ describe('FeedbackLoopEngine', () => {
         { id: '5', timestamp: '', skill: 'a11y', ruleId: 'edge', action: 'reject' },
         { id: '6', timestamp: '', skill: 'a11y', ruleId: 'edge', action: 'accept' },
       ];
-
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(entries);
+      seedFeedback(entries, tmpDir);
 
       const recs = engine.generateRecommendations();
 
-      const edgeRecs = recs.filter(r => r.ruleId === 'edge');
+      const edgeRecs = recs.filter((r) => r.ruleId === 'edge');
       expect(edgeRecs).toHaveLength(1);
       expect(edgeRecs[0].type).toBe('disable');
     });
@@ -924,13 +855,11 @@ describe('FeedbackLoopEngine', () => {
         { id: '3', timestamp: '', skill: 'a11y', ruleId: 'tune-edge', action: 'reject' },
         { id: '4', timestamp: '', skill: 'a11y', ruleId: 'tune-edge', action: 'reject' },
       ];
-
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(entries);
+      seedFeedback(entries, tmpDir);
 
       const recs = engine.generateRecommendations();
 
-      const tuneRecs = recs.filter(r => r.ruleId === 'tune-edge');
+      const tuneRecs = recs.filter((r) => r.ruleId === 'tune-edge');
       expect(tuneRecs).toHaveLength(1);
       expect(tuneRecs[0].type).toBe('tune');
       expect(tuneRecs[0].reason).toContain('50% accept rate');

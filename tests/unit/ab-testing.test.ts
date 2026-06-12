@@ -4,45 +4,15 @@
  * Covers: determineWinner, history storage (load/save/recent),
  * and ABTestRunner (runTest, determineWinner, saveResult, loadHistory, getBestConfigurations).
  *
- * Uses fs mocking (same pattern as feedback-loop.test.ts) for CI compatibility.
+ * 使用真实 tmpDir + basePath/storageDir 参数化实现文件隔离，
+ * 不再使用 `mock.module('fs', ...)` —— 跨文件 mock 会在
+ * 共享 module registry 时污染 phase5-engines / prompt-tuner 等
+ * 其他 suite。
  */
 
-import { describe, it, expect, beforeEach, mock } from 'bun:test';
-
-// ── Shared mock state (mutable, referenced by mock closures) ────────────────
-
-const mockState = {
-  fileExists: false,
-  fileContent: '',
-  writtenCalls: [] as Array<{ path: string; content: string }>,
-  mkdirCalls: [] as string[],
-};
-
-// ── Mock fs (MUST be before imports so the target module picks up mocks) ───
-
-mock.module('fs', () => ({
-  existsSync: (_p: string) => mockState.fileExists,
-  readFileSync: (_p: string, _encoding?: string) => mockState.fileContent,
-  writeFileSync: (_p: string, content: string) => {
-    mockState.writtenCalls.push({ path: _p, content });
-    mockState.fileContent = content;
-    mockState.fileExists = true;
-  },
-  mkdirSync: (_p: string, _opts?: any) => {
-    mockState.mkdirCalls.push(_p);
-  },
-  unlinkSync: (_p: string) => {},
-  rmSync: (_p: string, _opts?: any) => {},
-}));
-
-// ── Mock generateId ─────────────────────────────────────────────────────────
-
-mock.module('../../src/utils', () => ({
-  generateId: () => 'test-id-001',
-}));
-
-// ── Imports (AFTER mocks are installed) ─────────────────────────────────────
-
+import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test';
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   determineWinner,
   loadABHistory,
@@ -54,13 +24,41 @@ import {
   type ABTestHistoryEntry,
 } from '../../src/engines/harness/ab-testing';
 
-// ── Reset helpers ──────────────────────────────────────────────────────────
+// ── Temp directory helpers ──────────────────────────────────────────────────
 
-function resetMockState(): void {
-  mockState.fileExists = false;
-  mockState.fileContent = '';
-  mockState.writtenCalls = [];
-  mockState.mkdirCalls = [];
+function createTempDir(prefix: string): string {
+  const dir = path.join(
+    process.env.TMPDIR || '/tmp',
+    `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  );
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function cleanupDir(dir: string): void {
+  if (fs.existsSync(dir)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function abHistoryFile(basePath: string): string {
+  return path.join(basePath, '.qa-ab-history', 'ab-test-history.json');
+}
+
+/** 预填充 ab-test-history.json；测试 arrange 阶段使用 */
+function seedABHistory(
+  entries: ABTestHistoryEntry[],
+  basePath: string,
+): void {
+  const dir = path.dirname(abHistoryFile(basePath));
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(abHistoryFile(basePath), JSON.stringify(entries));
+}
+
+/** 读 ab-test-history.json；测试 assert 阶段使用 */
+function readABHistoryFile(basePath: string): ABTestHistoryEntry[] {
+  if (!fs.existsSync(abHistoryFile(basePath))) return [];
+  return JSON.parse(fs.readFileSync(abHistoryFile(basePath), 'utf-8'));
 }
 
 // ===========================================================================
@@ -104,6 +102,7 @@ function makeHistoryEntry(
 // ===========================================================================
 // describe: determineWinner
 // ===========================================================================
+
 describe('determineWinner', () => {
   it('A wins when F1 diff > 0.05 with high significance', () => {
     const result = determineWinner(
@@ -173,29 +172,37 @@ describe('determineWinner', () => {
 });
 
 // ===========================================================================
-// describe: History storage functions (mocked fs)
+// describe: History storage functions (real tmpDir fs)
 // ===========================================================================
+
 describe('History storage', () => {
+  let tmpDir: string;
+
   beforeEach(() => {
-    resetMockState();
+    tmpDir = createTempDir('ab-history');
+  });
+
+  afterEach(() => {
+    cleanupDir(tmpDir);
   });
 
   describe('loadABHistory', () => {
     it('returns empty array when history file does not exist', () => {
-      const result = loadABHistory();
+      const result = loadABHistory(tmpDir);
       expect(result).toEqual([]);
     });
 
     it('returns empty array when file exists but parsing fails', () => {
-      mockState.fileExists = true;
-      mockState.fileContent = 'not valid json';
+      const dir = path.dirname(abHistoryFile(tmpDir));
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(abHistoryFile(tmpDir), 'not valid json');
 
-      const result = loadABHistory();
+      const result = loadABHistory(tmpDir);
       expect(result).toEqual([]);
     });
 
     it('parses valid JSON and returns history entries', () => {
-      const historyData = [
+      const historyData: ABTestHistoryEntry[] = [
         {
           id: 'abc123',
           config: { name: 't1', description: 'd1', skill: 'a11y', variantA: { label: 'A' }, variantB: { label: 'B' } },
@@ -206,10 +213,9 @@ describe('History storage', () => {
           significance: 0.6,
         },
       ];
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(historyData);
+      seedABHistory(historyData, tmpDir);
 
-      const result = loadABHistory();
+      const result = loadABHistory(tmpDir);
       expect(result).toHaveLength(1);
       expect(result[0].id).toBe('abc123');
       expect(result[0].winner).toBe('A');
@@ -219,57 +225,59 @@ describe('History storage', () => {
 
   describe('saveABHistory', () => {
     it('writes a new entry to history file', () => {
-      const existing = [makeHistoryEntry('prev-001')];
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(existing);
+      const existing: ABTestHistoryEntry[] = [makeHistoryEntry('prev-001')];
+      seedABHistory(existing, tmpDir);
 
       const result = makeResult('A', 0.7);
-      saveABHistory(result);
+      saveABHistory(result, tmpDir);
 
-      const written = JSON.parse(mockState.fileContent);
+      const written = readABHistoryFile(tmpDir);
       expect(written).toHaveLength(2);
-      expect(written[1].id).toBe('test-id-001');
+      // 新 entry 会被加上真实 generateId() 的结果（非空字符串，与 prev-001 不同）
+      expect(written[1].id).toBeTruthy();
+      expect(written[1].id).not.toBe('prev-001');
       expect(written[1].winner).toBe('A');
     });
 
     it('creates directory if it does not exist', () => {
       const result = makeResult('B', 0.8);
-      saveABHistory(result);
+      saveABHistory(result, tmpDir);
 
-      expect(mockState.mkdirCalls.length).toBeGreaterThan(0);
+      // 验证 .qa-ab-history/ 目录被创建
+      const dir = path.dirname(abHistoryFile(tmpDir));
+      expect(fs.existsSync(dir)).toBe(true);
+      // 验证文件被写入
+      expect(fs.existsSync(abHistoryFile(tmpDir))).toBe(true);
     });
   });
 
   describe('getRecentABTests', () => {
     it('returns limited entries in reverse order', () => {
-      const history = Array.from({ length: 20 }, (_, i) =>
+      const history: ABTestHistoryEntry[] = Array.from({ length: 20 }, (_, i) =>
         makeHistoryEntry(`id-${i}`, 'A', 0.5),
       );
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(history);
+      seedABHistory(history, tmpDir);
 
-      const recent = getRecentABTests(5);
+      const recent = getRecentABTests(5, tmpDir);
       expect(recent).toHaveLength(5);
       expect(recent[0].id).toBe('id-19');
       expect(recent[4].id).toBe('id-15');
     });
 
     it('returns all entries reversed when count exceeds history length', () => {
-      const history = [makeHistoryEntry('x1'), makeHistoryEntry('x2')];
-      mockState.fileExists = true;
-      mockState.fileContent = JSON.stringify(history);
+      const history: ABTestHistoryEntry[] = [makeHistoryEntry('x1'), makeHistoryEntry('x2')];
+      seedABHistory(history, tmpDir);
 
-      const recent = getRecentABTests(100);
+      const recent = getRecentABTests(100, tmpDir);
       expect(recent).toHaveLength(2);
       expect(recent[0].id).toBe('x2');
       expect(recent[1].id).toBe('x1');
     });
 
     it('returns empty array when history is empty', () => {
-      mockState.fileExists = true;
-      mockState.fileContent = '[]';
+      seedABHistory([], tmpDir);
 
-      const recent = getRecentABTests(10);
+      const recent = getRecentABTests(10, tmpDir);
       expect(recent).toEqual([]);
     });
   });
@@ -278,7 +286,9 @@ describe('History storage', () => {
 // ===========================================================================
 // describe: ABTestRunner
 // ===========================================================================
+
 describe('ABTestRunner', () => {
+  let tmpDir: string;
   let runner: ABTestRunner;
 
   const baseConfig: ABTestConfig = {
@@ -331,7 +341,12 @@ describe('ABTestRunner', () => {
   ];
 
   beforeEach(() => {
-    runner = new ABTestRunner();
+    tmpDir = createTempDir('ab-runner');
+    runner = new ABTestRunner({ storageDir: tmpDir });
+  });
+
+  afterEach(() => {
+    cleanupDir(tmpDir);
   });
 
   // -----------------------------------------------------------------------
@@ -432,27 +447,25 @@ describe('ABTestRunner', () => {
   });
 
   // -----------------------------------------------------------------------
-  // saveResult and loadHistory — round-trip (mocked fs)
+  // saveResult and loadHistory — round-trip (real fs)
   // -----------------------------------------------------------------------
   describe('saveResult and loadHistory', () => {
-    beforeEach(() => {
-      resetMockState();
-    });
-
     it('round-trips a result through save and load', () => {
       const result = makeResult('A', 0.85);
       runner.saveResult(result);
 
       const loaded = runner.loadHistory();
       expect(loaded).toHaveLength(1);
-      expect(loaded[0].id).toBe('test-id-001');
+      // 真实 generateId() 返回非空字符串
+      expect(loaded[0].id).toBeTruthy();
+      expect(typeof loaded[0].id).toBe('string');
       expect(loaded[0].winner).toBe('A');
       expect(loaded[0].significance).toBe(0.85);
       expect(loaded[0].config.name).toBe('test');
     });
 
     it('loadHistory returns empty array when no file exists', () => {
-      const runner2 = new ABTestRunner();
+      const runner2 = new ABTestRunner({ storageDir: tmpDir });
       const loaded = runner2.loadHistory();
       expect(loaded).toEqual([]);
     });
