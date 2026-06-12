@@ -601,5 +601,120 @@ export class PerformanceSkill extends BaseSkill {
   }
 }
 
+// ============================================================================
+// 性能分数估算（轻量版，不需要 Chrome / Lighthouse）
+// ============================================================================
+//
+// 真实 Lighthouse 集成需要：
+//   1. 安装 chrome / chromium 二进制
+//   2. npm install -D lighthouse chrome-launcher
+//   3. 调 lighthouse(url, {port, output: 'json'}) 解析 LCP/FCP/TBT/CLS
+//   4. 留到 v0.3.0 实现（见 PRD P2 路线图）
+//
+// 当前实现基于 AST 规则命中数做粗略估算（0-100）：
+//   - 起始分：100
+//   - 每个 critical 规则命中：-5
+//   - 每个 warning 规则命中：-3
+//   - 每个 info 规则命中：-1
+//   - 大量命中（>20）额外扣分：-10
+//
+// 用途：在没有 Chrome 的 CI 环境下提供快速性能反馈。
+// 警告：这不是真实 Lighthouse 评分，仅用于粗略趋势判断。
+
+/**
+ * 单条命中权重（按 severity 区分）。
+ * 与 REGEX_PERF_RULES 配套；AST_PERF_RULES 默认是 'warning'。
+ */
+const SEVERITY_WEIGHT: Record<Severity, number> = {
+  critical: 5,
+  warning: 3,
+  info: 1,
+};
+
+/**
+ * 估算性能分数（0-100，越高越好）。
+ *
+ * 接受 PerformanceSkill.diagnose() 的输出，按 severity 权重扣分。
+ * 命中数为 0 → 100 分（最佳）。
+ *
+ * 注意：这不是真实 Lighthouse 评分，仅作为无 Chrome 时的
+ * 快速反馈。Lighthouse 真实集成需要 puppeteer/lighthouse
+ * npm 包和 Chrome 二进制。
+ */
+export function estimatePerformanceScore(diagnoses: Diagnosis[]): number {
+  if (diagnoses.length === 0) return 100;
+
+  let penalty = 0;
+  for (const d of diagnoses) {
+    penalty += SEVERITY_WEIGHT[d.severity] ?? 1;
+  }
+
+  // 大量命中说明整体代码质量较差，额外扣分
+  if (diagnoses.length > 20) {
+    penalty += 10;
+  }
+
+  return Math.max(0, 100 - penalty);
+}
+
+/**
+ * 性能分级（A/B/C/D/F），对应 Lighthouse-style 报告。
+ *   A: 90-100
+ *   B: 80-89
+ *   C: 70-79
+ *   D: 50-69
+ *   F: 0-49
+ */
+export function performanceGrade(score: number): 'A' | 'B' | 'C' | 'D' | 'F' {
+  if (score >= 90) return 'A';
+  if (score >= 80) return 'B';
+  if (score >= 70) return 'C';
+  if (score >= 50) return 'D';
+  return 'F';
+}
+
+// ============================================================================
+// 真实 Lighthouse 集成（v0.3.0 — 当前为占位）
+// ============================================================================
+//
+// 设计文档：
+//   1. 用 chrome-launcher 启动 headless chrome
+//   2. 调 lighthouse(url, {port, onlyCategories: ['performance']})
+//   3. 解析 audits['largest-contentful-paint'] / 'first-contentful-paint' /
+//      'cumulative-layout-shift' / 'total-blocking-time'
+//   4. 返回结构化 LCP/FCP/CLS/TBT 报告
+//
+// 触发条件：环境变量 LIGHTHOUSE_ENABLED=1 且 chrome 可用。
+// 默认禁用：避免 CI 环境无 Chrome 时报错。
+
+/**
+ * 真实 Lighthouse 审计（v0.3.0 占位）。
+ *
+ * 当前总是返回 null，调用方应 fallback 到 estimatePerformanceScore。
+ * 待 v0.3.0 真实实现后，此函数会：
+ *   - 检测 chrome 可用性
+ *   - 启动 chrome + 跑 lighthouse
+ *   - 解析 LCP/FCP/CLS/TBT 数值
+ *   - 返回结构化报告
+ *
+ * 详见上方设计文档。
+ */
+export interface LighthouseReport {
+  url: string;
+  performanceScore: number;
+  metrics: {
+    lcp: number; // ms
+    fcp: number; // ms
+    cls: number;
+    tbt: number; // ms
+  };
+}
+
+export async function runLighthouseAudit(_url: string): Promise<LighthouseReport | null> {
+  // v0.3.0 占位：真实实现需要 chrome + lighthouse npm 包
+  // 详见上方设计文档
+  return null;
+}
+
 export default PerformanceSkill;
 
