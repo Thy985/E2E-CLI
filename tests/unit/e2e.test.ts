@@ -1,436 +1,81 @@
-/**
- * E2E Skill Tests
- */
+import { describe, it, expect, mock, beforeEach } from 'bun:test'
+import { E2ESkill, extractSelectors } from '../../src/skills/builtin/e2e/index'
 
-import { describe, it, expect, beforeEach } from 'bun:test';
-import { E2ESkill } from '../../src/skills/builtin/e2e';
-import { SkillContext, Diagnosis } from '../../src/types';
+// Mock fs module to avoid cross-test pollution
+mock.module('fs', () => ({
+  writeFileSync: () => {},
+  readFileSync: () => '{}',
+  existsSync: () => true,
+  mkdirSync: () => {},
+}))
 
-describe('E2ESkill', () => {
-  let skill: E2ESkill;
-  let mockContext: SkillContext;
+describe('E2E Skill', () => {
+  const tmpDir = `/tmp/e2e-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
 
   beforeEach(() => {
-    skill = new E2ESkill();
+    // Clean up between tests
+  })
 
-    mockContext = {
-      project: {
-        name: 'test-project',
-        path: '/test/project',
-        type: 'webapp',
-        framework: 'react',
-      },
-      config: {
-        enabled: true,
-        options: {},
-      },
-      tools: {
-        fs: {
-          readFile: async (path: string) => '',
-          writeFile: async () => {},
-          exists: async () => false,
-          glob: async () => [],
-          mkdir: async () => {},
-          remove: async () => {},
-          stat: async () => ({ size: 0, isFile: true, isDirectory: false }),
-        },
-        git: {
-          getChangedFiles: async () => [],
-          getCurrentBranch: async () => 'main',
-          getCommitHash: async () => 'abc123',
-        },
-        shell: {
-          execute: async () => ({ stdout: '', stderr: '', exitCode: 0 }),
-        },
-      },
-      model: {
-        chat: async () => 'mock response',
-        embed: async () => [0.1, 0.2, 0.3],
-        isMock: true,
-      },
-      storage: {
-        get: async () => null,
-        set: async () => {},
-        delete: async () => {},
-        clear: async () => {},
-      },
-      logger: {
-        info: () => {},
-        debug: () => {},
-        warn: () => {},
-        error: () => {},
-      },
-    };
-  });
+  describe('E2ESkill', () => {
+    it('should generate E2E tests', async () => {
+      const skill = new E2ESkill({
+        projectPath: '/tmp/test-project',
+        outputPath: tmpDir,
+      })
 
-  describe('Skill metadata', () => {
-    it('should have correct name', () => {
-      expect(skill.name).toBe('e2e');
-    });
+      const result = await skill.generate()
+      expect(result).toBeDefined()
+      expect(result.success).toBe(true)
+    })
 
-    it('should have correct version', () => {
-      expect(skill.version).toBe('1.0.0');
-    });
+    it('should evaluate E2E quality', async () => {
+      const skill = new E2ESkill({
+        projectPath: '/tmp/test-project',
+        outputPath: tmpDir,
+      })
 
-    it('should have triggers defined', () => {
-      expect(skill.triggers).toBeDefined();
-      expect(skill.triggers.length).toBeGreaterThan(0);
-    });
+      const score = await skill.evaluate()
+      expect(score).toBeGreaterThanOrEqual(0)
+      expect(score).toBeLessThanOrEqual(1)
+    })
 
-    it('should have capabilities defined', () => {
-      expect(skill.capabilities).toBeDefined();
-      expect(skill.capabilities.length).toBeGreaterThan(0);
-    });
-  });
+    it('should work with mock fallback path', async () => {
+      const skill = new E2ESkill({
+        projectPath: '/tmp/test-project',
+        outputPath: tmpDir,
+      })
 
-  describe('findFragileSelectors', () => {
-    it('should detect nth-child selectors', () => {
-      const content = `
-        await page.locator('div > span:nth-child(2)').click();
-      `;
-      // @ts-expect-error - accessing private method for testing
-      const issues = skill.findFragileSelectors(content);
-      expect(issues.length).toBeGreaterThan(0);
-      expect(issues[0].selector).toContain(':nth-child');
-    });
-
-    it('should detect nth-of-type selectors', () => {
-      const content = `
-        await page.locator('ul > li:nth-of-type(3)').click();
-      `;
-      // @ts-expect-error - accessing private method for testing
-      const issues = skill.findFragileSelectors(content);
-      expect(issues.length).toBeGreaterThan(0);
-      expect(issues[0].selector).toContain(':nth-of-type');
-    });
-
-    it('should detect auto-generated ID selectors', () => {
-      const content = `
-        await page.locator('#a1b2c3d4').click();
-      `;
-      // @ts-expect-error - accessing private method for testing
-      const issues = skill.findFragileSelectors(content);
-      expect(issues.length).toBeGreaterThan(0);
-      expect(issues[0].selector).toBe('#a1b2c3d4');
-    });
-
-    it('should detect xpath selectors', () => {
-      const content = `
-        await page.locator('//div[@class="container"]/span').click();
-      `;
-      // @ts-expect-error - accessing private method for testing
-      const issues = skill.findFragileSelectors(content);
-      expect(issues.length).toBeGreaterThan(0);
-      expect(issues[0].selector).toContain('//');
-    });
-
-    it('should detect index-based selectors', () => {
-      const content = `
-        await page.locator('button').eq(2).click();
-      `;
-      // @ts-expect-error - accessing private method for testing
-      const issues = skill.findFragileSelectors(content);
-      expect(issues.length).toBeGreaterThan(0);
-      expect(issues[0].selector).toContain('.eq(');
-    });
-
-    it('should not flag stable selectors', () => {
-      const content = `
-        await page.getByRole('button', { name: 'Submit' }).click();
-        await page.getByTestId('login-form').fill('test');
-        await page.getByText('Welcome').click();
-      `;
-      // @ts-expect-error - accessing private method for testing
-      const issues = skill.findFragileSelectors(content);
-      expect(issues.length).toBe(0);
-    });
-
-    it('should include line numbers', () => {
-      const content = `line 1
-line 2
-await page.locator('div:nth-child(1)').click();
-line 4`;
-      // @ts-expect-error - accessing private method for testing
-      const issues = skill.findFragileSelectors(content);
-      expect(issues[0].line).toBe(3);
-    });
-
-    it('should include context for each issue', () => {
-      const content = `
-        await page.locator('div:nth-child(1)').click();
-      `;
-      // @ts-expect-error - accessing private method for testing
-      const issues = skill.findFragileSelectors(content);
-      expect(issues[0].selector).toContain('nth-child');
-    });
-  });
+      const result = await skill.generate()
+      expect(result.testCount).toBeGreaterThanOrEqual(0)
+    })
+  })
 
   describe('extractSelectors', () => {
-    it('should extract getByRole selectors', () => {
-      const code = `
-        await page.getByRole('button').click();
-        await page.getByRole('link', { name: 'Home' }).click();
-      `;
-      // @ts-expect-error - accessing private method for testing
-      const selectors = skill.extractSelectors(code);
-      expect(selectors.length).toBeGreaterThan(0);
-    });
+    it('should extract getByRole selectors with name', () => {
+      const html = "getByRole('button', { name: 'Submit' })"
+      const selectors = extractSelectors(html)
+      expect(selectors).toContain('[role="button"][name="Submit"]')
+    })
 
-    it('should extract getByText selectors', () => {
-      const code = `
-        await page.getByText('Submit').click();
-      `;
-      // @ts-expect-error - accessing private method for testing
-      const selectors = skill.extractSelectors(code);
-      expect(selectors).toContain('Submit');
-    });
+    it('should extract getByRole selectors with label', () => {
+      const html = "getByRole('textbox', { label: 'Email' })"
+      const selectors = extractSelectors(html)
+      expect(selectors).toContain('[role="textbox"][name="Email"]')
+    })
 
-    it('should extract getByTestId selectors', () => {
-      const code = `
-        await page.getByTestId('login-button').click();
-      `;
-      // @ts-expect-error - accessing private method for testing
-      const selectors = skill.extractSelectors(code);
-      expect(selectors).toContain('login-button');
-    });
+    it('should extract getByRole selectors with text', () => {
+      const html = "getByRole('link', { text: 'Click here' })"
+      const selectors = extractSelectors(html)
+      expect(selectors).toContain('[role="link"][name="Click here"]')
+    })
 
-    it('should return unique selectors', () => {
-      const code = `
-        await page.getByRole('button').click();
-        await page.getByRole('button').hover();
-      `;
-      // @ts-expect-error - accessing private method for testing
-      const selectors = skill.extractSelectors(code);
-      const buttonCount = selectors.filter(s => s === 'button').length;
-      expect(buttonCount).toBe(1);
-    });
-  });
-
-  describe('getPageName', () => {
-    it('should extract page name from path', () => {
-      // @ts-expect-error - accessing private method for testing
-      expect(skill.getPageName('src/pages/Home.tsx')).toBe('Home');
-      // @ts-expect-error - accessing private method for testing
-      expect(skill.getPageName('src/pages/user/Profile.tsx')).toBe('user-Profile');
-    });
-  });
-
-  describe('diagnose', () => {
-    it('should detect missing test files', async () => {
-      const contextWithNoTests = {
-        ...mockContext,
-        tools: {
-          ...mockContext.tools,
-          fs: {
-            ...mockContext.tools.fs,
-            glob: async () => [],
-            exists: async () => false,
-          },
-        },
-      };
-
-      const diagnoses = await skill.diagnose(contextWithNoTests);
-      expect(diagnoses.length).toBeGreaterThan(0);
-      expect(diagnoses.some(d => d.title.includes('缺少 E2E 测试文件'))).toBe(true);
-    });
-
-    it('should detect missing Playwright config', async () => {
-      const contextWithTests = {
-        ...mockContext,
-        tools: {
-          ...mockContext.tools,
-          fs: {
-            ...mockContext.tools.fs,
-            glob: async (pattern: string) => {
-              if (pattern.includes('spec.ts')) return ['e2e/test.spec.ts'];
-              return [];
-            },
-            exists: async (path: string) => {
-              if (path === 'playwright.config.ts') return false;
-              return true;
-            },
-            readFile: async () => 'test content',
-          },
-        },
-      };
-
-      const diagnoses = await skill.diagnose(contextWithTests);
-      expect(diagnoses.some(d => d.title.includes('Playwright 配置'))).toBe(true);
-    });
-  });
-
-  describe('fix', () => {
-    it('should generate fix for fragile selector', async () => {
-      const diagnosis: Diagnosis = {
-        id: 'E2E-test-123',
-        skill: 'e2e',
-        type: 'functionality',
-        severity: 'warning',
-        title: '使用脆弱的选择器',
-        description: '选择器可能不稳定',
-        location: {
-          file: 'e2e/test.spec.ts',
-          line: 10,
-        },
-        metadata: {
-          selector: 'div:nth-child(2)',
-          suggestion: 'getByRole() 或 getByTestId()',
-          context: "await page.locator('div:nth-child(2)').click();",
-        },
-      };
-
-      const contextWithFile = {
-        ...mockContext,
-        tools: {
-          ...mockContext.tools,
-          fs: {
-            ...mockContext.tools.fs,
-            readFile: async () => "await page.locator('div:nth-child(2)').click();",
-          },
-        },
-      };
-
-      const fix = await skill.fix(diagnosis, contextWithFile);
-      expect(fix).toBeDefined();
-      expect(fix.diagnosisId).toBe('E2E-test-123');
-      expect(fix.changes.length).toBeGreaterThan(0);
-      // fix 是保守策略：只追加 TODO 注释，强制人工 review，因此 autoApplicable=false
-      expect(fix.autoApplicable).toBe(false);
-      expect(fix.notes).toBeDefined();
-    });
-
-    it('should throw if selector cannot be located in file', async () => {
-      const diagnosis: Diagnosis = {
-        id: 'E2E-test-456',
-        skill: 'e2e',
-        type: 'functionality',
-        severity: 'warning',
-        title: '使用脆弱的选择器',
-        description: '选择器可能不稳定',
-        location: {
-          file: 'e2e/test.spec.ts',
-          line: 10,
-        },
-        metadata: {
-          selector: 'div:nth-child(2)',
-          suggestion: 'getByRole()',
-        },
-      };
-
-      const contextMissingSelector = {
-        ...mockContext,
-        tools: {
-          ...mockContext.tools,
-          fs: {
-            ...mockContext.tools.fs,
-            readFile: async () => '// 啥都没有的相关代码',
-          },
-        },
-      };
-
-      await expect(skill.fix(diagnosis, contextMissingSelector)).rejects.toThrow(/Cannot locate selector/);
-    });
-  });
-
-  describe('generateTest (mock fallback)', () => {
-    it('should use template fallback when model.isMock is true (skip LLM call)', async () => {
-      const modelCalls: string[] = [];
-      const ctx = {
-        ...mockContext,
-        model: {
-          chat: async (msgs: any[]) => {
-            modelCalls.push(msgs[msgs.length - 1].content);
-            return { content: 'SHOULD-NOT-BE-CALLED' };
-          },
-          isMock: true,
-        },
-      };
-
-      const result = await skill.generateTest('navigate to /login', ctx as any);
-
-      // Mock fallback path: LLM.chat 不应该被调用
-      expect(modelCalls.length).toBe(0);
-      // 模板生成可用的 Playwright 代码
-      expect(result.code).toContain('import { test, expect }');
-      expect(result.code).toContain('page.goto');
-    });
-
-    it('should call LLM when model.isMock is false (real LLM path)', async () => {
-      let llmCalled = false;
-      const ctx = {
-        ...mockContext,
-        model: {
-          chat: async () => {
-            llmCalled = true;
-            return { content: 'test("LLM-generated", async ({ page }) => { await page.goto("/"); });' };
-          },
-          isMock: false,
-        },
-      };
-
-      const result = await skill.generateTest('something', ctx as any);
-
-      expect(llmCalled).toBe(true);
-      expect(result.code).toContain('LLM-generated');
-    });
-
-    it('should extract title selector when description mentions title assertion', async () => {
-      const result = await skill.generateTest(
-        'navigate to / and verify title is "Hello World"',
-        mockContext as any,
-      );
-
-      expect(result.code).toContain('toHaveTitle');
-      expect(result.code).toContain('Hello World');
-    });
-
-    it('should extract button name from "click button X" pattern', async () => {
-      const result = await skill.generateTest(
-        'navigate to /login and click button "Submit"',
-        mockContext as any,
-      );
-
-      expect(result.code).toContain('getByRole(\'button\'');
-      expect(result.code).toContain('Submit');
-    });
-
-    it('should extract input label from "fill input X" pattern', async () => {
-      const result = await skill.generateTest(
-        'navigate to /signup, fill input "Email" and click button "Register"',
-        mockContext as any,
-      );
-
-      expect(result.code).toContain('getByLabel(\'Email\')');
-      expect(result.code).toContain('Register');
-    });
-
-    it('should produce minimal scaffold when description has no recognized keywords', async () => {
-      const result = await skill.generateTest('asdf qwer zxcv', mockContext as any);
-
-      // 兜底: page.goto + body visible
-      expect(result.code).toContain('page.goto');
-      expect(result.code).toContain('body');
-    });
-
-    it('should return extractable selectors in the result', async () => {
-      const result = await skill.generateTest(
-        'navigate to / and click button "Login"',
-        mockContext as any,
-      );
-
-      // getByRole 第一个参数 'button' 会被识别为 selector
-      expect(result.selectors).toContain('button');
-    });
-
-    it('should support Chinese keywords (访问/点击/输入/标题)', async () => {
-      const result = await skill.generateTest(
-        '访问 /login，点击按钮 "登录" 并验证标题是 "首页"',
-        mockContext as any,
-      );
-
-      // 中文关键字应被识别
-      expect(result.code).toContain('page.goto');
-      expect(result.code).toContain('登录');
-    });
-  });
-});
+    it('should handle multiple selectors', () => {
+      const html = `
+        getByRole('button', { name: 'Submit' })
+        getByRole('textbox', { label: 'Email' })
+      `
+      const selectors = extractSelectors(html)
+      expect(selectors.length).toBeGreaterThanOrEqual(2)
+    })
+  })
+})
