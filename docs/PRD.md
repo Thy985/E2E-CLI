@@ -279,23 +279,65 @@ qa-agent skill install @qa-agent/skill-security
 - [x] 文档与示例
 - [x] 性能基准（大项目扫描优化）
 
+### Phase 6: 高级 AI 集成 ✅ 已完成 (100%) — *v3.1*
+
+#### 6.1 LLM 多 Provider 抽象
+- [x] `ModelClient` 接口统一（`isMock` / `chat` / `embed`）
+- [x] 6 大 provider 工厂（OpenAI / Anthropic / DeepSeek / Zhipu / Moonshot / Ollama）
+- [x] `detectProvider()` 启发式自动检测（API key 前缀 + 模型名）
+- [x] `getSupportedProviders()` 运行时枚举
+- [x] 集成测试 11 pass / 7 skip（`describe.skipIf(!hasAnyApiKey)` 模式，无 key 也能跑 mock）
+
+#### 6.2 E2E Skill 双路径生成
+- [x] **真实 LLM 路径** — 通过 `ModelClient.chat()` 调用 API 生成 Playwright
+- [x] **Template-based fallback** — 无 API key 时 keyword regex（中英双语）+ Playwright 模板
+- [x] `model.isMock` 自动检测路径
+- [x] `extractSelectors` regex 增强，支持 `getByRole('button', { name: 'X' })` 的 `name/label/text` 字段
+- [x] Unit 测试 29 pass（mock 路径不调 LLM、真实路径正常、关键字提取、selector 解析）
+
+#### 6.3 性能 Skill 评分体系
+- [x] `estimatePerformanceScore(diagnoses)` — severity-weighted 0-100 估算
+  - critical: -5, warning: -3, info: -1
+  - >20 命中: 额外 -10
+  - floor: 0
+- [x] `performanceGrade(score)` — A/B/C/D/F 分级（90/80/70/50 分档）
+- [x] `runLighthouseAudit(url) → null` — v0.3.0 占位（待 Chrome 二进制）
+- [x] Unit 测试 17 pass
+
+#### 6.4 跨文件测试隔离修复
+- [x] 移除 `feedback-loop.test.ts` 的 `mock.module('fs', ...)` 污染
+- [x] 移除 `ab-testing.test.ts` 的 `mock.module('fs', ...)` 污染
+- [x] 改用真实 `tmpDir` + `basePath` / `storageDir` 参数化
+- [x] 解决 bun:test 共享 module registry 的 cross-suite pollution 问题
+
 ---
 
 ## 五、成功指标
 
-| 指标 | 目标 | 当前状态 |
-|------|------|---------|
+| 指标 | 目标 | 当前状态 (v3.1) |
+|------|------|-----------------|
 | 诊断精确率 (Precision) | > 90% | ✅ AST 驱动检测（a11y/security/performance/react/vue/nextjs/nuxt），E2E 评估通过 |
 | 诊断召回率 (Recall) | > 85% | ✅ 7 个 Skill × 多规则覆盖，Golden Set 70 用例验证 |
 | 低风险问题自动修复率 | > 80% | ✅ AST 修复 + 原子回滚 + 编译验证，支持 15+ 条可修复规则 |
-| 修复后回归通过率 | > 95% | ✅ 编译验证 + 测试验证 + AST diff 验证（4 层验证引擎） |
+| 修复后回归通过率 | > 95% | ✅ 编译验证 + 测试验证 + AST diff 验证（4 层验证引擎）|
 | AI Harness 评估通过率 | ≥ 85% | ✅ 评估引擎 + 质量门禁 + 回归检测 + CI 集成 |
-| Golden Set 覆盖率 | ≥ 50 用例 | ✅ 70 用例（a11y/security/performance/react/vue/nextjs/nuxt 各 10） |
+| Golden Set 覆盖率 | ≥ 50 用例 | ✅ 70 用例（a11y/security/performance/react/vue/nextjs/nuxt 各 10）|
 | TypeScript 编译 | 零错误 | ✅ tsc --noEmit 通过 |
-| 测试覆盖率 | 300+ tests | ✅ 399 pass, 0 fail, 1020 expect(), 16 文件 |
+| Unit 测试 | 全部通过 | ✅ **448 pass / 0 fail / 1084 expect** (20 文件) |
+| Integration 测试 | 全部通过 | ⚠️ 119 pass / 7 skip / 2 fail (5 文件，2 个 pre-existing 边界用例) |
+| Eval Harness 评分 | ≥ 80% F1 | ✅ **87.1% pass / 89.8% F1** (per-skill F1: a11y 92.9% / security 88.6% / perf 87.7% / react 88.9% / vue 80.0% / nextjs 100% / nuxt 90.6%) |
 | Skill 注册一致性 | 全入口统一 | ✅ eval/diagnose/CI 三入口均注册 13 个 Skill |
-| CLI 命令 | 完整覆盖 | ✅ 14 个命令（init/diagnose/fix/audit/skill/ci/watch/dashboard/eval 等） |
+| CLI 命令 | 完整覆盖 | ✅ 14 个命令（init/diagnose/fix/audit/skill/ci/watch/dashboard/eval 等）|
+| LLM Provider 支持 | 多家云端 + 本地 | ✅ OpenAI / Anthropic / DeepSeek / Zhipu / Moonshot / Ollama (6 个) |
+| Mock 模式 | 无 key 也能跑 | ✅ `model.isMock` 检测 + 模板 fallback |
 
 ---
 
-*文档版本: v3.0 | 最后更新: 2026-06-07*
+*文档版本: v3.1 | 最后更新: 2026-06-10*
+
+### v3.1 更新摘要（2026-06-10）
+- 新增 Phase 6：高级 AI 集成（LLM 多 Provider、E2E 双路径、性能评分）
+- 修复 11 个 unit test 跨文件污染失败（mock.module('fs') → 真实 tmpDir）
+- Unit 测试 399 → 448 (+49)，Integration 测试 117 → 119 (+2)
+- 全部 7 个 Skill 评估 F1 ≥ 80% 门槛
+- 6 个 commit 新增（LLM integration、E2E fallback、performance score、test refactor、history consolidation、performance 估算 + Lighthouse placeholder）
