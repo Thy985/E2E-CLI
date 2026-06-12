@@ -1,0 +1,73 @@
+name: QA-Agent AI Harness Evaluation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'package.json'
+      - '.github/workflows/eval-harness.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'package.json'
+  workflow_dispatch:
+    inputs:
+      skill:
+        description: 'Evaluate specific skill (a11y, security, performance)'
+        required: false
+        type: string
+      threshold:
+        description: 'F1 pass threshold (%)'
+        required: false
+        type: number
+        default: 80
+
+env:
+  BUN_VERSION: '1.2.14'
+
+jobs:
+  eval-harness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run tests
+        run: bun test
+
+      - name: Golden Set Evaluation
+        run: |
+          bun run src/cli/index.ts eval --verbose --threshold ${THRESHOLD:-80}
+        env:
+          THRESHOLD: ${{ github.event.inputs.threshold || '80' }}
+
+      - name: Upload Evaluation Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report-${{ github.run_id }}
+          path: qa-eval-report.json
+          retention-days: 30
+
+      - name: Check for Regression
+        if: github.event_name == 'pull_request'
+        uses: actions/cache@v4
+        with:
+          path: .qa-eval-cache
+          key: eval-cache-${{ github.workflow }}-${{ github.head_ref }}
+          restore-keys: |
+            eval-cache-${{ github.workflow }}-${{ github.base_ref }}

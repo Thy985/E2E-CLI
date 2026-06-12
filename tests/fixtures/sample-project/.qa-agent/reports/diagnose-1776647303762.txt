@@ -1,0 +1,7 @@
+✗ Score: 0/100 (F)
+✗ Issues: 165 (2 critical, 13 warning, 150 info)
+✓ functionality: 100/100
+✓ accessibility: 100/100
+✗ performance: 0/100
+✓ security: 80/100
+✓ code-quality: 100/100

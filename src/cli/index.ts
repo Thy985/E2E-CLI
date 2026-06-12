@@ -1,0 +1,173 @@
+#!/usr/bin/env node
+/**
+ * QA-Agent CLI Entry Point
+ */
+
+import { Command } from 'commander';
+import { diagnoseCommand } from './commands/diagnose';
+import { auditCommand } from './commands/audit';
+import { skillCommand } from './commands/skill';
+import { ciCommand } from './commands/ci';
+import { initCommand } from './commands/init';
+import { uxAuditCommand } from './commands/ux-audit';
+import { designCommand } from './commands/design';
+import { bestPracticesCommand } from './commands/best-practices';
+import { seoCommand } from './commands/seo';
+import { dependencyCommand } from './commands/dependency';
+import { fixCommand } from './commands/fix';
+import { evalCommand } from './commands/eval';
+import { watchCommand } from './commands/watch';
+import { dashboardCommand } from './commands/dashboard';
+
+const program = new Command();
+
+program
+  .name('qa-agent')
+  .description('AI Quality Doctor - Diagnose, Fix, Verify')
+  .version('0.1.0');
+
+// Init command
+program
+  .command('init')
+  .description('Initialize configuration')
+  .option('-f, --format <format>', 'Config format: yaml, json, ts', 'yaml')
+  .option('--force', 'Overwrite existing config')
+  .action(initCommand);
+
+// Diagnose command
+program
+  .command('diagnose')
+  .description('Run quality diagnosis')
+  .option('-s, --skills <skills>', 'Specify diagnosis dimensions, comma-separated (e2e, a11y, performance, security, seo, api, dependency, complexity)', 'e2e,a11y,performance,security')
+  .option('-p, --path <path>', 'Project path', process.cwd())
+  .option('-u, --url <url>', 'Diagnosis URL')
+  .option('-o, --output <format>', 'Output format: html, json, markdown, compact', 'html')
+  .option('-f, --output-file <file>', 'Output file path')
+  .option('--fail-on <level>', 'Failure level: critical, warning', 'critical')
+  .option('-q, --quiet', 'Quiet mode, only output results')
+  .option('-v, --verbose', 'Verbose mode')
+  .option('--ci', 'CI mode (non-interactive, JSON output)')
+  .action(diagnoseCommand);
+
+// Fix command
+program.addCommand(fixCommand);
+
+// Audit command
+program
+  .command('audit')
+  .description('Comprehensive project audit')
+  .option('-p, --path <path>', 'Project path', process.cwd())
+  .option('-o, --output <format>', 'Output format: html, json, markdown', 'html')
+  .option('-f, --output-file <file>', 'Output file path')
+  .option('--comprehensive', 'Comprehensive audit (including security scan)')
+  .option('--compliance <standards>', 'Compliance audit: WCAG2.2, ADA, GDPR')
+  .option('-q, --quiet', 'Quiet mode')
+  .option('-v, --verbose', 'Verbose mode')
+  .action(auditCommand);
+
+// Skill command
+program
+  .command('skill')
+  .description('Manage skills')
+  .addCommand(
+    new Command('list')
+      .description('List installed skills')
+      .action(skillCommand.list)
+  )
+  .addCommand(
+    new Command('install')
+      .description('Install skill from npm registry')
+      .argument('<name>', 'Skill name')
+      .option('-f, --force', 'Force reinstall if already installed')
+      .action(skillCommand.install)
+  )
+  .addCommand(
+    new Command('update')
+      .description('Update skill(s)')
+      .argument('[name]', 'Skill name (optional, updates all if not provided)')
+      .action(skillCommand.update)
+  )
+  .addCommand(
+    new Command('create')
+      .description('Create a new custom skill from template')
+      .argument('<name>', 'Skill name')
+      .option('-d, --description <desc>', 'Skill description')
+      .action(skillCommand.create)
+  )
+  .addCommand(
+    new Command('remove')
+      .description('Remove installed skill')
+      .argument('<name>', 'Skill name')
+      .action(skillCommand.remove)
+  )
+  .addCommand(
+    new Command('enable')
+      .description('Enable a skill')
+      .argument('<name>', 'Skill name')
+      .action(skillCommand.enable)
+  )
+  .addCommand(
+    new Command('disable')
+      .description('Disable a skill')
+      .argument('<name>', 'Skill name')
+      .action(skillCommand.disable)
+  );
+
+// CI command
+program
+  .command('ci')
+  .description('CI/CD integration commands')
+  .addCommand(
+    new Command('generate')
+      .description('Generate CI configuration')
+      .option('-p, --provider <provider>', 'CI provider: github, gitlab, jenkins, azure', 'github')
+      .option('-o, --output <file>', 'Output file path')
+      .action(ciCommand.generate)
+  )
+  .addCommand(
+    new Command('run')
+      .description('Run in CI mode')
+      .option('-p, --path <path>', 'Project path', process.cwd())
+      .action(ciCommand.run)
+  );
+
+// UI/UX Audit command
+program.addCommand(uxAuditCommand);
+
+// Design command
+program.addCommand(designCommand);
+
+// Best Practices command
+program.addCommand(bestPracticesCommand);
+
+// SEO command
+program.addCommand(seoCommand);
+
+// Dependency command
+program.addCommand(dependencyCommand);
+
+// Eval command (AI Harness evaluation)
+program.addCommand(evalCommand);
+
+// Watch command
+program
+  .command('watch')
+  .description('Watch mode - re-diagnose on file changes')
+  .option('-p, --path <path>', 'Project path', process.cwd())
+  .option('-s, --skills <skills>', 'Specify skills to run, comma-separated')
+  .option('-i, --ignore <patterns>', 'Ignore patterns, comma-separated')
+  .option('-d, --debounce <ms>', 'Debounce delay in milliseconds', '500')
+  .action(watchCommand);
+
+// Dashboard command
+program
+  .command('dashboard')
+  .description('Start interactive web dashboard')
+  .option('-p, --path <path>', 'Project path', process.cwd())
+  .option('--port <port>', 'Server port', '3900')
+  .option('--host <host>', 'Server host', 'localhost')
+  .option('--enable-fix', 'Enable fix API')
+  .action(dashboardCommand);
+
+// Parse arguments
+program.parse();
