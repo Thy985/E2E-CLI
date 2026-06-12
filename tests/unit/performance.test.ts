@@ -4,7 +4,7 @@
  * 覆盖：
  * - estimatePerformanceScore: 纯函数按 severity 扣分
  * - performanceGrade: score → A/B/C/D/F
- * - runLighthouseAudit: v0.3.0 占位返回 null
+ * - runLighthouseAudit: v0.3.0 占位 — throws LighthouseNotImplementedError
  * - SEVERITY_WEIGHT 暴露严重度权重
  */
 
@@ -13,6 +13,7 @@ import {
   estimatePerformanceScore,
   performanceGrade,
   runLighthouseAudit,
+  LighthouseNotImplementedError,
 } from '../../src/skills/builtin/performance';
 import type { Diagnosis, Severity } from '../../src/types';
 
@@ -129,14 +130,30 @@ describe('performanceGrade', () => {
 });
 
 describe('runLighthouseAudit (v0.3.0 placeholder)', () => {
-  it('returns null (v0.3.0 not implemented yet)', async () => {
-    const result = await runLighthouseAudit('http://localhost:3000');
-    expect(result).toBeNull();
+  it('throws LighthouseNotImplementedError (v0.3.0 not implemented yet)', async () => {
+    await expect(runLighthouseAudit('http://localhost:3000')).rejects.toBeInstanceOf(
+      LighthouseNotImplementedError,
+    );
   });
 
-  it('does not throw for any URL', async () => {
-    await expect(runLighthouseAudit('http://example.com')).resolves.toBeNull();
-    await expect(runLighthouseAudit('not-a-url')).resolves.toBeNull();
-    await expect(runLighthouseAudit('')).resolves.toBeNull();
+  it('throws for any URL (not silently null)', async () => {
+    await expect(runLighthouseAudit('http://example.com')).rejects.toBeInstanceOf(
+      LighthouseNotImplementedError,
+    );
+    await expect(runLighthouseAudit('not-a-url')).rejects.toBeInstanceOf(
+      LighthouseNotImplementedError,
+    );
+    await expect(runLighthouseAudit('')).rejects.toBeInstanceOf(
+      LighthouseNotImplementedError,
+    );
+  });
+
+  it('error message tells caller to fall back to estimatePerformanceScore', async () => {
+    try {
+      await runLighthouseAudit('http://example.com');
+      throw new Error('should have thrown');
+    } catch (e) {
+      expect((e as Error).message).toContain('estimatePerformanceScore');
+    }
   });
 });

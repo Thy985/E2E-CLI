@@ -241,21 +241,6 @@ export function evaluateDiagnosis(
     }
   }
 
-  // Count false negatives (expected issues not matched)
-  if (hasLineConstraints) {
-    falseNegatives = expectedLineRanges!.length - matchedExpected.size;
-  } else {
-    // For type-based matching, FN = expected types not in actual
-    const foundTypes = new Set(
-      actualDiagnosis.map((d) => (d as { ruleId?: string }).ruleId || d.metadata?.ruleId).filter(Boolean),
-    );
-    for (const expectedType of expectedTypes) {
-      if (!foundTypes.has(expectedType)) {
-        falseNegatives++;
-      }
-    }
-  }
-
   // Compute expected/actual/missed/extra for issueTypes reporting
   const actualRuleIds = actualDiagnosis
     .map((d) => (d as { ruleId?: string }).ruleId || d.metadata?.ruleId)
@@ -264,12 +249,33 @@ export function evaluateDiagnosis(
   const missedTypes = [...expectedTypes].filter((t) => !actualTypesList.has(t));
   const extraTypes = actualRuleIds.filter((t) => !expectedTypes.has(t));
 
+  // Expected total uses issueCount when available (so cases like
+  // a11y-missing-alt-001 with issueCount=2 + issueTypes=['img-alt'] correctly
+  // report 2 missing when actual is empty).
+  const expectedTotal = testCase.expectedDiagnosis.issueCount ?? expectedTypes.size;
+
+  // Count false negatives (expected issues not matched)
+  if (hasLineConstraints) {
+    falseNegatives = expectedLineRanges!.length - matchedExpected.size;
+  } else {
+    // For type-based matching, FN = expected count - actual matched count
+    // (counting each actual that matches an expected type, not unique types)
+    const matchedCount = actualRuleIds.filter((id) => expectedTypes.has(id)).length;
+    falseNegatives = Math.max(0, expectedTotal - matchedCount);
+  }
+
+  // precision: 1 only when there are no expected (vacuously perfect);
+  // 0 when expected > 0 but actual produced no positive predictions.
   const precision = truePositives + falsePositives > 0
     ? truePositives / (truePositives + falsePositives)
-    : 1;
+    : (expectedTotal > 0 ? 0 : 1);
+
+  // recall: 1 only when there are no expected (vacuously perfect);
+  // 0 when expected > 0 and nothing matched.
   const recall = truePositives + falseNegatives > 0
     ? truePositives / (truePositives + falseNegatives)
-    : 1;
+    : (expectedTotal > 0 ? 0 : 1);
+
   const f1 = precision + recall > 0
     ? (2 * precision * recall) / (precision + recall)
     : 0;

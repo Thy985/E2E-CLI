@@ -926,16 +926,21 @@ export function detectUnusedPropsVue(astFile: VueASTFile): Array<{
   // 3. Build a set of all identifiers used in the template
   const usedInTemplate = new Set<string>();
   if (astFile.templateBody) {
-    const walkExpr = (e: any): void => {
-      if (!e || typeof e !== 'object') return;
+    // Skip fields that cause cycles or are pure metadata (vue-eslint-parser nodes
+    // contain a `parent` reference that points back up the tree).
+    const SKIP_KEYS = new Set(['parent', 'range', 'loc', 'start', 'end']);
+    const walkExpr = (e: any, depth = 0): void => {
+      if (!e || typeof e !== 'object' || depth > 64) return;
       if (e.type === 'Identifier' && e.name) {
         usedInTemplate.add(e.name);
       }
       for (const k of Object.keys(e)) {
-        if (Array.isArray(e[k])) {
-          for (const item of e[k]) walkExpr(item);
-        } else if (typeof e[k] === 'object') {
-          walkExpr(e[k]);
+        if (SKIP_KEYS.has(k)) continue;
+        const v = e[k];
+        if (Array.isArray(v)) {
+          for (const item of v) walkExpr(item, depth + 1);
+        } else if (v && typeof v === 'object') {
+          walkExpr(v, depth + 1);
         }
       }
     };
@@ -971,11 +976,14 @@ export function detectUnusedPropsVue(astFile: VueASTFile): Array<{
     const usedScript = usedInScript.has(prop.name);
     const usedTemplate = usedInTemplate.has(prop.name);
 
-    // Also check if prop appears in template as part of v-bind or interpolation
-    const templateSource = astFile.source;
+    // Also check if prop appears in template as part of v-bind or interpolation.
+    // Extract only the <template>...</template> section (not the whole source which
+    // includes the <script> block where the prop is *defined* via defineProps).
+    const templateMatch = astFile.source.match(/<template[^>]*>([\s\S]*?)<\/template>/i);
+    const templateSection = templateMatch ? templateMatch[1] : '';
     const propInTemplateRegex = new RegExp(`\\b${prop.name}\\b`);
     const appearsInTemplateSection =
-      astFile.templateBody && propInTemplateRegex.test(templateSource);
+      !!astFile.templateBody && templateSection !== '' && propInTemplateRegex.test(templateSection);
 
     if (!usedScript && !usedTemplate && !appearsInTemplateSection) {
       results.push({

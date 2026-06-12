@@ -690,7 +690,13 @@ export function performanceGrade(score: number): 'A' | 'B' | 'C' | 'D' | 'F' {
 /**
  * 真实 Lighthouse 审计（v0.3.0 占位）。
  *
- * 当前总是返回 null，调用方应 fallback 到 estimatePerformanceScore。
+ * 当前未实现：调用此函数会抛出 NotImplementedError，强制调用方
+ * 显式处理而不是被 null 静默错误。
+ *
+ * 调用方应：
+ *   - try { await runLighthouseAudit(url) } catch { /* fall back *\/ }
+ *   - 或直接使用 estimatePerformanceScore(diagnoses) 作粗略估算
+ *
  * 待 v0.3.0 真实实现后，此函数会：
  *   - 检测 chrome 可用性
  *   - 启动 chrome + 跑 lighthouse
@@ -710,10 +716,22 @@ export interface LighthouseReport {
   };
 }
 
-export async function runLighthouseAudit(_url: string): Promise<LighthouseReport | null> {
+export class LighthouseNotImplementedError extends Error {
+  constructor() {
+    super(
+      'runLighthouseAudit is not implemented in v3.1. ' +
+        'It requires chrome + lighthouse npm packages. ' +
+        'Fall back to estimatePerformanceScore(diagnoses) for now. ' +
+        'Tracked in: PRD Phase 6 → v0.3.0 roadmap.',
+    );
+    this.name = 'LighthouseNotImplementedError';
+  }
+}
+
+export async function runLighthouseAudit(_url: string): Promise<LighthouseReport> {
   // v0.3.0 占位：真实实现需要 chrome + lighthouse npm 包
   // 详见上方设计文档
-  return null;
+  throw new LighthouseNotImplementedError();
 }
 
 export default PerformanceSkill;
