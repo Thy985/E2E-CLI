@@ -46,6 +46,7 @@ describe('E2ESkill', () => {
       model: {
         chat: async () => 'mock response',
         embed: async () => [0.1, 0.2, 0.3],
+        isMock: true,
       },
       storage: {
         get: async () => null,
@@ -328,6 +329,108 @@ line 4`;
       };
 
       await expect(skill.fix(diagnosis, contextMissingSelector)).rejects.toThrow(/Cannot locate selector/);
+    });
+  });
+
+  describe('generateTest (mock fallback)', () => {
+    it('should use template fallback when model.isMock is true (skip LLM call)', async () => {
+      const modelCalls: string[] = [];
+      const ctx = {
+        ...mockContext,
+        model: {
+          chat: async (msgs: any[]) => {
+            modelCalls.push(msgs[msgs.length - 1].content);
+            return { content: 'SHOULD-NOT-BE-CALLED' };
+          },
+          isMock: true,
+        },
+      };
+
+      const result = await skill.generateTest('navigate to /login', ctx as any);
+
+      // Mock fallback path: LLM.chat 不应该被调用
+      expect(modelCalls.length).toBe(0);
+      // 模板生成可用的 Playwright 代码
+      expect(result.code).toContain('import { test, expect }');
+      expect(result.code).toContain('page.goto');
+    });
+
+    it('should call LLM when model.isMock is false (real LLM path)', async () => {
+      let llmCalled = false;
+      const ctx = {
+        ...mockContext,
+        model: {
+          chat: async () => {
+            llmCalled = true;
+            return { content: 'test("LLM-generated", async ({ page }) => { await page.goto("/"); });' };
+          },
+          isMock: false,
+        },
+      };
+
+      const result = await skill.generateTest('something', ctx as any);
+
+      expect(llmCalled).toBe(true);
+      expect(result.code).toContain('LLM-generated');
+    });
+
+    it('should extract title selector when description mentions title assertion', async () => {
+      const result = await skill.generateTest(
+        'navigate to / and verify title is "Hello World"',
+        mockContext as any,
+      );
+
+      expect(result.code).toContain('toHaveTitle');
+      expect(result.code).toContain('Hello World');
+    });
+
+    it('should extract button name from "click button X" pattern', async () => {
+      const result = await skill.generateTest(
+        'navigate to /login and click button "Submit"',
+        mockContext as any,
+      );
+
+      expect(result.code).toContain('getByRole(\'button\'');
+      expect(result.code).toContain('Submit');
+    });
+
+    it('should extract input label from "fill input X" pattern', async () => {
+      const result = await skill.generateTest(
+        'navigate to /signup, fill input "Email" and click button "Register"',
+        mockContext as any,
+      );
+
+      expect(result.code).toContain('getByLabel(\'Email\')');
+      expect(result.code).toContain('Register');
+    });
+
+    it('should produce minimal scaffold when description has no recognized keywords', async () => {
+      const result = await skill.generateTest('asdf qwer zxcv', mockContext as any);
+
+      // 兜底: page.goto + body visible
+      expect(result.code).toContain('page.goto');
+      expect(result.code).toContain('body');
+    });
+
+    it('should return extractable selectors in the result', async () => {
+      const result = await skill.generateTest(
+        'navigate to / and click button "Login"',
+        mockContext as any,
+      );
+
+      // getByRole 第一个参数 'button' 会被识别为 selector
+      expect(result.selectors).toContain('button');
+    });
+
+    it('should support Chinese keywords (访问/点击/输入/标题)', async () => {
+      const result = await skill.generateTest(
+        '访问 /login，点击按钮 "登录" 并验证标题是 "首页"',
+        mockContext as any,
+      );
+
+      // 中文关键字应被识别
+      expect(result.code).toContain('page.goto');
+      expect(result.code).toContain('登录');
     });
   });
 });

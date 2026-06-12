@@ -312,6 +312,14 @@ export class E2ESkill extends BaseSkill {
 
     logger.info(`生成测试: ${description}`);
 
+    // Mock fallback：没有真实 API key 时返回的 model，
+    // 调 LLM 只会得到无意义的占位文本。改用 keyword-driven 模板
+    // 引擎，仍能产出可用的 Playwright 骨架。
+    if (model.isMock) {
+      logger.debug('检测到 mock model client，使用 template fallback 生成测试');
+      return this.generateTestFromTemplate(description);
+    }
+
     const prompt = `根据以下描述生成 Playwright 测试代码:
 
 描述: ${description}
@@ -340,15 +348,115 @@ export class E2ESkill extends BaseSkill {
     };
   }
 
+  /**
+   * Template-based Playwright test generator (mock-mode fallback).
+   *
+   * 当 LLM 不可用时（mock client），用 keyword 解析 description
+   * 并拼装可用的 Playwright 骨架。覆盖常见场景：
+   * - 导航（navigate/visit/open/go to）
+   * - 点击（click/press/tap）
+   * - 输入（fill/type/input/enter）
+   * - 断言（verify/check/assert/should）
+   * - title 检查
+   *
+   * 真实 LLM 仍能产生更复杂、更智能的代码；此模板仅保证
+   * "无 key 时也有可用的脚手架"。
+   */
+  private generateTestFromTemplate(description: string): TestGenerationResult {
+    const desc = description.trim();
+    const lower = desc.toLowerCase();
+
+    // 关键字检测
+    const wantsNavigate = /navigate|visit|open|go\s*to|访问|打开|进入/.test(lower);
+    const wantsClick = /click|press|tap|点击/.test(lower);
+    const wantsFill = /fill|type|input|enter|输入/.test(lower);
+    const wantsCheckTitle = /title|标题/.test(lower);
+    const wantsAssert = /verify|check|assert|should|expect|验证|断言|应该/.test(lower);
+
+    // 抽取 URL（http(s)://... 或 "/" 开头）
+    const urlMatch = desc.match(/https?:\/\/[^\s]+/) ?? desc.match(/\/[\w\-\/\.]+/);
+    const url = urlMatch ? urlMatch[0] : '/';
+
+    // 抽取 role/name 形式：'button "Login"' / 'button with text "Login"'
+    const buttonMatch = desc.match(/button(?:\s+(?:with\s+text\s+)?|["'`])?["'`]([^"'`]+)["'`]/i)
+      ?? desc.match(/按钮[「"\s]*([^」"\s]+)/);
+    const buttonName = buttonMatch?.[1];
+
+    const inputMatch = desc.match(/input(?:\s+(?:with\s+(?:label|placeholder)\s+)?|["'`])?["'`]([^"'`]+)["'`]/i)
+      ?? desc.match(/输入框?[「"\s]*([^」"\s]+)/);
+    const inputName = inputMatch?.[1];
+
+    // 抽取期望的 title
+    const titleMatch = desc.match(/title(?:\s+(?:is|=|为|是))?\s*["'`]([^"'`]+)["'`]/i)
+      ?? desc.match(/标题[是为]?\s*["']([^"']+)["']/);
+    const expectedTitle = titleMatch?.[1];
+
+    // 拼装 Playwright 代码
+    const steps: string[] = [];
+    if (wantsNavigate) {
+      steps.push(`  // 1. 导航到目标页面`);
+      steps.push(`  await page.goto('${url}');`);
+    }
+    if (wantsFill && inputName) {
+      steps.push(`  // 2. 在输入框中输入内容`);
+      steps.push(`  await page.getByLabel('${inputName}').fill('test-value');`);
+    }
+    if (wantsClick && buttonName) {
+      steps.push(`  // 3. 点击按钮`);
+      steps.push(`  await page.getByRole('button', { name: '${buttonName}' }).click();`);
+    }
+    if (wantsCheckTitle && expectedTitle) {
+      steps.push(`  // 4. 验证页面 title`);
+      steps.push(`  await expect(page).toHaveTitle('${expectedTitle}');`);
+    } else if (wantsAssert) {
+      // 通用兜底断言
+      steps.push(`  // 4. 通用断言：页面已加载`);
+      steps.push(`  await expect(page).toHaveURL(/.*/);`);
+    }
+
+    // 如果什么都没识别出来，生成一个最小可跑的骨架
+    if (steps.length === 0) {
+      steps.push(`  await page.goto('${url}');`);
+      steps.push(`  await expect(page.locator('body')).toBeVisible();`);
+    }
+
+    const code = [
+      `import { test, expect } from '@playwright/test';`,
+      ``,
+      `test('${desc.replace(/'/g, "\\'")}', async ({ page }) => {`,
+      ...steps,
+      `});`,
+      ``,
+    ].join('\n');
+
+    const selectors = this.extractSelectors(code);
+
+    return {
+      code,
+      description,
+      selectors,
+    };
+  }
+
   private extractSelectors(code: string): string[] {
     const selectors: string[] = [];
-    
-    // Extract selectors from getByRole, getByText, getByTestId
-    const patterns = [
-      /getByRole\(['"`]([^'"`]+)['"`]\)/g,
-      /getByText\(['"`]([^'"`]+)['"`]\)/g,
-      /getByTestId\(['"`]([^'"`]+)['"`]\)/g,
-      /locator\(['"`]([^'"`]+)['"`]\)/g,
+
+    // Extract selectors from getByRole, getByText, getByTestId, locator
+    // 支持两种形式：
+    //   1) getByRole('button')                   → 'button'
+    //   2) getByRole('button', { name: 'Login' }) → 'button', 'Login'
+    // 形式 2 用两个独立 regex 提取：
+    //   - 第一个参数（role 字符串）
+    //   - name / label / text / testId 等 object 字段
+    const patterns: RegExp[] = [
+      /getByRole\(\s*['"`]([^'"`]+)['"`]/g,
+      /getByText\(\s*['"`]([^'"`]+)['"`]/g,
+      /getByTestId\(\s*['"`]([^'"`]+)['"`]/g,
+      /locator\(\s*['"`]([^'"`]+)['"`]/g,
+      // 提取 getByRole / getByLabel 的 name / label 字段值
+      /\{\s*name\s*:\s*['"`]([^'"`]+)['"`]/g,
+      /\{\s*label\s*:\s*['"`]([^'"`]+)['"`]/g,
+      /\{\s*text\s*:\s*['"`]([^'"`]+)['"`]/g,
     ];
 
     for (const pattern of patterns) {
